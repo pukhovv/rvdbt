@@ -1,0 +1,15 @@
+---
+BasedOnStyle: LLVM
+AccessModifierOffset: '-8'
+AllowShortIfStatementsOnASingleLine: Never
+AlwaysBreakTemplateDeclarations: 'Yes'
+BreakBeforeBraces: Linux
+IndentCaseLabels: 'false'
+IndentWidth: '8'
+TabWidth: '8'
+UseTab: Always
+ColumnLimit: '110'
+AllowShortFunctionsOnASingleLine: Empty
+SortIncludes: 'true'
+IncludeBlocks: Preserve
+...
