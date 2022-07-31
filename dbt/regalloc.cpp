@@ -214,9 +214,12 @@ void RegAlloc::AllocOp(VReg *dst1, VReg *dst2, VReg *s1, VReg *s2, bool unsafe)
 	}
 
 	if (unsafe) {
+#ifdef CONFIG_USE_STATEMAPS
+		Context::Current()->CreateStateMap();
+#endif
 		for (int i = 0; i < num_globals; ++i) {
 			auto *v = &vregs[i];
-			if (v) {
+			if (v && !v->has_statemap) {
 				SyncSpill(v);
 			}
 		}

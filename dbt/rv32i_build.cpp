@@ -157,6 +157,25 @@ static void TranslateShiftI(translator::Context &ctx, insn::IS i, asmjit::x86::I
 	}
 }
 
+static inline asmjit::x86::Mem CreateMemOp(translator::Context &ctx, translator::RegAlloc::VReg *base,
+					   u32 offs, u8 sz)
+{
+	if (ctx.ra.mem_base) {
+		auto mem_base = ctx.ra.mem_base->GetPReg();
+		if (base) {
+			return asmjit::x86::ptr(mem_base, base->GetPReg(), 0, offs, sz);
+		} else {
+			return asmjit::x86::ptr(mem_base, offs, sz);
+		}
+	} else {
+		if (base) {
+			return asmjit::x86::ptr(base->GetPReg(), offs, sz);
+		} else {
+			return asmjit::x86::ptr(offs, sz);
+		}
+	}
+}
+
 #define TRANSLATOR_BRCC(name, cc)                                                                            \
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
@@ -196,13 +215,7 @@ static void TranslateShiftI(translator::Context &ctx, insn::IS i, asmjit::x86::I
 		auto vrs1 = ctx.vreg_gpr[i.rs1()];                                                           \
 		auto vrs2 = ctx.vreg_gpr[i.rs2()];                                                           \
 		ctx.ra.AllocOp(nullptr, nullptr, vrs1, vrs2, true);                                          \
-		auto mem_base = ctx.ra.mem_base->GetPReg();                                                  \
-		asmjit::x86::Mem mem;                                                                        \
-		if (vrs1) {                                                                                  \
-			mem = asmjit::x86::ptr(mem_base, vrs1->GetPReg(), 0, i.imm(), sz / 8);               \
-		} else {                                                                                     \
-			mem = asmjit::x86::ptr(mem_base, i.imm(), sz / 8);                                   \
-		}                                                                                            \
+		auto mem = CreateMemOp(ctx, vrs1, i.imm(), sz / 8);                                          \
 		if (vrs2) {                                                                                  \
 			ctx.cg.jasm.mov(mem, vrs2->GetPReg().r##sz());                                       \
 		} else {                                                                                     \
@@ -216,13 +229,7 @@ static void TranslateShiftI(translator::Context &ctx, insn::IS i, asmjit::x86::I
 		auto vrs1 = ctx.vreg_gpr[i.rs1()];                                                           \
 		auto vrd = ctx.vreg_gpr[i.rd()];                                                             \
 		ctx.ra.AllocOp(vrd, nullptr, vrs1, nullptr, true);                                           \
-		auto mem_base = ctx.ra.mem_base->GetPReg();                                                  \
-		asmjit::x86::Mem mem;                                                                        \
-		if (vrs1) {                                                                                  \
-			mem = asmjit::x86::ptr(mem_base, vrs1->GetPReg(), 0, i.imm(), sz / 8);               \
-		} else {                                                                                     \
-			mem = asmjit::x86::ptr(mem_base, i.imm(), sz / 8);                                   \
-		}                                                                                            \
+		auto mem = CreateMemOp(ctx, vrs1, i.imm(), sz / 8);                                          \
 		if (vrd) {                                                                                   \
 			ctx.cg.jasm.movop(vrd->GetPReg().r##sz(), mem);                                      \
 		} else {                                                                                     \

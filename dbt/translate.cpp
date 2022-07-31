@@ -146,8 +146,14 @@ void Codegen::SetupRA(RegAlloc *ra)
 	    ra->AllocVRegFixed("state", RegAlloc::VReg::Type::I64, RegAlloc::PReg(asmjit::x86::Gp::kIdBx));
 	ra->frame_base =
 	    ra->AllocVRegFixed("frame", RegAlloc::VReg::Type::I64, RegAlloc::PReg(asmjit::x86::Gp::kIdSp));
-	ra->mem_base =
-	    ra->AllocVRegFixed("memory", RegAlloc::VReg::Type::I64, RegAlloc::PReg(asmjit::x86::Gp::kIdR12));
+	if (mmu::base) {
+		ra->mem_base = ra->AllocVRegFixed("memory", RegAlloc::VReg::Type::I64,
+						  RegAlloc::PReg(asmjit::x86::Gp::kIdR12));
+	}
+#ifdef CONFIG_USE_STATEMAPS
+	ra->state_map = ra->AllocVRegFixed("statemap", RegAlloc::VReg::Type::I64,
+					   RegAlloc::PReg(asmjit::x86::Gp::kIdR13));
+#endif
 }
 
 void Codegen::SetBranchLinks()
@@ -208,6 +214,31 @@ void Codegen::EmitCode()
 	}
 	jcode.copyFlattenedData(tb->tcode.ptr, tb->tcode.size);
 	tb->tcode.size = jcode.codeSize();
+}
+
+void Context::CreateStateMap()
+{
+	StateMap sm{};
+	u8 map_idx = 0;
+	for (RegAlloc::PReg p = 0; p < RegAlloc::N_PREGS; ++p) {
+		if (ra.fixed.Test(p)) {
+			continue;
+		}
+		auto *v = ra.p2v[p];
+		if (!v || !v->has_statemap) {
+			continue;
+		}
+		uintptr_t v_idx = ((uintptr_t)v - (uintptr_t)vreg_gpr.data()) / sizeof(*v);
+		if (v_idx < vreg_gpr.size()) {
+			sm.Set(map_idx, v_idx);
+		}
+	}
+
+	if (active_sm.first && active_sm.second.data == sm.data) {
+		return;
+	}
+	active_sm = {true, sm};
+	cg.jasm.mov(ra.state_map->GetPReg(), asmjit::imm(sm.data));
 }
 
 void Codegen::Call(asmjit::Operand const *args, u8 nargs)
@@ -356,6 +387,9 @@ Context::Context()
 		char const *name = rv32i::insn::GRPToName(i);
 		u16 offs = offsetof(rv32i::CPUState, gpr) + 4 * i;
 		vreg_gpr[i] = ra.AllocVRegMem(name, RegAlloc::VReg::Type::I32, ra.state_base, offs);
+#ifdef CONFIG_USE_STATEMAPS
+		vreg_gpr[i]->has_statemap = true;
+#endif
 	}
 	vreg_ip =
 	    ra.AllocVRegMem("ip", RegAlloc::VReg::Type::I32, ra.state_base, offsetof(rv32i::CPUState, ip));
@@ -369,7 +403,7 @@ Context::~Context()
 TBlock *Translate(rv32i::CPUState *state, u32 ip)
 {
 	// TODO: check if ip is mapped (MMU)
-	Context ctx;
+	Context ctx{};
 	ctx.tb = tcache::AllocateTBlock();
 	if (ctx.tb == nullptr) {
 		Panic();

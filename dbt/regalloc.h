@@ -92,6 +92,7 @@ struct RegAlloc {
 		u16 spill_offs{};
 		PReg p{};
 		bool spill_synced{false};
+		bool has_statemap{false};
 	};
 
 	static inline u8 TypeToSize(VReg::Type t)
@@ -135,6 +136,7 @@ struct RegAlloc {
 	VReg *state_base{nullptr};
 	VReg *frame_base{nullptr};
 	VReg *mem_base{nullptr};
+	VReg *state_map{nullptr};
 	u16 frame_size{32 * sizeof(u64)};
 	u16 frame_cur{0};
 };

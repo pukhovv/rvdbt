@@ -55,7 +55,7 @@ void *mmu::MMap(u32 vaddr, u32 len, int prot, int flags, int fd, size_t offs)
 		if (check_h2g((u8 *)hptr + len - 1)) {
 			return hptr;
 		}
-		int rc = munmap(hptr, len);
+		[[maybe_unused]] int rc = munmap(hptr, len);
 		assert(!rc);
 		if (hptr == hptr_prev) {
 			break;
