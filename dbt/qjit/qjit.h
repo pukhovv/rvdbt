@@ -1,133 +1,28 @@
 #pragma once
 
-#include "dbt/arena.h"
 #include "dbt/common.h"
-#include "dbt/core.h"
-#include "dbt/regalloc.h"
-#include "dbt/rv32i_runtime.h"
-
-#include "asmjit_deps.h"
+#include "dbt/qjit/regalloc.h"
+#include "dbt/tcache/tcache.h"
 #include <array>
 
-namespace dbt
+namespace dbt::qjit
 {
-
-struct alignas(8) TBlock {
-	struct TCode {
-		void *ptr{nullptr};
-		size_t size{0};
-	};
-
-	struct Branch {
-		u32 ip{0};
-		u16 slot_offs{0};
-	};
-
-	struct TaggedPtr {
-		TaggedPtr(uintptr_t raw_) : raw(raw_) {}
-		TaggedPtr(void *ptr_, int idx)
-		{
-			auto ptr = (uintptr_t)ptr_;
-			assert((ptr & TAG_MASK) == 0);
-			assert(TAG_START + idx <= TAG_MASK);
-			raw = ptr | (idx + TAG_START);
-		}
-
-		inline uintptr_t getRaw()
-		{
-			return raw;
-		}
-
-		inline void *getPtr()
-		{
-			return (void *)(raw & ~(TAG_MASK));
-		}
-
-		inline int getBranchIdx()
-		{
-			return (int)(raw & TAG_MASK) - TAG_START;
-		}
-
-	private:
-		static constexpr uintptr_t TAG_START = 1; // Zero tag marks non-direct jump
-		static constexpr uintptr_t TAG_MASK = 0b111;
-		uintptr_t raw{0};
-	};
-
-	inline void Dump()
-	{
-		if constexpr (decltype(log_bt())::null)
-			return;
-		DumpImpl();
-	}
-	void DumpImpl();
-
-	u32 ip{0};
-	u32 size{0};
-	TCode tcode{};
-	std::array<Branch, 2> branches{};
-	u16 epilogue_offs{0};
-};
 
 #define HELPER extern "C" NOINLINE __attribute__((used))
 
 // returns TBlock::TaggedPtr
-HELPER uintptr_t enter_tcache(rv32i::CPUState *state, void *tc_ptr);
-HELPER void *helper_tcache_lookup(rv32i::CPUState *state, TBlock *tb);
+HELPER uintptr_t enter_tcache(CPUState *state, void *tc_ptr);
+HELPER void *helper_tcache_lookup(CPUState *state, TBlock *tb);
 HELPER void helper_raise();
 
-struct tcache {
-	static void Init();
-	static void Destroy();
-	static void Invalidate();
-	static void Insert(TBlock *tb);
-	static inline TBlock *Lookup(u32 ip)
-	{
-		auto hash = jmp_hash(ip);
-		auto *tb = jmp_cache[hash];
-		if (tb != nullptr && tb->ip == ip)
-			return tb;
-		tb = LookupFull(ip);
-		if (tb != nullptr)
-			jmp_cache[hash] = tb;
-		return tb;
-	}
-
-	static void *AllocateCode(size_t sz, u16 align);
-	static TBlock *AllocateTBlock();
-
-	static constexpr u32 JMP_CACHE_BITS = 10;
-	static constexpr u32 JMP_HASH_MULT = 2654435761;
-	static std::array<TBlock *, 1u << JMP_CACHE_BITS> jmp_cache;
-
-private:
-	tcache() {}
-
-	static TBlock *LookupFull(u32 ip);
-
-	static inline u32 jmp_hash(u32 ip)
-	{
-		u32 constexpr gr = JMP_HASH_MULT;
-		return (gr * ip) >> (32 - JMP_CACHE_BITS);
-	}
-
-	using MapType = std::unordered_map<u32, TBlock *>;
-	static MapType tcache_map;
-
-	static constexpr size_t TB_POOL_SIZE = 32 * 1024 * 1024;
-	static MemArena tb_pool;
-
-	static constexpr size_t CODE_POOL_SIZE = 128 * 1024 * 1024;
-	static MemArena code_pool;
-};
-
-namespace translator
-{
+struct QuickJIT;
 
 struct Codegen {
-	static constexpr auto TR_RREG = asmjit::x86::Gp::kIdAx;
-	static constexpr auto TR_TMP_CX = asmjit::x86::Gp::kIdCx;
-	static constexpr auto TR_TMP3 = asmjit::x86::Gp::kIdR8;
+	static constexpr auto STATE = asmjit::x86::Gp::kIdBx;
+	static constexpr auto SP = asmjit::x86::Gp::kIdSp;
+	static constexpr auto TMP1C = asmjit::x86::Gp::kIdCx;
+	static constexpr auto TMP2 = asmjit::x86::Gp::kIdAx;
+	static constexpr auto TMP3 = asmjit::x86::Gp::kIdR8;
 	static constexpr u16 TB_PROLOGUE_SZ = 7;
 
 	struct TBLinker {
@@ -190,10 +85,10 @@ struct Codegen {
 	};
 
 	Codegen();
-	void SetupRA(RegAlloc *ra);
+	void SetupCtx(QuickJIT *ctx_);
 	void Prologue();
 	void Epilogue();
-	void SetBranchLinks();
+	void ResetBranchLinks();
 	void EmitCode();
 
 	struct JitErrorHandler : asmjit::ErrorHandler {
@@ -238,18 +133,21 @@ struct Codegen {
 
 	void Call(asmjit::Operand const *args, u8 nargs);
 	void BranchTBDir(u32 ip, u8 no, bool pre_epilogue = false);
-	void BranchTBInd(asmjit::x86::Gpd target);
+	void BranchTBInd(asmjit::Operand target);
 
 	void x86Cmp(asmjit::x86::CondCode *cc, asmjit::Operand lhs, asmjit::Operand rhs);
 
 	asmjit::JitRuntime jrt{};
 	asmjit::CodeHolder jcode{};
-	asmjit::x86::Assembler jasm{};
+	asmjit::x86::Assembler j{};
 	JitErrorHandler jerr{};
 	asmjit::Label to_epilogue{};
 	std::array<asmjit::Label, 2> branch_links{};
+
+	QuickJIT *ctx{};
 };
 
+#ifdef CONFIG_USE_STATEMAPS
 struct StateMap {
 	using container = u64;
 	static constexpr u8 VREG_ID_BITS = 5;
@@ -271,38 +169,23 @@ struct StateMap {
 
 	container data{0};
 };
+#ifdef CONFIG_USE_STATEMAPS
+void CreateStateMap();
+std::pair<bool, StateMap> active_sm{false, {}};
+#endif
+#endif
 
-struct Context {
-	Context();
-	~Context();
-	Context(Context &) = delete;
-	Context(Context &&) = delete;
+struct QuickJIT {
+	QuickJIT();
+	~QuickJIT();
+	QuickJIT(QuickJIT &) = delete;
+	QuickJIT(QuickJIT &&) = delete;
 
-	static inline Context *Current()
-	{
-		return current;
-	}
-
-	void TranslateInsn();
-	void CreateStateMap();
-
+	RegAlloc *ra{nullptr};
+	Codegen *cg{nullptr};
 	TBlock *tb{nullptr};
-	u32 insn_ip{0};
-	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
 
-	std::array<RegAlloc::VReg *, 32> vreg_gpr{};
 	RegAlloc::VReg *vreg_ip{nullptr};
-	std::pair<bool, StateMap> active_sm{false, {}};
-
-	RegAlloc ra{};
-	Codegen cg{};
-
-private:
-	static Context *current;
 };
 
-static constexpr u16 TB_MAX_INSNS = 64;
-TBlock *Translate(rv32i::CPUState *state, u32 ip);
-
-}; // namespace translator
-} // namespace dbt
+}; // namespace dbt::qjit

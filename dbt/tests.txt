@@ -1,3 +1,5 @@
+// TODO: re-implement later
+
 #include "dbt/core.h"
 #include "dbt/execute.h"
 #include "dbt/rv32i_runtime.h"
@@ -213,3 +215,4 @@ int main(int argc, char **argv)
 	InterpreterCheck();
 	return 0;
 }
+#endif

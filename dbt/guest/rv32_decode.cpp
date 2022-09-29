@@ -1,18 +1,31 @@
-#include "dbt/rv32i_decode.h"
+#include "dbt/guest/rv32_decode.h"
+#include "dbt/guest/rv32_runtime.h"
 
-namespace dbt::rv32i::insn
+namespace dbt::rv32
 {
+
+namespace insn
+{
+
+#if 0
+enum class Op : u8 {
+#define OP(name, format, flags) _##name,
+	RV32_OPCODE_LIST()
+#undef OP
+	    _last,
+};
 
 insn::Op Decode(u32 raw)
 {
 	insn::DecodeParams insn{raw};
 #define OP_ILL return insn::Op::_ill;
 #define OP(name) return insn::Op::_##name;
-	RV32I_DECODE_SWITCH(insn)
+	RV32_DECODE_SWITCH(insn)
 #undef OP_ILL
 #undef OP
 	unreachable("");
 }
+#endif
 
 static char const *gpr_names[32] = {
     [0] = "zero",  [1] = "  ra",  [2] = "  sp",	 [3] = "  gp",	[4] = "  tp",  [5] = "  t0",  [6] = "  t1",
@@ -59,4 +72,13 @@ std::ostream &operator<<(std::ostream &o, J i)
 	return o << gpr_names[i.rd()] << " \t" << i.imm();
 }
 
-} // namespace dbt::rv32i::insn
+} // namespace insn
+
+void CPUState::DumpTrace()
+{
+	for (int i = 0; i < 32; ++i) {
+		log_trace() << insn::GRPToName(i) << "\t " << gpr[i];
+	}
+}
+
+} // namespace dbt::rv32

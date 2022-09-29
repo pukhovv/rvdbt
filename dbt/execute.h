@@ -1,8 +1,7 @@
 #pragma once
 
 #include "dbt/core.h"
-#include "dbt/rv32i_runtime.h"
-#include "dbt/translate.h"
+#include "dbt/guest/rv32_cpu.h"
 
 namespace dbt
 {
@@ -14,6 +13,6 @@ ALWAYS_INLINE void RaiseTrap()
 	siglongjmp(trap_unwind_env, 1);
 }
 
-void Execute(rv32i::CPUState *state);
+void Execute(CPUState *state);
 
 } // namespace dbt

@@ -1,10 +1,9 @@
 #include "dbt/execute.h"
-#include "dbt/rv32i_decode.h"
-#include "dbt/rv32i_runtime.h"
+#include "dbt/guest/rv32_decode.h"
 #include <cstdint>
 #include <type_traits>
 
-namespace dbt::rv32i::interp
+namespace dbt::rv32
 {
 
 #define GET_GIP() (gip)
@@ -41,7 +40,7 @@ namespace dbt::rv32i::interp
 		HandleFull_##name(state, gip, vmem, insn_raw);                                               \
 		if constexpr (flags & insn::Flags::Branch)                                                   \
 			return;                                                                              \
-		MUSTTAIL return Dispatch(state, gip, vmem, 0);                                               \
+		MUSTTAIL return Interpreter::_Dispatch(state, gip, vmem, 0);                                 \
 	}                                                                                                    \
 	extern "C" void __attribute__((used)) HelperOp_##name(CPUState *state, u32 insn_raw)                 \
 	{                                                                                                    \
@@ -176,16 +175,16 @@ HANDLER(ebreak)
 	RaiseTrap();
 }
 
-void Dispatch(CPUState *state, u32 gip, u8 *vmem, [[maybe_unused]] u32 unused)
+void Interpreter::_Dispatch(CPUState *state, u32 gip, u8 *vmem, [[maybe_unused]] u32 unused)
 {
 	u32 insn_raw = *(u32 *)(gip + vmem);
 	insn::DecodeParams insn{insn_raw};
 #define OP(name) MUSTTAIL return HandleInterp_##name(state, gip, vmem, insn_raw);
 #define OP_ILL OP(ill)
-	RV32I_DECODE_SWITCH(insn)
+	RV32_DECODE_SWITCH(insn)
 #undef OP_ILL
 #undef OP
 	unreachable("");
 }
 
-} // namespace dbt::rv32i::interp
+} // namespace dbt::rv32

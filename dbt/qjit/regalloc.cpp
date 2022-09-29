@@ -1,8 +1,12 @@
-#include "dbt/regalloc.h"
-#include "dbt/translate.h"
+#include "dbt/qjit/qjit.h"
 
-namespace dbt::translator
+namespace dbt::qjit
 {
+
+void RegAlloc::SetupCtx(QuickJIT *ctx_)
+{
+	ctx = ctx_;
+}
 
 RegAlloc::PReg RegAlloc::AllocPReg(Mask desire, Mask avoid)
 {
@@ -49,9 +53,8 @@ void RegAlloc::SyncSpill(VReg *v)
 	case VReg::Loc::MEM:
 		return;
 	case VReg::Loc::REG:
-		Context::Current()->cg.jasm.mov(
-		    asmjit::x86::ptr(v->spill_base->GetPReg(), v->spill_offs, TypeToSize(v->type)),
-		    v->GetPReg());
+		ctx->cg->j.mov(asmjit::x86::ptr(v->spill_base->GetPReg(), v->spill_offs, TypeToSize(v->type)),
+			       v->GetPReg());
 		break;
 	default:
 		Panic();
@@ -96,14 +99,13 @@ void RegAlloc::AllocFrameSlot(VReg *v)
 
 void RegAlloc::Fill(VReg *v, Mask desire, Mask avoid)
 {
-	auto ctx = Context::Current();
 	switch (v->loc) {
 	case VReg::Loc::MEM:
 		v->p = AllocPReg(desire, avoid);
 		v->loc = VReg::Loc::REG;
 		p2v[v->p] = v;
-		ctx->cg.jasm.mov(v->GetPReg(), asmjit::x86::ptr(v->spill_base->GetPReg(), v->spill_offs,
-								TypeToSize(v->type)));
+		ctx->cg->j.mov(v->GetPReg(), asmjit::x86::ptr(v->spill_base->GetPReg(), v->spill_offs,
+							      TypeToSize(v->type)));
 		v->spill_synced = true;
 		return;
 	case VReg::Loc::REG:
@@ -140,6 +142,7 @@ RegAlloc::VReg *RegAlloc::AllocVRegFixed(char const *name, VReg::Type type, PReg
 	auto *v = AllocVRegGlob(name);
 	v->p = p;
 	p2v[p] = v; // TODO: is this correct?
+	assert(!fixed.Test(p));
 	fixed.Set(p);
 	v->scope = VReg::Scope::FIXED;
 	v->type = type;
@@ -200,13 +203,11 @@ void RegAlloc::BBEnd()
 	}
 }
 
-void RegAlloc::AllocOp(VReg *dst1, VReg *dst2, VReg *s1, VReg *s2, bool unsafe)
+void RegAlloc::AllocOp(VReg **dstl, u8 dst_n, VReg **srcl, u8 src_n, bool unsafe)
 {
 	auto avoid = fixed;
-	std::array<VReg *, 2> srcl = {s1, s2};
-	std::array<VReg *, 2> dstl = {dst1, dst2};
 
-	for (u8 i = 0; i < srcl.size(); ++i) {
+	for (u8 i = 0; i < src_n; ++i) {
 		if (srcl[i]) {
 			Fill(srcl[i], PREGS_ALL, avoid);
 			avoid.Set(srcl[i]->p);
@@ -215,7 +216,7 @@ void RegAlloc::AllocOp(VReg *dst1, VReg *dst2, VReg *s1, VReg *s2, bool unsafe)
 
 	if (unsafe) {
 #ifdef CONFIG_USE_STATEMAPS
-		Context::Current()->CreateStateMap();
+		ctx->CreateStateMap();
 #endif
 		for (int i = 0; i < num_globals; ++i) {
 			auto *v = &vregs[i];
@@ -225,7 +226,7 @@ void RegAlloc::AllocOp(VReg *dst1, VReg *dst2, VReg *s1, VReg *s2, bool unsafe)
 		}
 	}
 
-	for (u8 i = 0; i < dstl.size(); ++i) {
+	for (u8 i = 0; i < dst_n; ++i) {
 		auto *dst = dstl[i];
 		if (!dst) {
 			continue;
@@ -240,20 +241,22 @@ void RegAlloc::AllocOp(VReg *dst1, VReg *dst2, VReg *s1, VReg *s2, bool unsafe)
 	}
 }
 
-void RegAlloc::CallOp()
+void RegAlloc::CallOp(bool use_state)
 {
-	for (u8 p = 0; p < translator::RegAlloc::N_PREGS; ++p) {
-		if (translator::PREGS_CALL_CLOBBER.Test(p)) {
+	for (u8 p = 0; p < qjit::RegAlloc::N_PREGS; ++p) {
+		if (qjit::PREGS_CALL_CLOBBER.Test(p)) {
 			Spill(p);
 		}
 	}
 
-	for (u8 i = 0; i < num_globals; ++i) {
-		auto *v = &vregs[i];
-		if (v && v->scope != translator::RegAlloc::VReg::Scope::FIXED) {
-			Spill(v);
+	if (use_state) {
+		for (u8 i = 0; i < num_globals; ++i) {
+			auto *v = &vregs[i];
+			if (v && v->scope != qjit::RegAlloc::VReg::Scope::FIXED) {
+				Spill(v);
+			}
 		}
-	}
+	} // elif unsafe -> spills may be avoided with statemap
 }
 
-} // namespace dbt::translator
+} // namespace dbt::qjit

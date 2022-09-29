@@ -11,8 +11,6 @@ extern "C" {
 namespace dbt
 {
 
-void __attribute__((noreturn)) Panic(char const *msg = "[DBT]: aborted");
-
 struct mmu {
 	static constexpr size_t ASPACE_SIZE = (1ull) << 32;
 	static constexpr size_t PAGE_SIZE = 4096; // true for rv32 and amd64

@@ -1,12 +1,12 @@
 #pragma once
 
 #include "dbt/common.h"
-#include "dbt/rv32i_ops.h"
+#include "dbt/guest/rv32_ops.h"
 #include <limits>
 #include <ostream>
 #include <utility>
 
-namespace dbt::rv32i
+namespace dbt::rv32
 {
 
 namespace insn
@@ -191,25 +191,18 @@ struct DecodeParams : public Base {
 	BASE_FIELD(funct12);
 };
 
-enum class Op : u8 {
-#define OP(name, format, flags) _##name,
-	RV32I_OPCODE_LIST()
-#undef OP
-	    _last,
-};
-
 #define OP(name, format_, flags_)                                                                            \
 	struct Insn_##name : format_ {                                                                       \
 		using format = format_;                                                                      \
 		static constexpr const char *opcode_str = #name;                                             \
 		static constexpr std::underlying_type_t<Flags::Types> flags = (flags_) | gen_flags;          \
 	};
-RV32I_OPCODE_LIST()
+RV32_OPCODE_LIST()
 #undef OP
 
 } // namespace insn
 
-#define RV32I_DECODE_SWITCH(__inst)                                                                          \
+#define RV32_DECODE_SWITCH(__inst)                                                                          \
 	{                                                                                                    \
 		switch (__inst.opcode()) {                                                                   \
 		case 0b0110111:                                                                              \
@@ -352,4 +345,4 @@ RV32I_OPCODE_LIST()
 		}                                                                                            \
 	}
 
-} // namespace dbt::rv32i
+} // namespace dbt::rv32

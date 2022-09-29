@@ -1,7 +1,7 @@
 #include "dbt/ukernel.h"
 #include "dbt/core.h"
 #include "dbt/execute.h"
-#include "dbt/rv32i_runtime.h"
+#include "dbt/guest/rv32_cpu.h"
 #include <alloca.h>
 #include <cstring>
 
@@ -16,15 +16,15 @@ extern "C" {
 
 namespace dbt
 {
-void ukernel::Execute(rv32i::CPUState *state)
+void ukernel::Execute(CPUState *state)
 {
 	while (true) {
 		dbt::Execute(state);
 		switch (state->trapno) {
-		case rv32i::TrapCode::EBREAK:
+		case rv32::TrapCode::EBREAK:
 			std::cout << "[APP]: ebreak terminate\n";
 			return;
-		case rv32i::TrapCode::ECALL:
+		case rv32::TrapCode::ECALL:
 			state->ip += 4;
 			ukernel::Syscall(state);
 			break;
@@ -34,14 +34,14 @@ void ukernel::Execute(rv32i::CPUState *state)
 	}
 }
 
-void ukernel::InitThread(rv32i::CPUState *state, ElfImage *elf)
+void ukernel::InitThread(CPUState *state, ElfImage *elf)
 {
 	state->gpr[2] = elf->stack_start;
 }
 
-void ukernel::Syscall(rv32i::CPUState *state)
+void ukernel::Syscall(CPUState *state)
 {
-	state->trapno = rv32i::TrapCode::NONE;
+	state->trapno = rv32::TrapCode::NONE;
 	u32 id = state->gpr[10];
 	switch (id) {
 	case 1: {

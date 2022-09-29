@@ -1,7 +1,7 @@
 #pragma once
 
 #include "dbt/common.h"
-#include "dbt/rv32i_runtime.h"
+#include "dbt/guest/rv32_cpu.h"
 
 namespace dbt
 {
@@ -13,9 +13,9 @@ struct ukernel {
 	};
 
 	static void LoadElf(char const *path, ElfImage *img);
-	static void InitThread(rv32i::CPUState *state, ElfImage *elf);
-	static void Syscall(rv32i::CPUState *state);
-	static void Execute(rv32i::CPUState *state);
+	static void InitThread(CPUState *state, ElfImage *elf);
+	static void Syscall(CPUState *state);
+	static void Execute(CPUState *state);
 
 private:
 	ukernel() {}
