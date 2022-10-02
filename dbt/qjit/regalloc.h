@@ -168,8 +168,9 @@ struct RegAlloc {
 	VReg *frame_base{nullptr};
 	VReg *mem_base{nullptr};
 	VReg *state_map{nullptr};
-	u16 frame_size{32 * sizeof(u64)};
-	u16 frame_cur{0};
+
+	static constexpr u16 frame_size{32 * sizeof(u64)};
+	u16 frame_cur{sizeof(u64)}; // first spill is reserved
 
 	QuickJIT *ctx{};
 };

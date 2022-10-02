@@ -7,27 +7,49 @@
 #include <sys/types.h>
 #include <type_traits>
 
-namespace dbt
-{
-namespace qjit
+namespace dbt::qjit
 {
 
 #define __asm_reg(reg) register u64 reg __asm(#reg)
 
+#if 0 // outdated
 HELPER uintptr_t enter_tcache(CPUState *state, void *tc_ptr)
 {
 	void *vmem = mmu::base;
 	__asm_reg(rax) = (u64)tc_ptr;
 	__asm_reg(rbx) = (u64)state;
 	__asm_reg(r12) = (u64)vmem;
-	__asm volatile("callq	*%%rax\n\t"
+	__asm volatile("callq *%%rax\n\t"
 		       : "=r"(rax)
 		       : "r"(rax), "r"(rbx), "r"(r12)
 		       : "memory", "r13", "r14", "r15");
 	return rax;
 }
+#endif
 
-#define __asm_reg(reg) register u64 reg __asm(#reg)
+HELPER_ASM uintptr_t trampoline_host_qjit(CPUState *state, void *vmem, void *tc_ptr)
+{
+	__asm("pushq	%rbp\n\t"
+	      "movq	%rsp, %rbp\n\t"
+	      "pushq	%rbx\n\t"
+	      "pushq	%r12\n\t"
+	      "pushq	%r13\n\t"
+	      "pushq	%r14\n\t"
+	      "pushq	%r15\n\t"
+	      "movq 	%rdi, %rbx\n\t" // STATE
+	      "movq	%rsi, %r12\n\t" // MEMBASE
+	      "subq	$248, %rsp\n\t" // RegAlloc::frame_size - 8
+	      "callq	*%rdx\n\t"	// tc_ptr
+	      "addq	$248, %rsp\n\t" // RegAlloc::frame_size - 8
+	      "popq	%r15\n\t"
+	      "popq	%r14\n\t"
+	      "popq	%r13\n\t"
+	      "popq	%r12\n\t"
+	      "popq	%rbx\n\t"
+	      "popq	%rbp\n\t"
+	      "retq	\n\t");
+}
+static_assert(RegAlloc::frame_size == 248 + sizeof(u64));
 
 HELPER void *helper_tcache_lookup(CPUState *state, TBlock *tb)
 {
@@ -62,16 +84,15 @@ void Codegen::SetupCtx(QuickJIT *ctx_)
 {
 	ctx = ctx_;
 	auto ra = ctx->ra;
-	ra->fixed.Set(RegAlloc::PReg(asmjit::x86::Gp::kIdBp));
+	// ra->fixed.Set(RegAlloc::PReg(asmjit::x86::Gp::kIdBp));
 	ra->fixed.Set(RegAlloc::PReg(TMP1C));
 	ra->fixed.Set(RegAlloc::PReg(TMP2));
-	ra->fixed.Set(RegAlloc::PReg(TMP3));
 
 	ra->state_base = ra->AllocVRegFixed("state", RegAlloc::VReg::Type::I64, RegAlloc::PReg(STATE));
 	ra->frame_base = ra->AllocVRegFixed("frame", RegAlloc::VReg::Type::I64, RegAlloc::PReg(SP));
 	if (mmu::base) {
-		ra->mem_base = ra->AllocVRegFixed("memory", RegAlloc::VReg::Type::I64,
-						  RegAlloc::PReg(asmjit::x86::Gp::kIdR12));
+		ra->mem_base =
+		    ra->AllocVRegFixed("memory", RegAlloc::VReg::Type::I64, RegAlloc::PReg(MEMBASE));
 	}
 #ifdef CONFIG_USE_STATEMAPS
 	ra->state_map = ra->AllocVRegFixed("statemap", RegAlloc::VReg::Type::I64,
@@ -94,14 +115,14 @@ void Codegen::ResetBranchLinks()
 void Codegen::Prologue()
 {
 	tcache::OnTranslate(ctx->tb);
-	static_assert(TB_PROLOGUE_SZ == 7);
-	j.long_().sub(asmjit::x86::regs::rsp, ctx->ra->frame_size + 8);
+	// static_assert(TB_PROLOGUE_SZ == 7);
+	// j.long_().sub(asmjit::x86::regs::rsp, ctx->ra->frame_size + 8);
 }
 
 void Codegen::Epilogue()
 {
 	Bind(to_epilogue);
-	j.long_().add(asmjit::x86::regs::rsp, ctx->ra->frame_size + 8);
+	// j.long_().add(asmjit::x86::regs::rsp, ctx->ra->frame_size + 8);
 
 	auto rreg = asmjit::x86::rax;
 	auto rtmp = asmjit::x86::gpq(TMP1C);
@@ -168,21 +189,13 @@ void Codegen::Call(asmjit::Operand const *args, u8 nargs)
 {
 	ctx->ra->CallOp(); // may spill, but not modify pregs in args
 
-	auto inst = asmjit::BaseInst(asmjit::x86::Inst::kIdMov);
-	asmjit::Operand ops[2];
 	switch (nargs) {
 	case 4:
-		ops[0] = asmjit::x86::regs::rdx;
-		ops[1] = args[3];
-		j.emitInst(inst, ops, 2);
+		j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rdx, args[3]);
 	case 3:
-		ops[0] = asmjit::x86::regs::rsi;
-		ops[1] = args[2];
-		j.emitInst(inst, ops, 2);
+		j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, args[2]);
 	case 2:
-		ops[0] = asmjit::x86::regs::rdi;
-		ops[1] = args[1];
-		j.emitInst(inst, ops, 2);
+		j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rdi, args[1]);
 	case 1:
 		break;
 	default:
@@ -193,8 +206,7 @@ void Codegen::Call(asmjit::Operand const *args, u8 nargs)
 	if (!callee.isPhysReg()) {
 		assert(callee.as<asmjit::x86::Gp>().id() == asmjit::x86::Gp::kIdAx);
 	}
-	inst = asmjit::BaseInst(asmjit::x86::Inst::kIdCall);
-	j.emitInst(inst, &callee, 1);
+	j.emit(asmjit::x86::Inst::kIdCall, callee);
 }
 
 void Codegen::BranchTBDir(u32 ip, u8 no, bool pre_epilogue)
@@ -267,8 +279,9 @@ void Codegen::BranchTBInd(asmjit::Operand target)
 	auto slowpath = j.newLabel();
 	{
 		// Inlined jmp_cache lookup
+		// TODO: TMP1C is already allocated, implement TMPScope and get rid of such temps
 		auto tmp0 = asmjit::x86::gpq(TMP2);
-		auto tmp1 = asmjit::x86::gpq(TMP3);
+		auto tmp1 = asmjit::x86::gpq(asmjit::x86::Gp::kIdR8); // naah, that's ok
 		j.mov(tmp1.r64(), (uintptr_t)tcache::jmp_cache_brind.data());
 		j.imul(tmp0.r32(), ptgt.r32(), tcache::JMP_HASH_MULT);
 		j.shr(tmp0.r32(), 32 - tcache::JMP_CACHE_BITS);
@@ -308,5 +321,4 @@ QuickJIT::~QuickJIT()
 	delete ra;
 	delete cg;
 }
-} // namespace qjit
-} // namespace dbt
+} // namespace dbt::qjit

@@ -9,21 +9,23 @@ namespace dbt::qjit
 {
 
 #define HELPER extern "C" NOINLINE __attribute__((used))
+#define HELPER_ASM extern "C" NOINLINE __attribute__((used, naked))
 
 // returns TBlock::TaggedPtr
 HELPER uintptr_t enter_tcache(CPUState *state, void *tc_ptr);
+HELPER_ASM uintptr_t trampoline_host_qjit(CPUState *state, void *vmem, void *tc_ptr);
 HELPER void *helper_tcache_lookup(CPUState *state, TBlock *tb);
 HELPER void helper_raise();
 
 struct QuickJIT;
 
 struct Codegen {
-	static constexpr auto STATE = asmjit::x86::Gp::kIdBx;
+	static constexpr auto STATE = asmjit::x86::Gp::kIdR13;
+	static constexpr auto MEMBASE = asmjit::x86::Gp::kIdR12;
 	static constexpr auto SP = asmjit::x86::Gp::kIdSp;
 	static constexpr auto TMP1C = asmjit::x86::Gp::kIdCx;
 	static constexpr auto TMP2 = asmjit::x86::Gp::kIdAx;
-	static constexpr auto TMP3 = asmjit::x86::Gp::kIdR8;
-	static constexpr u16 TB_PROLOGUE_SZ = 7;
+	static constexpr u16 TB_PROLOGUE_SZ = 0;
 
 	struct TBLinker {
 #define USE_REL_BRANCH_SLOT

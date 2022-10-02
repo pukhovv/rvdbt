@@ -39,7 +39,7 @@ void Execute(CPUState *state)
 			tcache::OnBrind(tb);
 		}
 
-		auto tptr = TBlock::TaggedPtr(qjit::enter_tcache(state, tb->tcode.ptr));
+		auto tptr = TBlock::TaggedPtr(qjit::trampoline_host_qjit(state, mmu::base, tb->tcode.ptr));
 		if constexpr (!decltype(log_bt())::null) {
 			state->DumpTrace();
 		}
