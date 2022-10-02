@@ -3,10 +3,11 @@
 #include "dbt/arena.h"
 #include "dbt/common.h"
 #include "dbt/core.h"
-#include "dbt/qjit/regalloc.h"
 #include "dbt/guest/rv32_cpu.h"
+#include "dbt/qjit/regalloc.h"
 
 #include <array>
+#include <map>
 
 namespace dbt
 {
@@ -55,9 +56,8 @@ struct alignas(8) TBlock {
 
 	inline void Dump()
 	{
-		if constexpr (decltype(log_bt())::null)
-			return;
-		DumpImpl();
+		if constexpr (!decltype(log_bt())::null)
+			DumpImpl();
 	}
 	void DumpImpl();
 
@@ -65,6 +65,9 @@ struct alignas(8) TBlock {
 	TCode tcode{};
 	std::array<Branch, 2> branches{};
 	u16 epilogue_offs{0};
+	struct {
+		bool is_brind_target : 1 {false};
+	} flags;
 };
 
 struct tcache {
@@ -75,13 +78,34 @@ struct tcache {
 	static inline TBlock *Lookup(u32 ip)
 	{
 		auto hash = jmp_hash(ip);
-		auto *tb = jmp_cache[hash];
+		auto *tb = jmp_cache_generic[hash];
 		if (tb != nullptr && tb->ip == ip)
 			return tb;
 		tb = LookupFull(ip);
 		if (tb != nullptr)
-			jmp_cache[hash] = tb;
+			jmp_cache_generic[hash] = tb;
 		return tb;
+	}
+
+	static inline void OnTranslate(TBlock *tb)
+	{
+		log_cflow() << "B" << tb->ip << "[fillcolor=cyan]";
+	}
+
+	static inline void OnTranslateBr(TBlock *tb, u32 tgtip)
+	{
+		log_cflow() << "B" << tb->ip << "->B" << tgtip;
+	}
+
+	static inline void OnBrind(TBlock *tb)
+	{
+		jmp_cache_brind[jmp_hash(tb->ip)] = tb;
+		if constexpr (!decltype(log_cflow())::null) {
+			if (!tb->flags.is_brind_target) {
+				log_cflow() << "B" << tb->ip << "[fillcolor=orange]";
+			}
+		}
+		tb->flags.is_brind_target = true;
 	}
 
 	static void *AllocateCode(size_t sz, u16 align);
@@ -89,7 +113,9 @@ struct tcache {
 
 	static constexpr u32 JMP_CACHE_BITS = 10;
 	static constexpr u32 JMP_HASH_MULT = 2654435761;
-	static std::array<TBlock *, 1u << JMP_CACHE_BITS> jmp_cache;
+	using JMPCache = std::array<TBlock *, 1u << JMP_CACHE_BITS>;
+	static JMPCache jmp_cache_generic;
+	static JMPCache jmp_cache_brind;
 
 private:
 	tcache() {}
@@ -102,7 +128,7 @@ private:
 		return (gr * ip) >> (32 - JMP_CACHE_BITS);
 	}
 
-	using MapType = std::unordered_map<u32, TBlock *>;
+	using MapType = std::map<u32, TBlock *>;
 	static MapType tcache_map;
 
 	static constexpr size_t TB_POOL_SIZE = 32 * 1024 * 1024;

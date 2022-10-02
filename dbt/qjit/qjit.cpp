@@ -33,6 +33,7 @@ HELPER void *helper_tcache_lookup(CPUState *state, TBlock *tb)
 {
 	auto *found = tcache::Lookup(state->ip);
 	if (likely(found)) {
+		tcache::OnBrind(found);
 		return qjit::Codegen::TBLinker::GetEntrypoint(found);
 	}
 	return qjit::Codegen::TBLinker::GetExitpoint(tb);
@@ -66,10 +67,8 @@ void Codegen::SetupCtx(QuickJIT *ctx_)
 	ra->fixed.Set(RegAlloc::PReg(TMP2));
 	ra->fixed.Set(RegAlloc::PReg(TMP3));
 
-	ra->state_base =
-	    ra->AllocVRegFixed("state", RegAlloc::VReg::Type::I64, RegAlloc::PReg(STATE));
-	ra->frame_base =
-	    ra->AllocVRegFixed("frame", RegAlloc::VReg::Type::I64, RegAlloc::PReg(SP));
+	ra->state_base = ra->AllocVRegFixed("state", RegAlloc::VReg::Type::I64, RegAlloc::PReg(STATE));
+	ra->frame_base = ra->AllocVRegFixed("frame", RegAlloc::VReg::Type::I64, RegAlloc::PReg(SP));
 	if (mmu::base) {
 		ra->mem_base = ra->AllocVRegFixed("memory", RegAlloc::VReg::Type::I64,
 						  RegAlloc::PReg(asmjit::x86::Gp::kIdR12));
@@ -94,6 +93,7 @@ void Codegen::ResetBranchLinks()
 
 void Codegen::Prologue()
 {
+	tcache::OnTranslate(ctx->tb);
 	static_assert(TB_PROLOGUE_SZ == 7);
 	j.long_().sub(asmjit::x86::regs::rsp, ctx->ra->frame_size + 8);
 }
@@ -199,6 +199,7 @@ void Codegen::Call(asmjit::Operand const *args, u8 nargs)
 
 void Codegen::BranchTBDir(u32 ip, u8 no, bool pre_epilogue)
 {
+	tcache::OnTranslateBr(ctx->tb, ip);
 	ctx->tb->branches[no].ip = ip;
 
 	ctx->ra->BBEnd();
@@ -268,7 +269,7 @@ void Codegen::BranchTBInd(asmjit::Operand target)
 		// Inlined jmp_cache lookup
 		auto tmp0 = asmjit::x86::gpq(TMP2);
 		auto tmp1 = asmjit::x86::gpq(TMP3);
-		j.mov(tmp1.r64(), (uintptr_t)tcache::jmp_cache.data());
+		j.mov(tmp1.r64(), (uintptr_t)tcache::jmp_cache_brind.data());
 		j.imul(tmp0.r32(), ptgt.r32(), tcache::JMP_HASH_MULT);
 		j.shr(tmp0.r32(), 32 - tcache::JMP_CACHE_BITS);
 		j.mov(tmp0.r64(), asmjit::x86::ptr(tmp1.r64(), tmp0.r64(), 3));

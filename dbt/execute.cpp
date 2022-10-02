@@ -34,8 +34,9 @@ void Execute(CPUState *state)
 		}
 
 		if (br_idx >= 0) {
-			log_cflow() << "B" << tb_prev->ip << "->B" << tb->ip;
 			qjit::Codegen::TBLinker::LinkBranch(tb_prev, br_idx, tb);
+		} else {
+			tcache::OnBrind(tb);
 		}
 
 		auto tptr = TBlock::TaggedPtr(qjit::enter_tcache(state, tb->tcode.ptr));

@@ -27,14 +27,16 @@ void TBlock::DumpImpl()
 	}
 }
 
-std::array<TBlock *, 1u << tcache::JMP_CACHE_BITS> tcache::jmp_cache{};
+tcache::JMPCache tcache::jmp_cache_generic{};
+tcache::JMPCache tcache::jmp_cache_brind{};
 tcache::MapType tcache::tcache_map{};
 MemArena tcache::code_pool{};
 MemArena tcache::tb_pool{};
 
 void tcache::Init()
 {
-	jmp_cache.fill(nullptr);
+	jmp_cache_generic.fill(nullptr);
+	jmp_cache_brind.fill(nullptr);
 	tcache_map.clear();
 	tb_pool.Init(TB_POOL_SIZE, PROT_READ | PROT_WRITE);
 	code_pool.Init(CODE_POOL_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -42,7 +44,8 @@ void tcache::Init()
 
 void tcache::Destroy()
 {
-	jmp_cache.fill(nullptr);
+	jmp_cache_generic.fill(nullptr);
+	jmp_cache_brind.fill(nullptr);
 	tcache_map.clear();
 	tb_pool.Destroy();
 	code_pool.Destroy();
@@ -50,7 +53,8 @@ void tcache::Destroy()
 
 void tcache::Invalidate()
 {
-	jmp_cache.fill(nullptr);
+	jmp_cache_generic.fill(nullptr);
+	jmp_cache_brind.fill(nullptr);
 	tcache_map.clear();
 	tb_pool.Reset();
 	code_pool.Reset();
@@ -59,7 +63,7 @@ void tcache::Invalidate()
 void tcache::Insert(TBlock *tb)
 {
 	tcache_map.insert({tb->ip, tb});
-	jmp_cache[jmp_hash(tb->ip)] = tb;
+	jmp_cache_generic[jmp_hash(tb->ip)] = tb;
 }
 
 TBlock *tcache::LookupFull(u32 gip)
