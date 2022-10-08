@@ -18,42 +18,6 @@ struct alignas(8) TBlock {
 		size_t size{0};
 	};
 
-	struct Branch {
-		u32 ip{0};
-		u16 slot_offs{0};
-	};
-
-	struct TaggedPtr {
-		TaggedPtr(uintptr_t raw_) : raw(raw_) {}
-		TaggedPtr(void *ptr_, int idx)
-		{
-			auto ptr = (uintptr_t)ptr_;
-			assert((ptr & TAG_MASK) == 0);
-			assert(TAG_START + idx <= TAG_MASK);
-			raw = ptr | (idx + TAG_START);
-		}
-
-		inline uintptr_t getRaw()
-		{
-			return raw;
-		}
-
-		inline void *getPtr()
-		{
-			return (void *)(raw & ~(TAG_MASK));
-		}
-
-		inline int getBranchIdx()
-		{
-			return (int)(raw & TAG_MASK) - TAG_START;
-		}
-
-	private:
-		static constexpr uintptr_t TAG_START = 1; // Zero tag marks non-direct jump
-		static constexpr uintptr_t TAG_MASK = 0b111;
-		uintptr_t raw{0};
-	};
-
 	inline void Dump()
 	{
 		if constexpr (!decltype(log_bt())::null)
@@ -61,10 +25,8 @@ struct alignas(8) TBlock {
 	}
 	void DumpImpl();
 
-	u32 ip{0};
 	TCode tcode{};
-	std::array<Branch, 2> branches{};
-	u16 epilogue_offs{0};
+	u32 ip{0};
 	struct {
 		bool is_brind_target : 1 {false};
 	} flags;
@@ -75,6 +37,13 @@ struct tcache {
 	static void Destroy();
 	static void Invalidate();
 	static void Insert(TBlock *tb);
+
+	static ALWAYS_INLINE TBlock *LookupFast(u32 ip)
+	{
+		auto *tb = jmp_cache_generic[jmp_hash(ip)];
+		return (tb->ip == ip) ? tb : nullptr;
+	}
+
 	static inline TBlock *Lookup(u32 ip)
 	{
 		auto hash = jmp_hash(ip);
@@ -122,7 +91,7 @@ private:
 
 	static TBlock *LookupFull(u32 ip);
 
-	static inline u32 jmp_hash(u32 ip)
+	static ALWAYS_INLINE u32 jmp_hash(u32 ip)
 	{
 		u32 constexpr gr = JMP_HASH_MULT;
 		return (gr * ip) >> (32 - JMP_CACHE_BITS);

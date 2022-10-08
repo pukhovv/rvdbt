@@ -8,14 +8,18 @@
 namespace dbt::qjit
 {
 
+struct BranchSlot {
+	void Reset();
+	void Link(void *to);
+
+	u8 code[12];
+	u32 gip;
+} __attribute__((packed));
+
 #define HELPER extern "C" NOINLINE __attribute__((used))
 #define HELPER_ASM extern "C" NOINLINE __attribute__((used, naked))
 
-// returns TBlock::TaggedPtr
-HELPER uintptr_t enter_tcache(CPUState *state, void *tc_ptr);
-HELPER_ASM uintptr_t trampoline_host_qjit(CPUState *state, void *vmem, void *tc_ptr);
-HELPER void *helper_tcache_lookup(CPUState *state, TBlock *tb);
-HELPER void helper_raise();
+HELPER_ASM BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr);
 
 struct QuickJIT;
 
@@ -25,72 +29,11 @@ struct Codegen {
 	static constexpr auto SP = asmjit::x86::Gp::kIdSp;
 	static constexpr auto TMP1C = asmjit::x86::Gp::kIdCx;
 	static constexpr auto TMP2 = asmjit::x86::Gp::kIdAx;
-	static constexpr u16 TB_PROLOGUE_SZ = 0;
-
-	struct TBLinker {
-#define USE_REL_BRANCH_SLOT
-#ifdef USE_REL_BRANCH_SLOT
-		using slot_type = u32;
-		static constexpr u16 BRANCH_INSN_SLOT_OFFS = 1;
-		static constexpr u16 BRANCH_SLOT_RESET = 0;
-#else
-		using slot_type = u64;
-		static constexpr u16 BRANCH_INSN_SLOT_OFFS = 2;
-		static constexpr u16 BRANCH_SLOT_RESET = 10;
-#endif
-		static inline slot_type *getSlot(TBlock *tb, u8 idx)
-		{
-			return (slot_type *)((uintptr_t)tb->tcode.ptr + tb->branches[idx].slot_offs);
-		}
-
-		static inline void *GetEntrypoint(TBlock *tb)
-		{
-			return (void *)((uintptr_t)tb->tcode.ptr + TB_PROLOGUE_SZ);
-		}
-
-		static inline void *GetExitpoint(TBlock *tb)
-		{
-			return (void *)((uintptr_t)tb->tcode.ptr + tb->epilogue_offs);
-		}
-
-		static inline void InitBranch(TBlock *tb, u8 idx, u16 insn_offs)
-		{
-			tb->branches[idx].slot_offs = insn_offs + TBLinker::BRANCH_INSN_SLOT_OFFS;
-			ResetBranch(tb, idx);
-		}
-
-		static inline void LinkBranch(TBlock *from, u8 idx, TBlock *to)
-		{
-			assert(from->branches[idx].ip == to->ip);
-			auto *slot = getSlot(from, idx);
-#ifdef USE_REL_BRANCH_SLOT
-			uintptr_t base = (uintptr_t)slot + sizeof(*slot); // arch-dependent
-#else
-			uintptr_t base = 0;
-#endif
-			unaligned_store<slot_type>(slot, (uintptr_t)GetEntrypoint(to) - base);
-		}
-
-		static inline void ResetBranch(TBlock *tb, u8 idx)
-		{
-			auto *slot = getSlot(tb, idx);
-#ifdef USE_REL_BRANCH_SLOT
-			uintptr_t reset = BRANCH_SLOT_RESET;
-#else
-			uintptr_t reset = (uintptr_t)slot + BRANCH_SLOT_RESET;
-#endif
-			unaligned_store<slot_type>(slot, reset);
-		}
-
-	private:
-		TBLinker();
-	};
 
 	Codegen();
 	void SetupCtx(QuickJIT *ctx_);
 	void Prologue();
 	void Epilogue();
-	void ResetBranchLinks();
 	void EmitCode();
 
 	struct JitErrorHandler : asmjit::ErrorHandler {
@@ -143,8 +86,6 @@ struct Codegen {
 	asmjit::CodeHolder jcode{};
 	asmjit::x86::Assembler j{};
 	JitErrorHandler jerr{};
-	asmjit::Label to_epilogue{};
-	std::array<asmjit::Label, 2> branch_links{};
 
 	QuickJIT *ctx{};
 };

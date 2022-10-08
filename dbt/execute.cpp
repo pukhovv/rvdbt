@@ -18,8 +18,7 @@ void Execute(CPUState *state)
 {
 	sigsetjmp(dbt::trap_unwind_env, 0);
 
-	int br_idx = -1;
-	TBlock *tb_prev = nullptr;
+	qjit::BranchSlot *branch_slot = nullptr;
 
 	while (!HandleTrap(state)) {
 		assert(state->gpr[0] == 0);
@@ -33,18 +32,20 @@ void Execute(CPUState *state)
 			tcache::Insert(tb);
 		}
 
-		if (br_idx >= 0) {
-			qjit::Codegen::TBLinker::LinkBranch(tb_prev, br_idx, tb);
+		if (branch_slot) {
+			branch_slot->Link(tb->tcode.ptr);
 		} else {
 			tcache::OnBrind(tb);
 		}
 
-		auto tptr = TBlock::TaggedPtr(qjit::trampoline_host_qjit(state, mmu::base, tb->tcode.ptr));
+		branch_slot = qjit::trampoline_host_to_qjit(state, mmu::base, tb->tcode.ptr);
+		if (unlikely(branch_slot)) {
+			state->ip = branch_slot->gip;
+		}
+
 		if constexpr (!decltype(log_bt())::null) {
 			state->DumpTrace();
 		}
-		br_idx = tptr.getBranchIdx();
-		tb_prev = (TBlock *)tptr.getPtr();
 	}
 }
 

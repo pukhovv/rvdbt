@@ -8,15 +8,19 @@
 
 #include "dbt/config.h"
 
+typedef uintptr_t uptr;
 typedef uint64_t u64;
 typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
 
+typedef intptr_t iptr;
 typedef int64_t i64;
 typedef int32_t i32;
 typedef int16_t i16;
 typedef int8_t i8;
+
+#define POISON_PTR ((void *)0xb00bab00)
 
 #define likely(v) __builtin_expect(!!(v), 1)
 #define unlikely(v) __builtin_expect(!!(v), 0)

@@ -10,24 +10,33 @@
 namespace dbt::qjit
 {
 
-#define __asm_reg(reg) register u64 reg __asm(#reg)
-
-#if 0 // outdated
-HELPER uintptr_t enter_tcache(CPUState *state, void *tc_ptr)
+namespace BranchSlotPatch
 {
-	void *vmem = mmu::base;
-	__asm_reg(rax) = (u64)tc_ptr;
-	__asm_reg(rbx) = (u64)state;
-	__asm_reg(r12) = (u64)vmem;
-	__asm volatile("callq *%%rax\n\t"
-		       : "=r"(rax)
-		       : "r"(rax), "r"(rbx), "r"(r12)
-		       : "memory", "r13", "r14", "r15");
-	return rax;
-}
-#endif
+struct Call64Abs {
+	u64 op_mov_imm_rax : 16 = 0xb848;
+	u64 imm : 64;
+	u64 op_call_rax : 16 = 0xd0ff;
+} __attribute__((packed));
+static_assert(sizeof(Call64Abs) <= sizeof(BranchSlot::code));
+struct Jump64Abs {
+	u64 op_mov_imm_rax : 16 = 0xb848;
+	u64 imm : 64;
+	u64 op_jmp_rax : 16 = 0xe0ff;
+} __attribute__((packed));
+static_assert(sizeof(Jump64Abs) <= sizeof(BranchSlot::code));
+struct Jump32Rel {
+	u64 op_jmp_imm : 8 = 0xe9;
+	u64 imm : 32;
+} __attribute__((packed));
+static_assert(sizeof(Jump32Rel) <= sizeof(BranchSlot::code));
+}; // namespace BranchSlotPatch
 
-HELPER_ASM uintptr_t trampoline_host_qjit(CPUState *state, void *vmem, void *tc_ptr)
+struct _RetPair {
+	void *v0;
+	void *v1;
+};
+
+HELPER_ASM BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr)
 {
 	__asm("pushq	%rbp\n\t"
 	      "movq	%rsp, %rbp\n\t"
@@ -36,11 +45,15 @@ HELPER_ASM uintptr_t trampoline_host_qjit(CPUState *state, void *vmem, void *tc_
 	      "pushq	%r13\n\t"
 	      "pushq	%r14\n\t"
 	      "pushq	%r15\n\t"
-	      "movq 	%rdi, %rbx\n\t" // STATE
+	      "movq 	%rdi, %r13\n\t" // STATE
 	      "movq	%rsi, %r12\n\t" // MEMBASE
-	      "subq	$248, %rsp\n\t" // RegAlloc::frame_size - 8
-	      "callq	*%rdx\n\t"	// tc_ptr
-	      "addq	$248, %rsp\n\t" // RegAlloc::frame_size - 8
+	      "subq	$256, %rsp\n\t" // RegAlloc::frame_size
+	      "jmpq	*%rdx\n\t");	// tc_ptr
+}
+
+HELPER_ASM void trampoline_qjit_to_host()
+{
+	__asm("addq	$256, %rsp\n\t" // RegAlloc::frame_size
 	      "popq	%r15\n\t"
 	      "popq	%r14\n\t"
 	      "popq	%r13\n\t"
@@ -51,19 +64,56 @@ HELPER_ASM uintptr_t trampoline_host_qjit(CPUState *state, void *vmem, void *tc_
 }
 static_assert(RegAlloc::frame_size == 248 + sizeof(u64));
 
-HELPER void *helper_tcache_lookup(CPUState *state, TBlock *tb)
+HELPER_ASM void stub_link_branch()
 {
-	auto *found = tcache::Lookup(state->ip);
+	__asm("popq	%rdi\n\t"
+	      "callq	helper_link_branch@plt\n\t"
+	      "jmpq	*%rdx\n\t");
+}
+
+HELPER _RetPair helper_link_branch(void *p_slot)
+{
+	auto *slot = (BranchSlot *)((uptr)p_slot - sizeof(BranchSlotPatch::Call64Abs));
+	auto found = tcache::Lookup(slot->gip);
+	if (likely(found)) {
+		slot->Link(found->tcode.ptr);
+		return {slot, found->tcode.ptr};
+	}
+	return {slot, (void *)trampoline_qjit_to_host};
+}
+
+HELPER _RetPair helper_brind(CPUState *state, u32 gip)
+{
+	state->ip = gip;
+	auto *found = tcache::Lookup(gip);
 	if (likely(found)) {
 		tcache::OnBrind(found);
-		return qjit::Codegen::TBLinker::GetEntrypoint(found);
+		return {nullptr, (void *)found->tcode.ptr};
 	}
-	return qjit::Codegen::TBLinker::GetExitpoint(tb);
+	return {nullptr, (void *)trampoline_qjit_to_host};
 }
 
 HELPER void helper_raise()
 {
 	RaiseTrap();
+}
+
+void BranchSlot::Reset()
+{
+	auto *patch = new (&code) BranchSlotPatch::Call64Abs();
+	patch->imm = (uptr)stub_link_branch;
+}
+
+void BranchSlot::Link(void *to)
+{
+	iptr rel = (iptr)to - ((iptr)code + sizeof(BranchSlotPatch::Jump32Rel));
+	if ((i32)rel == rel) {
+		auto *patch = new (&code) BranchSlotPatch::Jump32Rel();
+		patch->imm = rel;
+	} else {
+		auto *patch = new (&code) BranchSlotPatch::Jump64Abs();
+		patch->imm = (uptr)to;
+	}
 }
 
 Codegen::Codegen()
@@ -72,10 +122,6 @@ Codegen::Codegen()
 		Panic();
 	}
 	jcode.attach(j._emitter());
-	to_epilogue = j.newLabel();
-	for (auto &link : branch_links) {
-		link = j.newLabel();
-	}
 	j.setErrorHandler(&jerr);
 	jcode.setErrorHandler(&jerr);
 }
@@ -100,18 +146,6 @@ void Codegen::SetupCtx(QuickJIT *ctx_)
 #endif
 }
 
-void Codegen::ResetBranchLinks()
-{
-	ctx->tb->epilogue_offs = jcode.labelEntry(to_epilogue)->offset();
-
-	for (size_t i = 0; i < branch_links.size(); ++i) {
-		auto *le = jcode.labelEntry(branch_links[i]);
-		if (le->isBound()) {
-			TBLinker::InitBranch(ctx->tb, i, le->offset());
-		}
-	}
-}
-
 void Codegen::Prologue()
 {
 	tcache::OnTranslate(ctx->tb);
@@ -121,20 +155,7 @@ void Codegen::Prologue()
 
 void Codegen::Epilogue()
 {
-	Bind(to_epilogue);
-	// j.long_().add(asmjit::x86::regs::rsp, ctx->ra->frame_size + 8);
-
-	auto rreg = asmjit::x86::rax;
-	auto rtmp = asmjit::x86::gpq(TMP1C);
-
-	auto le = jcode.labelEntry(branch_links[0]);
-	if (!le->isBound()) { // no linked branches in TB
-		j.mov(rreg, (uintptr_t)ctx->tb);
-	} else {
-		j.mov(rtmp, (uintptr_t)ctx->tb);
-		j.or_(rreg, rtmp);
-	}
-	j.ret();
+	// j.int3();
 }
 
 void Codegen::EmitCode()
@@ -145,7 +166,7 @@ void Codegen::EmitCode()
 
 	size_t jit_sz = jcode.codeSize();
 	tb->tcode.size = jit_sz;
-	tb->tcode.ptr = tcache::AllocateCode(jit_sz, 16);
+	tb->tcode.ptr = tcache::AllocateCode(jit_sz, 8);
 	if (tb->tcode.ptr == nullptr) {
 		Panic();
 	}
@@ -212,29 +233,12 @@ void Codegen::Call(asmjit::Operand const *args, u8 nargs)
 void Codegen::BranchTBDir(u32 ip, u8 no, bool pre_epilogue)
 {
 	tcache::OnTranslateBr(ctx->tb, ip);
-	ctx->tb->branches[no].ip = ip;
-
 	ctx->ra->BBEnd();
-	j.bind(branch_links[no]);
 
-#ifdef USE_REL_BRANCH_SLOT
-	static_assert(TBLinker::BRANCH_INSN_SLOT_OFFS == 1);
-	static_assert(TBLinker::BRANCH_SLOT_RESET == 0);
-	auto dummy = j.newLabel();
-	j.long_().jmp(dummy);
-	j.bind(dummy);
-#else
-	static_assert(TBLinker::BRANCH_INSN_SLOT_OFFS == 2);
-	static_assert(TBLinker::BRANCH_SLOT_RESET == 10);
-	j.long_().mov(asmjit::x86::gpq(TR_RREG), 0);
-	j.jmp(asmjit::x86::gpq(TR_RREG));
-#endif
-
-	j.mov(ctx->vreg_ip->GetSpill(), ip);
-	j.mov(asmjit::x86::eax, TBlock::TaggedPtr(nullptr, no).getRaw());
-	if (!pre_epilogue) {
-		j.jmp(to_epilogue);
-	}
+	auto *slot = (BranchSlot *)j.bufferPtr();
+	j.embedUInt8(0, sizeof(BranchSlot));
+	slot->gip = ip;
+	slot->Reset();
 }
 
 void Codegen::x86Cmp(asmjit::x86::CondCode *cc, asmjit::Operand lhs, asmjit::Operand rhs)
@@ -273,7 +277,7 @@ void Codegen::Bind(asmjit::Label l)
 void Codegen::BranchTBInd(asmjit::Operand target)
 {
 	assert(target.isPhysReg());
-	auto ptgt = target.as<asmjit::x86::Gp>();
+	auto ptgt = target.as<asmjit::x86::Gp>().r32();
 
 	ctx->ra->BBEnd();
 	auto slowpath = j.newLabel();
@@ -294,18 +298,14 @@ void Codegen::BranchTBInd(asmjit::Operand target)
 
 		j.mov(tmp0.r64(), asmjit::x86::ptr(tmp0.r64(), offsetof(dbt::TBlock, tcode) +
 								   offsetof(dbt::TBlock::TCode, ptr)));
-		j.add(tmp0.r64(), qjit::Codegen::TB_PROLOGUE_SZ);
 		j.jmp(tmp0.r64());
 	}
 
 	j.bind(slowpath);
-	j.mov(ctx->vreg_ip->GetSpill(), ptgt.r32());
-	std::array<asmjit::Operand, 3> call_ops = {asmjit::imm((uintptr_t)helper_tcache_lookup),
-						   ctx->ra->state_base->GetPReg(),
-						   asmjit::imm((uintptr_t)ctx->tb)};
+	std::array<asmjit::Operand, 3> call_ops = {asmjit::imm((uintptr_t)helper_brind),
+						   ctx->ra->state_base->GetPReg(), ptgt.r64()};
 	Call(call_ops.data(), call_ops.size());
-	ctx->ra->BBEnd();
-	j.jmp(asmjit::x86::eax);
+	j.jmp(asmjit::x86::rdx);
 }
 
 QuickJIT::QuickJIT()

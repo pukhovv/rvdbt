@@ -27,7 +27,7 @@ QuickTranslator::QuickTranslator()
 
 TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 {
-	// TODO: check if ip is mapped (MMU)
+	// TODO: check if ip is mapped
 	QuickTranslator t{};
 	t.tb = tcache::AllocateTBlock();
 	if (t.tb == nullptr) {
@@ -57,10 +57,8 @@ TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 
 	log_bt() << "Emitting    [" << std::hex << ip << "]:";
 	t.cg->EmitCode();
-	t.cg->ResetBranchLinks();
-#ifndef LOG_TRACE_ENABLE
 	t.tb->Dump();
-#endif
+
 	return t.tb;
 }
 

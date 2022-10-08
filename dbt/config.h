@@ -13,8 +13,8 @@
 #define log_trace() NullLogger()
 #endif
 #ifndef NDEBUG
-#define log_bt() Logger("[BT]: ")
-#define log_cflow() Logger("[CFLOW]: ")
+#define log_bt()      Logger("[BT]:      ")
+#define log_cflow()   Logger("[CFLOW]:   ")
 #define log_ukernel() Logger("[UKERNEL]: ")
 #else
 #define log_bt() NullLogger()
