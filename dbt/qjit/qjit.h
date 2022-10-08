@@ -28,7 +28,6 @@ struct Codegen {
 	static constexpr auto MEMBASE = asmjit::x86::Gp::kIdR12;
 	static constexpr auto SP = asmjit::x86::Gp::kIdSp;
 	static constexpr auto TMP1C = asmjit::x86::Gp::kIdCx;
-	static constexpr auto TMP2 = asmjit::x86::Gp::kIdAx;
 
 	Codegen();
 	void SetupCtx(QuickJIT *ctx_);
@@ -81,6 +80,9 @@ struct Codegen {
 	void BranchTBInd(asmjit::Operand target);
 
 	void x86Cmp(asmjit::x86::CondCode *cc, asmjit::Operand lhs, asmjit::Operand rhs);
+
+	void Spill(RegAlloc::VReg *v); // Internal
+	void Fill(RegAlloc::VReg *v);  // Internal
 
 	asmjit::JitRuntime jrt{};
 	asmjit::CodeHolder jcode{};

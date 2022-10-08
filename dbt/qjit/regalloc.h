@@ -55,8 +55,7 @@ struct RegAlloc {
 		};
 
 		enum class Scope {
-			BB,
-			TB,
+			LOC,
 			GLOBAL,
 			FIXED, // fixed regs are readonly
 		};
@@ -116,19 +115,28 @@ struct RegAlloc {
 		{
 			prev = ra->ascope;
 			ra->ascope = this;
+			if (likely(prev)) {
+				fixed = prev->fixed;
+				num_vregs = prev->num_vregs;
+				frame_cur = prev->frame_cur;
+			}
 		}
 		~AllocScope()
 		{
 			assert(ra->ascope == this);
 			ra->ascope = prev;
-			ra->fixed = ra->fixed & ~owned;
 		}
-		AllocScope *prev{};
 		RegAlloc *ra{};
-		Mask owned{0};
+		AllocScope *prev{};
+
+		Mask fixed{0};
+		u16 num_vregs{0};
+		u16 frame_cur{0};
 	};
 
 	void SetupCtx(QuickJIT *ctx_);
+
+	RegAlloc() : ascope_global(this) {}
 
 	PReg AllocPReg(Mask desire, Mask avoid);
 	void Spill(PReg p);
@@ -145,7 +153,7 @@ struct RegAlloc {
 	VReg *AllocVRegMem(char const *name, VReg::Type type, VReg *base, u16 offs);
 
 	void Prologue();
-	void BBEnd();
+	void BlockBoundary();
 
 	template <typename DstA, typename SrcA>
 	void AllocOp(DstA &&dst, SrcA &&src, bool unsafe = false)
@@ -153,24 +161,25 @@ struct RegAlloc {
 		AllocOp(dst.data(), dst.size(), src.data(), src.size(), unsafe);
 	}
 	void AllocOp(VReg **dstl, u8 dst_n, VReg **srcl, u8 src_n, bool unsafe = false);
-	void CallOp(bool use_state = true);
+	void CallOp(bool use_globals = true);
+
+	bool IsGlobalScope()
+	{
+		return ascope == &ascope_global;
+	}
 
 	AllocScope *ascope{};
+	AllocScope ascope_global;
 
-	std::array<VReg *, N_PREGS> p2v{nullptr};
 	std::array<VReg, 64> vregs{};
-	u16 num_vregs{0};
-	u16 num_globals{0};
-
-	Mask fixed{0};
 
 	VReg *state_base{nullptr};
 	VReg *frame_base{nullptr};
 	VReg *mem_base{nullptr};
 	VReg *state_map{nullptr};
 
+	std::array<VReg *, N_PREGS> p2v{nullptr};
 	static constexpr u16 frame_size{32 * sizeof(u64)};
-	u16 frame_cur{sizeof(u64)}; // first spill is reserved
 
 	QuickJIT *ctx{};
 };

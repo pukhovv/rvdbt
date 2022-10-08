@@ -130,9 +130,8 @@ void Codegen::SetupCtx(QuickJIT *ctx_)
 {
 	ctx = ctx_;
 	auto ra = ctx->ra;
-	// ra->fixed.Set(RegAlloc::PReg(asmjit::x86::Gp::kIdBp));
-	ra->fixed.Set(RegAlloc::PReg(TMP1C));
-	ra->fixed.Set(RegAlloc::PReg(TMP2));
+	// ra->ascope->fixed.Set(RegAlloc::PReg(asmjit::x86::Gp::kIdBp));
+	ra->ascope->fixed.Set(RegAlloc::PReg(TMP1C));
 
 	ra->state_base = ra->AllocVRegFixed("state", RegAlloc::VReg::Type::I64, RegAlloc::PReg(STATE));
 	ra->frame_base = ra->AllocVRegFixed("frame", RegAlloc::VReg::Type::I64, RegAlloc::PReg(SP));
@@ -233,7 +232,7 @@ void Codegen::Call(asmjit::Operand const *args, u8 nargs)
 void Codegen::BranchTBDir(u32 ip, u8 no, bool pre_epilogue)
 {
 	tcache::OnTranslateBr(ctx->tb, ip);
-	ctx->ra->BBEnd();
+	ctx->ra->BlockBoundary();
 
 	auto *slot = (BranchSlot *)j.bufferPtr();
 	j.embedUInt8(0, sizeof(BranchSlot));
@@ -263,29 +262,28 @@ void Codegen::SetCC(asmjit::x86::CondCode cc, asmjit::Operand rd, asmjit::Operan
 void Codegen::BranchCC(asmjit::Label taken, asmjit::x86::CondCode cc, asmjit::Operand lhs,
 		       asmjit::Operand rhs)
 {
-	ctx->ra->BBEnd();
+	ctx->ra->BlockBoundary();
 	x86Cmp(&cc, lhs, rhs);
 	j.emit(asmjit::x86::Inst::jccFromCond(cc), taken);
 }
 
 void Codegen::Bind(asmjit::Label l)
 {
-	ctx->ra->BBEnd();
+	ctx->ra->BlockBoundary();
 	j.bind(l);
 }
 
 void Codegen::BranchTBInd(asmjit::Operand target)
 {
-	assert(target.isPhysReg());
+	assert(target.isPhysReg() && target.id() == TMP1C);
 	auto ptgt = target.as<asmjit::x86::Gp>().r32();
 
-	ctx->ra->BBEnd();
+	ctx->ra->BlockBoundary();
 	auto slowpath = j.newLabel();
 	{
 		// Inlined jmp_cache lookup
-		// TODO: TMP1C is already allocated, implement TMPScope and get rid of such temps
-		auto tmp0 = asmjit::x86::gpq(TMP2);
-		auto tmp1 = asmjit::x86::gpq(asmjit::x86::Gp::kIdR8); // naah, that's ok
+		auto tmp0 = asmjit::x86::gpq(asmjit::x86::Gp::kIdDi);
+		auto tmp1 = asmjit::x86::gpq(asmjit::x86::Gp::kIdSi);
 		j.mov(tmp1.r64(), (uintptr_t)tcache::jmp_cache_brind.data());
 		j.imul(tmp0.r32(), ptgt.r32(), tcache::JMP_HASH_MULT);
 		j.shr(tmp0.r32(), 32 - tcache::JMP_CACHE_BITS);
@@ -306,6 +304,19 @@ void Codegen::BranchTBInd(asmjit::Operand target)
 						   ctx->ra->state_base->GetPReg(), ptgt.r64()};
 	Call(call_ops.data(), call_ops.size());
 	j.jmp(asmjit::x86::rdx);
+}
+
+void Codegen::Spill(RegAlloc::VReg *v)
+{
+	ctx->cg->j.mov(
+	    asmjit::x86::ptr(v->spill_base->GetPReg(), v->spill_offs, RegAlloc::TypeToSize(v->type)),
+	    v->GetPReg());
+}
+
+void Codegen::Fill(RegAlloc::VReg *v)
+{
+	ctx->cg->j.mov(v->GetPReg(), asmjit::x86::ptr(v->spill_base->GetPReg(), v->spill_offs,
+						      RegAlloc::TypeToSize(v->type)));
 }
 
 QuickJIT::QuickJIT()
