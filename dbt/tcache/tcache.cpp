@@ -3,7 +3,7 @@
 #include "dbt/core.h"
 #include "dbt/execute.h"
 #include "dbt/guest/rv32_cpu.h"
-#include "dbt/guest/rv32_decode.h"
+#include "dbt/guest/rv32_insn.h"
 #include <cassert>
 #include <cstdint>
 #include <cstdio>

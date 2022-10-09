@@ -10,10 +10,9 @@ add_library(dbtstatic STATIC
 	qjit/regalloc.cpp
 	tcache/tcache.cpp
 
-	guest/rv32_qjit.cpp
-	guest/rv32_decode.cpp
-	guest/rv32_qjit.cpp
+	guest/rv32_insn.cpp
 	guest/rv32_interp.cpp
+	guest/rv32_qjit.cpp
 )
 target_include_directories(dbtstatic PUBLIC "${PROJECT_SOURCE_DIR}")
 

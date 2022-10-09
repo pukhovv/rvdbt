@@ -204,14 +204,9 @@ asmjit::x86::Mem QuickTranslator::CreateMemOp(RegAlloc::VReg *base, u32 offs, u8
 void QuickTranslator::TranslateInsn()
 {
 	auto *insn_ptr = (u32 *)mmu::g2h(insn_ip);
-	insn::DecodeParams insn{*insn_ptr};
 
-#define OP(name) return H_##name(insn_ptr);
-#define OP_ILL OP(ill)
-	RV32_DECODE_SWITCH(insn)
-#undef OP_ILL
-#undef OP
-	unreachable("");
+	using decoder = insn::Decoder<QuickTranslator>;
+	(this->*decoder::Decode(insn_ptr))(insn_ptr);
 }
 
 #define TRANSLATOR(name)                                                                                     \
@@ -223,13 +218,13 @@ void QuickTranslator::TranslateInsn()
 		if constexpr ((flags & insn::Flags::MayTrap) || flags & insn::Flags::Branch) {               \
 			cg->j.mov(vreg_ip->GetSpill(), insn_ip);                                             \
 		}                                                                                            \
-		_##name(i);                                                                                  \
+		Impl_##name(i);                                                                              \
 		if constexpr (flags & insn::Flags::Branch) {                                                 \
 			control = QuickTranslator::Control::BRANCH;                                          \
 		}                                                                                            \
 		insn_ip += 4;                                                                                \
 	}                                                                                                    \
-	ALWAYS_INLINE void QuickTranslator::_##name(insn::Insn_##name i)
+	ALWAYS_INLINE void QuickTranslator::Impl_##name(insn::Insn_##name i)
 
 #define TRANSLATOR_TOHELPER(name)                                                                            \
 	TRANSLATOR(name)                                                                                     \

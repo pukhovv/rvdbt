@@ -1,5 +1,6 @@
 #include "dbt/execute.h"
 #include "dbt/guest/rv32_decode.h"
+#include "dbt/guest/rv32_runtime.h"
 #include <cstdint>
 #include <type_traits>
 
@@ -16,15 +17,15 @@ namespace dbt::rv32
 	} while (0)
 
 #define HANDLER(name)                                                                                        \
-	static ALWAYS_INLINE void HandleOp_##name(CPUState *s, u32 &gip, u8 *vmem, insn::Insn_##name i);     \
-	static ALWAYS_INLINE void HandleFull_##name(CPUState *state, u32 &gip, u8 *vmem, u32 insn_raw)       \
+	static ALWAYS_INLINE void Impl_##name(CPUState *s, u32 &gip, u8 *vmem, insn::Insn_##name i);         \
+	static ALWAYS_INLINE void H_##name(CPUState *state, u32 &gip, u8 *vmem, u32 insn_raw)                \
 	{                                                                                                    \
 		insn::Insn_##name i{(u32)insn_raw};                                                          \
 		static constexpr auto flags = decltype(i)::flags;                                            \
 		if constexpr ((flags & insn::Flags::MayTrap)) {                                              \
 			state->ip = GET_GIP();                                                               \
 		}                                                                                            \
-		HandleOp_##name(state, gip, vmem, i);                                                        \
+		Impl_##name(state, gip, vmem, i);                                                            \
 		if constexpr (flags & insn::Flags::HasRd) {                                                  \
 			state->gpr[0] = 0;                                                                   \
 		}                                                                                            \
@@ -34,21 +35,13 @@ namespace dbt::rv32
 			gip += 4;                                                                            \
 		}                                                                                            \
 	}                                                                                                    \
-	static void HandleInterp_##name(CPUState *state, u32 gip, u8 *vmem, u32 insn_raw)                    \
-	{                                                                                                    \
-		static constexpr auto flags = insn::Insn_##name::flags;                                      \
-		HandleFull_##name(state, gip, vmem, insn_raw);                                               \
-		if constexpr (flags & insn::Flags::Branch)                                                   \
-			return;                                                                              \
-		MUSTTAIL return Interpreter::_Dispatch(state, gip, vmem, 0);                                 \
-	}                                                                                                    \
 	extern "C" void __attribute__((used)) HelperOp_##name(CPUState *state, u32 insn_raw)                 \
 	{                                                                                                    \
 		u32 gip = state->ip;                                                                         \
-		HandleFull_##name(state, gip, mmu::base, insn_raw);                                          \
+		H_##name(state, gip, mmu::base, insn_raw);                                                   \
 		state->ip = gip;                                                                             \
 	}                                                                                                    \
-	static ALWAYS_INLINE void HandleOp_##name(CPUState *s, u32 &gip, u8 *vmem, insn::Insn_##name i)
+	static ALWAYS_INLINE void Impl_##name(CPUState *s, u32 &gip, u8 *vmem, insn::Insn_##name i)
 
 #define HANDLER_BCC(name, type, cond)                                                                        \
 	HANDLER(name)                                                                                        \
@@ -175,16 +168,36 @@ HANDLER(ebreak)
 	RaiseTrap();
 }
 
-void Interpreter::_Dispatch(CPUState *state, u32 gip, u8 *vmem, [[maybe_unused]] u32 unused)
+void Interpreter::Execute(CPUState *state)
 {
-	u32 insn_raw = *(u32 *)(gip + vmem);
-	insn::DecodeParams insn{insn_raw};
-#define OP(name) MUSTTAIL return HandleInterp_##name(state, gip, vmem, insn_raw);
-#define OP_ILL OP(ill)
-	RV32_DECODE_SWITCH(insn)
-#undef OP_ILL
+	u8 *vmem = mmu::base;
+	u32 gip = state->ip;
+	void *insn_ptr;
+	goto dispatch;
+
+	static constexpr void *loc_gotos[] = {
+#define OP(name, format_, flags_) [(u8)insn::Op::_##name] = &&Lab_##name,
+	    RV32_OPCODE_LIST()
 #undef OP
-	unreachable("");
+	};
+#define OP(name, format_, flags_)                                                                            \
+	Lab_##name:                                                                                          \
+	{                                                                                                    \
+		H_##name(state, gip, vmem, *(u32 *)insn_ptr);                                                \
+		if constexpr (false && insn::Insn_##name::flags & insn::Flags::Branch)                       \
+			return;                                                                              \
+		goto dispatch;                                                                               \
+	}
+	RV32_OPCODE_LIST()
+#undef OP
+
+dispatch:
+	//
+	{
+		insn_ptr = vmem + gip;
+		using decoder = insn::Decoder<insn::Op>;
+		goto *loc_gotos[(u8)decoder::Decode(insn_ptr)];
+	}
 }
 
 } // namespace dbt::rv32

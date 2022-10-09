@@ -28,13 +28,6 @@ typedef int8_t i8;
 #define ALWAYS_INLINE inline __attribute__((always_inline))
 #define NOINLINE __attribute__((noinline))
 
-#ifndef __clang__
-#error "This project requires __attribute__((musttail)) which is supported only in Clang"
-#define MUSTTAIL
-#else
-#define MUSTTAIL __attribute__((musttail))
-#endif
-
 #define unreachable(str)                                                                                     \
 	do {                                                                                                 \
 		assert((str) && 0);                                                                          \

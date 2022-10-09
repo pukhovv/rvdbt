@@ -1,7 +1,7 @@
 #pragma once
 
+#include "dbt/guest/rv32_insn.h"
 #include "dbt/qjit/qjit.h"
-#include "dbt/guest/rv32_decode.h"
 
 namespace dbt::qjit::rv32
 {
@@ -14,16 +14,17 @@ struct QuickTranslator : public QuickJIT {
 	u32 insn_ip{0};
 	std::array<RegAlloc::VReg *, 32> vreg_gpr{};
 
+#define OP(name, format_, flags_)                                                                            \
+	void H_##name(void *insn);                                                                           \
+	void Impl_##name(rv32::insn::Insn_##name);                                                           \
+	static constexpr auto _##name = &QuickTranslator::H_##name;
+	RV32_OPCODE_LIST()
+#undef OP
+
 	static TBlock *Translate(CPUState *state, u32 ip);
 
 private:
 	explicit QuickTranslator();
-
-#define OP(name, format, flags)                                                                              \
-	void H_##name(void *insn);                                                                           \
-	void _##name(rv32::insn::Insn_##name);
-	RV32_OPCODE_LIST()
-#undef OP
 
 	void TranslateInsn();
 

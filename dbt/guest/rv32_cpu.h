@@ -1,11 +1,9 @@
 #pragma once
 
 #include "dbt/core.h"
+#include "dbt/guest/rv32_insn.h"
 
-namespace dbt
-{
-
-namespace rv32
+namespace dbt::rv32
 {
 enum class TrapCode : u32 {
 	NONE = 0,
@@ -31,20 +29,9 @@ struct CPUState {
 	TrapCode trapno;
 };
 
-struct Interpreter {
-	static ALWAYS_INLINE void Execute(CPUState *state)
-	{
-		return _Dispatch(state, state->ip, mmu::base, 0);
-	}
+} // namespace dbt::rv32
 
-	static void _Dispatch(CPUState *state, u32 gip, u8 *vmem, [[maybe_unused]] u32 unused);
-
-private:
-	Interpreter() = delete;
-};
-} // namespace rv32
-
+namespace dbt
+{
 using CPUState = rv32::CPUState;
-using Interpreter = rv32::Interpreter;
-
 } // namespace dbt
