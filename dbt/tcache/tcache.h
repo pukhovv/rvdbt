@@ -80,8 +80,7 @@ struct tcache {
 	static void *AllocateCode(size_t sz, u16 align);
 	static TBlock *AllocateTBlock();
 
-	static constexpr u32 JMP_CACHE_BITS = 10;
-	static constexpr u32 JMP_HASH_MULT = 2654435761;
+	static constexpr u32 JMP_CACHE_BITS = 12;
 	using JMPCache = std::array<TBlock *, 1u << JMP_CACHE_BITS>;
 	static JMPCache jmp_cache_generic;
 	static JMPCache jmp_cache_brind;
@@ -93,8 +92,7 @@ private:
 
 	static ALWAYS_INLINE u32 jmp_hash(u32 ip)
 	{
-		u32 constexpr gr = JMP_HASH_MULT;
-		return (gr * ip) >> (32 - JMP_CACHE_BITS);
+		return (ip >> 2) & ((1ull << JMP_CACHE_BITS) - 1);
 	}
 
 	using MapType = std::map<u32, TBlock *>;

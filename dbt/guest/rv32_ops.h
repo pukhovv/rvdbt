@@ -1,6 +1,6 @@
 #pragma once
 
-#define RV32_OPCODE_LIST()                                                                                  \
+#define RV32_OPCODE_LIST()                                                                                   \
 	OP(ill, Base, Flags::MayTrap)                                                                        \
 	OP(lui, U, 0)                                                                                        \
 	OP(auipc, U, 0)                                                                                      \

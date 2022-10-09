@@ -47,13 +47,13 @@ HELPER_ASM BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void
 	      "pushq	%r15\n\t"
 	      "movq 	%rdi, %r13\n\t" // STATE
 	      "movq	%rsi, %r12\n\t" // MEMBASE
-	      "subq	$256, %rsp\n\t" // RegAlloc::frame_size
+	      "subq	$248, %rsp\n\t" // RegAlloc::frame_size
 	      "jmpq	*%rdx\n\t");	// tc_ptr
 }
 
 HELPER_ASM void trampoline_qjit_to_host()
 {
-	__asm("addq	$256, %rsp\n\t" // RegAlloc::frame_size
+	__asm("addq	$248, %rsp\n\t" // RegAlloc::frame_size
 	      "popq	%r15\n\t"
 	      "popq	%r14\n\t"
 	      "popq	%r13\n\t"
@@ -62,7 +62,7 @@ HELPER_ASM void trampoline_qjit_to_host()
 	      "popq	%rbp\n\t"
 	      "retq	\n\t");
 }
-static_assert(RegAlloc::frame_size == 248 + sizeof(u64));
+static_assert(RegAlloc::frame_size == 248);
 
 HELPER_ASM void stub_link_branch()
 {
@@ -285,8 +285,11 @@ void Codegen::BranchTBInd(asmjit::Operand target)
 		auto tmp0 = asmjit::x86::gpq(asmjit::x86::Gp::kIdDi);
 		auto tmp1 = asmjit::x86::gpq(asmjit::x86::Gp::kIdSi);
 		j.mov(tmp1.r64(), (uintptr_t)tcache::jmp_cache_brind.data());
-		j.imul(tmp0.r32(), ptgt.r32(), tcache::JMP_HASH_MULT);
-		j.shr(tmp0.r32(), 32 - tcache::JMP_CACHE_BITS);
+
+		j.mov(tmp0.r32(), ptgt.r32());
+		j.shr(tmp0.r32(), 2);
+		j.and_(tmp0.r32(), (1ull << tcache::JMP_CACHE_BITS) - 1);
+
 		j.mov(tmp0.r64(), asmjit::x86::ptr(tmp1.r64(), tmp0.r64(), 3));
 		j.test(tmp0.r64(), tmp0.r64());
 		j.je(slowpath);

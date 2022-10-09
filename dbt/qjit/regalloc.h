@@ -179,7 +179,7 @@ struct RegAlloc {
 	VReg *state_map{nullptr};
 
 	std::array<VReg *, N_PREGS> p2v{nullptr};
-	static constexpr u16 frame_size{32 * sizeof(u64)};
+	static constexpr u16 frame_size{31 * sizeof(u64)};
 
 	QuickJIT *ctx{};
 };
