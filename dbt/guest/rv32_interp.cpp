@@ -173,6 +173,11 @@ void Interpreter::Execute(CPUState *state)
 	u8 *vmem = mmu::base;
 	u32 gip = state->ip;
 	void *insn_ptr;
+
+	if constexpr (config::dump_trace) {
+		state->DumpTrace();
+	}
+
 	goto dispatch;
 
 	static constexpr void *loc_gotos[] = {
@@ -184,7 +189,7 @@ void Interpreter::Execute(CPUState *state)
 	Lab_##name:                                                                                          \
 	{                                                                                                    \
 		H_##name(state, gip, vmem, *(u32 *)insn_ptr);                                                \
-		if constexpr (false && insn::Insn_##name::flags & insn::Flags::Branch)                       \
+		if constexpr (config::dump_trace && insn::Insn_##name::flags & insn::Flags::Branch)          \
 			return;                                                                              \
 		goto dispatch;                                                                               \
 	}

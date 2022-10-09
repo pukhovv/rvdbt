@@ -5,10 +5,11 @@
 
 namespace dbt
 {
+LOG_STREAM(log_mmu, "[mmu]");
 
 void __attribute__((noreturn)) Panic(char const *msg)
 {
-	std::cerr << "[PANIC]: " << msg << "\n";
+	fprintf(stderr, "Panic: %s\n", msg);
 	abort();
 }
 
@@ -60,7 +61,7 @@ void *mmu::MMap(u32 vaddr, u32 len, int prot, int flags, int fd, size_t offs)
 		if (hptr == hptr_prev) {
 			break;
 		}
-		std::cerr << "miss-allocation: " << hptr << std::endl;
+		log_mmu("mmap-miss %p", hptr);
 		hptr_prev = hptr;
 	}
 	Panic("mmu::MMap failed");

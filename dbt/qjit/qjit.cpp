@@ -98,6 +98,52 @@ HELPER void helper_raise()
 	RaiseTrap();
 }
 
+HELPER_ASM void stub_trace()
+{
+	__asm("pushq	%rax\n\t"
+	      "pushq	%rcx\n\t"
+	      "pushq	%rdx\n\t"
+	      "pushq	%rbx\n\t"
+	      "pushq	%rsp\n\t"
+	      "pushq	%rbp\n\t"
+	      "pushq	%rsi\n\t"
+	      "pushq	%rdi\n\t"
+	      "pushq	%r8\n\t"
+	      "pushq	%r9\n\t"
+	      "pushq	%r10\n\t"
+	      "pushq	%r11\n\t"
+	      "pushq	%r12\n\t"
+	      "pushq	%r13\n\t"
+	      "pushq	%r14\n\t"
+	      "pushq	%r15\n\t"
+	      "movq	%r13, %rdi\n\t" // STATE
+	      "subq	$8, %rsp\n\t"
+	      "callq	helper_dump_trace@plt\n\t"
+	      "addq	$8, %rsp\n\t"
+	      "popq	%r15\n\t"
+	      "popq	%r14\n\t"
+	      "popq	%r13\n\t"
+	      "popq	%r12\n\t"
+	      "popq	%r11\n\t"
+	      "popq	%r10\n\t"
+	      "popq	%r9\n\t"
+	      "popq	%r8\n\t"
+	      "popq	%rdi\n\t"
+	      "popq	%rsi\n\t"
+	      "popq	%rbp\n\t"
+	      "popq	%rsp\n\t"
+	      "popq	%rbx\n\t"
+	      "popq	%rdx\n\t"
+	      "popq	%rcx\n\t"
+	      "popq	%rax\n\t"
+	      "retq	\n\t");
+}
+
+HELPER void helper_dump_trace(CPUState *state)
+{
+	state->DumpTrace();
+}
+
 void BranchSlot::Reset()
 {
 	auto *patch = new (&code) BranchSlotPatch::Call64Abs();
@@ -148,6 +194,11 @@ void Codegen::SetupCtx(QuickJIT *ctx_)
 void Codegen::Prologue()
 {
 	tcache::OnTranslate(ctx->tb);
+
+	if constexpr (config::dump_trace) {
+		j.mov(ctx->vreg_ip->GetSpill(), ctx->tb->ip);
+		j.call(stub_trace);
+	}
 	// static_assert(TB_PROLOGUE_SZ == 7);
 	// j.long_().sub(asmjit::x86::regs::rsp, ctx->ra->frame_size + 8);
 }
@@ -176,6 +227,27 @@ void Codegen::EmitCode()
 	}
 	jcode.copyFlattenedData(tb->tcode.ptr, tb->tcode.size);
 	tb->tcode.size = jcode.codeSize();
+}
+
+void Codegen::DumpCode()
+{
+	if constexpr (!log_qjit.enabled()) {
+		return;
+	}
+	auto &tcode = ctx->tb->tcode;
+	size_t sz = tcode.size;
+	auto p = (u8 *)tcode.ptr;
+
+	std::array<char, 1024> buf;
+
+	if (sz * 2 + 1 > buf.size()) {
+		log_qjit("jitcode is too long for dump");
+	}
+
+	for (size_t i = 0; i < sz; ++i) {
+		sprintf(&buf[2 * i], "%02x", p[i]);
+	}
+	log_qjit.write(buf.data());
 }
 
 #ifdef CONFIG_USE_STATEMAPS

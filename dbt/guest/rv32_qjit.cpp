@@ -5,6 +5,7 @@
 #include "dbt/guest/rv32_runtime.h"
 #include <cstdint>
 #include <cstdlib>
+#include <sstream>
 #include <type_traits>
 
 namespace dbt::qjit::rv32
@@ -36,7 +37,7 @@ TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 	t.tb->ip = ip;
 	t.insn_ip = ip;
 
-	log_bt() << "Translating [" << std::hex << ip << "]:";
+	log_qjit("Translate [%08zx]", ip);
 	t.ra->Prologue();
 	t.cg->Prologue();
 
@@ -55,9 +56,9 @@ TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 
 	t.cg->Epilogue();
 
-	log_bt() << "Emitting    [" << std::hex << ip << "]:";
+	log_qjit("Emit[%08zx]", ip);
 	t.cg->EmitCode();
-	t.tb->Dump();
+	t.cg->DumpCode();
 
 	return t.tb;
 }
@@ -213,7 +214,12 @@ void QuickTranslator::TranslateInsn()
 	void QuickTranslator::H_##name(void *insn)                                                           \
 	{                                                                                                    \
 		insn::Insn_##name i{*(u32 *)insn};                                                           \
-		log_bt() << std::hex << "\t" << insn_ip << " " #name " \t " << i;                            \
+		if constexpr (log_qjit.enabled()) {                                                          \
+			std::stringstream ss;                                                                \
+			ss << i;                                                                             \
+			const auto &res = ss.str();                                                          \
+			log_qjit("      %08zx: %-8s    %s", insn_ip, #name, res.c_str());                    \
+		}                                                                                            \
 		static constexpr auto flags = decltype(i)::flags;                                            \
 		if constexpr ((flags & insn::Flags::MayTrap) || flags & insn::Flags::Branch) {               \
 			cg->j.mov(vreg_ip->GetSpill(), insn_ip);                                             \

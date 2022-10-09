@@ -6,6 +6,8 @@
 namespace dbt
 {
 
+LOG_STREAM(log_dbt, "[BT]");
+
 extern sigjmp_buf trap_unwind_env;
 
 ALWAYS_INLINE void RaiseTrap()

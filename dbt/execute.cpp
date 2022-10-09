@@ -22,12 +22,13 @@ void Execute(CPUState *state)
 
 	while (!HandleTrap(state)) {
 		assert(state->gpr[0] == 0);
+		if constexpr (config::use_interp) {
+			Interpreter::Execute(state);
+			continue;
+		}
+
 		TBlock *tb = tcache::Lookup(state->ip);
 		if (tb == nullptr) {
-			if constexpr (config::use_interp) {
-				Interpreter::Execute(state);
-				continue;
-			}
 			tb = qjit::rv32::QuickTranslator::Translate(state, state->ip);
 			tcache::Insert(tb);
 		}
@@ -41,10 +42,6 @@ void Execute(CPUState *state)
 		branch_slot = qjit::trampoline_host_to_qjit(state, mmu::base, tb->tcode.ptr);
 		if (unlikely(branch_slot)) {
 			state->ip = branch_slot->gip;
-		}
-
-		if constexpr (!decltype(log_bt())::null) {
-			state->DumpTrace();
 		}
 	}
 }

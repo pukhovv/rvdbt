@@ -7,6 +7,7 @@
 
 namespace dbt::qjit
 {
+LOG_STREAM(log_qjit, "[qjit]");
 
 struct BranchSlot {
 	void Reset();
@@ -34,6 +35,7 @@ struct Codegen {
 	void Prologue();
 	void Epilogue();
 	void EmitCode();
+	void DumpCode();
 
 	struct JitErrorHandler : asmjit::ErrorHandler {
 		virtual void handleError(asmjit::Error err, const char *message,

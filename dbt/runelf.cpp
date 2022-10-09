@@ -6,7 +6,7 @@
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
-		std::cerr << "usage: runelf <elf-path>\n";
+		fprintf(stderr, "usage: runelf <elf-path>\n");
 		return 1;
 	}
 

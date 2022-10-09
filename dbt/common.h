@@ -1,12 +1,12 @@
 #pragma once
 
+#include <cstddef>
 #include <cassert>
 #include <cstdint>
-#include <cstring>
-#include <iostream>
 #include <type_traits>
 
 #include "dbt/config.h"
+#include "dbt/logger.h"
 
 typedef uintptr_t uptr;
 typedef uint64_t u64;
@@ -76,48 +76,7 @@ typename std::enable_if_t<!std::is_same_v<T, P>> unaligned_store(P *ptr, V val)
 	unaligned_store<T>(reinterpret_cast<T *>(ptr), static_cast<T>(val));
 }
 
-struct Logger {
-	static constexpr bool null = false;
-	template <typename T>
-	inline void write(T &&x)
-	{
-		std::cerr << x;
-	}
-	Logger() = default;
-	Logger(char const *pref)
-	{
-		write(pref);
-	}
-	~Logger()
-	{
-		write("\n");
-		std::cerr.flags(flags);
-	}
-	template <typename T>
-	Logger &operator<<(T &&x)
-	{
-		write(std::forward<T>(x));
-		return *this;
-	}
-
-private:
-	std::ios_base::fmtflags flags{std::cerr.flags()};
-};
-
-struct NullLogger {
-	static constexpr bool null = true;
-	template <typename T>
-	inline void write(T &&x)
-	{
-	}
-	template <typename T>
-	NullLogger operator<<(T &&x)
-	{
-		return NullLogger();
-	}
-};
-
 namespace dbt
 {
-void __attribute__((noreturn)) Panic(char const *msg = "[DBT]: aborted");
+void __attribute__((noreturn)) Panic(char const *msg = "");
 } // namespace dbt

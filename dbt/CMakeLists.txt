@@ -4,6 +4,7 @@ add_library(dbtstatic STATIC
 	arena.cpp
 	core.cpp
 	execute.cpp
+	logger.cpp
 	ukernel.cpp
 
 	qjit/qjit.cpp

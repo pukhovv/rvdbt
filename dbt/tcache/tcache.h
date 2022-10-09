@@ -11,19 +11,13 @@
 
 namespace dbt
 {
+LOG_STREAM(log_cflow, "[cflow]");
 
 struct alignas(8) TBlock {
 	struct TCode {
 		void *ptr{nullptr};
 		size_t size{0};
 	};
-
-	inline void Dump()
-	{
-		if constexpr (!decltype(log_bt())::null)
-			DumpImpl();
-	}
-	void DumpImpl();
 
 	TCode tcode{};
 	u32 ip{0};
@@ -58,20 +52,20 @@ struct tcache {
 
 	static inline void OnTranslate(TBlock *tb)
 	{
-		log_cflow() << "B" << tb->ip << "[fillcolor=cyan]";
+		log_cflow("B%08zx[fillcolor=cyan]", tb->ip);
 	}
 
 	static inline void OnTranslateBr(TBlock *tb, u32 tgtip)
 	{
-		log_cflow() << "B" << tb->ip << "->B" << tgtip;
+		log_cflow("B%08zx->B%08zx", tb->ip, tgtip);
 	}
 
 	static inline void OnBrind(TBlock *tb)
 	{
 		jmp_cache_brind[jmp_hash(tb->ip)] = tb;
-		if constexpr (!decltype(log_cflow())::null) {
+		if constexpr (log_cflow.enabled()) {
 			if (!tb->flags.is_brind_target) {
-				log_cflow() << "B" << tb->ip << "[fillcolor=orange]";
+				log_cflow("B%08zx[fillcolor=orange]", tb->ip);
 			}
 		}
 		tb->flags.is_brind_target = true;

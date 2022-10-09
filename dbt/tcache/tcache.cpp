@@ -14,19 +14,6 @@
 namespace dbt
 {
 
-void TBlock::DumpImpl()
-{
-	size_t sz = tcode.size;
-	auto p = (u8 *)tcode.ptr;
-	auto log = log_bt();
-	log << "jitcode: ";
-	for (size_t i = 0; i < sz; ++i) {
-		char buf[4] = {};
-		sprintf(buf, "%2.2x", p[i]);
-		log.write(buf);
-	}
-}
-
 tcache::JMPCache tcache::jmp_cache_generic{};
 tcache::JMPCache tcache::jmp_cache_brind{};
 tcache::MapType tcache::tcache_map{};

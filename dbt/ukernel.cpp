@@ -16,13 +16,15 @@ extern "C" {
 
 namespace dbt
 {
+LOG_STREAM(log_ukernel, "[ukernel]");
+
 void ukernel::Execute(CPUState *state)
 {
 	while (true) {
 		dbt::Execute(state);
 		switch (state->trapno) {
 		case rv32::TrapCode::EBREAK:
-			std::cout << "[APP]: ebreak terminate\n";
+			log_ukernel("ebreak termiante");
 			return;
 		case rv32::TrapCode::ECALL:
 			state->ip += 4;
@@ -45,14 +47,15 @@ void ukernel::Syscall(CPUState *state)
 	u32 id = state->gpr[10];
 	switch (id) {
 	case 1: {
-		std::cout << "[APP]: input request\n";
+		log_ukernel("syscall readnum");
 		u32 res;
-		std::cin >> res;
+		fscanf(stdin, "%d", &res);
 		state->gpr[10] = res;
 		return;
 	}
 	case 2: {
-		std::cout << "[APP]: " << state->gpr[11] << "\n";
+		log_ukernel("syscall writenum");
+		fprintf(stdout, "%d\n", state->gpr[11]);
 		return;
 	}
 	default:

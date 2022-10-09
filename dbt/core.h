@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dbt/common.h"
+#include "dbt/logger.h"
 #include <csetjmp>
 #include <cstdint>
 #include <unordered_map>
