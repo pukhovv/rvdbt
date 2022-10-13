@@ -1,6 +1,7 @@
 #include "dbt/execute.h"
 #include "dbt/guest/rv32_decode.h"
 #include "dbt/guest/rv32_runtime.h"
+#include <atomic>
 #include <cstdint>
 #include <type_traits>
 
@@ -163,6 +164,8 @@ HANDLER(srl)
 }
 HANDLER_ArithmRR(or, u32, |);
 HANDLER_ArithmRR(and, u32, &);
+HANDLER(fence) {}
+HANDLER(fencei) {}
 HANDLER(ecall)
 {
 	RAISE_TRAP(TrapCode::ECALL);
@@ -174,9 +177,21 @@ HANDLER(ebreak)
 	RaiseTrap();
 }
 
-HANDLER_Unimpl(lrw);
-HANDLER_Unimpl(scw);
-HANDLER_Unimpl(amoswapw);
+// TODO: real atomics implementation, alignment checks
+HANDLER(lrw)
+{
+	s->gpr[i.rd()] = *(u32 *)(vmem + s->gpr[i.rs1()]);
+}
+HANDLER(scw)
+{
+	*(u32 *)(vmem + s->gpr[i.rs1()]) = s->gpr[i.rs2()];
+	s->gpr[i.rd()] = 0;
+}
+HANDLER(amoswapw)
+{
+	s->gpr[i.rd()] = reinterpret_cast<std::atomic<u32> *>(vmem + s->gpr[i.rs1()])
+			     ->exchange(s->gpr[i.rd()], std::memory_order_seq_cst);
+}
 HANDLER_Unimpl(amoaddw);
 HANDLER_Unimpl(amoxorw);
 HANDLER_Unimpl(amoandw);
@@ -186,14 +201,23 @@ HANDLER_Unimpl(amomaxw);
 HANDLER_Unimpl(amominuw);
 HANDLER_Unimpl(amomaxuw);
 
+#ifdef CONFIG_DUMP_TRACE_VERBOSE
+#define TRACE_INSN()                                                                                         \
+	state->ip = gip;                                                                                     \
+	state->DumpTrace("insn")
+#else
+#define TRACE_INSN()
+#endif
+
 void Interpreter::Execute(CPUState *state)
 {
 	u8 *vmem = mmu::base;
 	u32 gip = state->ip;
 	void *insn_ptr;
 
+entry:
 	if constexpr (config::dump_trace) {
-		state->DumpTrace();
+		state->DumpTrace("entry");
 	}
 
 	goto dispatch;
@@ -206,9 +230,10 @@ void Interpreter::Execute(CPUState *state)
 #define OP(name, format_, flags_)                                                                            \
 	Lab_##name:                                                                                          \
 	{                                                                                                    \
+		TRACE_INSN();                                                                                \
 		H_##name(state, gip, vmem, *(u32 *)insn_ptr);                                                \
 		if constexpr (config::dump_trace && insn::Insn_##name::flags & insn::Flags::Branch)          \
-			return;                                                                              \
+			goto entry;                                                                          \
 		goto dispatch;                                                                               \
 	}
 	RV32_OPCODE_LIST()

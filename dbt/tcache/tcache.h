@@ -52,12 +52,12 @@ struct tcache {
 
 	static inline void OnTranslate(TBlock *tb)
 	{
-		log_cflow("B%08zx[fillcolor=cyan]", tb->ip);
+		log_cflow("B%08x[fillcolor=cyan]", tb->ip);
 	}
 
 	static inline void OnTranslateBr(TBlock *tb, u32 tgtip)
 	{
-		log_cflow("B%08zx->B%08zx", tb->ip, tgtip);
+		log_cflow("B%08x->B%08x", tb->ip, tgtip);
 	}
 
 	static inline void OnBrind(TBlock *tb)
@@ -65,7 +65,7 @@ struct tcache {
 		jmp_cache_brind[jmp_hash(tb->ip)] = tb;
 		if constexpr (log_cflow.enabled()) {
 			if (!tb->flags.is_brind_target) {
-				log_cflow("B%08zx[fillcolor=orange]", tb->ip);
+				log_cflow("B%08x[fillcolor=orange]", tb->ip);
 			}
 		}
 		tb->flags.is_brind_target = true;

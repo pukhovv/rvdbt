@@ -11,6 +11,7 @@ enum class TrapCode : u32 {
 	ILLEGAL_INSN,
 	EBREAK,
 	ECALL,
+	TERMINATED,
 };
 
 struct CPUState {
@@ -22,7 +23,7 @@ struct CPUState {
 		return trapno == TrapCode::NONE;
 	}
 
-	void DumpTrace();
+	void DumpTrace(char const *event);
 
 	std::array<gpr_t, gpr_num> gpr;
 	gpr_t ip;

@@ -3,22 +3,35 @@
 #include "dbt/common.h"
 #include "dbt/guest/rv32_cpu.h"
 
+extern "C" {
+#include <elf.h>
+};
+
 namespace dbt
 {
 
 struct ukernel {
 	struct ElfImage {
-		u32 entry;
+		Elf32_Ehdr ehdr;
+		u32 load_addr;
 		u32 stack_start;
+		u32 entry;
+		u32 brk;
 	};
 
-	static void LoadElf(char const *path, ElfImage *img);
+	void LoadElf(char const *path, ElfImage *img);
+	void InitAVectors(ElfImage *elf);
 	static void InitThread(CPUState *state, ElfImage *elf);
-	static void Syscall(CPUState *state);
-	static void Execute(CPUState *state);
+
+	void Execute(CPUState *state);
+
+	static void SyscallDemo(CPUState *state);
+	void SyscallLinux(CPUState *state);
+
+	u32 do_sys_brk(u32 newbrk);
 
 private:
-	ukernel() {}
+	u32 brk{};
 };
 
 } // namespace dbt

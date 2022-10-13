@@ -40,6 +40,8 @@
 	OP(srl, R, 0)                                                                                        \
 	OP(or, R, 0)                                                                                         \
 	OP(and, R, 0)                                                                                        \
+	OP(fence, Base, 0)                                                                                   \
+	OP(fencei, Base, 0)                                                                                  \
 	OP(ecall, Base, Flags::MayTrap)                                                                      \
 	OP(ebreak, Base, Flags::MayTrap)                                                                     \
 	/**** RV32A ****/                                                                                    \

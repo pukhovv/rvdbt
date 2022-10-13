@@ -23,6 +23,7 @@ void mmu::Init()
 	if (base == MAP_FAILED || munmap(base + MIN_MMAP_ADDR, ASPACE_SIZE - MIN_MMAP_ADDR)) {
 		Panic("mmu::Init failed");
 	}
+	log_mmu("mmu::base initialized at %p", base);
 #endif
 }
 
@@ -36,7 +37,6 @@ void mmu::Destroy()
 
 void *mmu::MMap(u32 vaddr, u32 len, int prot, int flags, int fd, size_t offs)
 {
-	assert(len == roundup((size_t)len, PAGE_SIZE));
 	assert((u64)vaddr + len - 1 < ASPACE_SIZE);
 	if (flags & MAP_FIXED) {
 		void *hptr = g2h(vaddr);

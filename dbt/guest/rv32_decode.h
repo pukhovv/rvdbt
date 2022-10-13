@@ -136,7 +136,14 @@ struct Decoder {
 				OP_ILL;
 			}
 		case 0b0001111:
-			OP_ILL; /* fence */
+			switch (in.funct3()) { // TODO: check other fields
+			case 0b000:
+				OP(fence);
+			case 0b001:
+				OP(fencei);
+			default:
+				OP_ILL;
+			}
 		case 0b1110011:
 			switch (in.funct3() | in.rd() | in.rs1()) {
 			case 0:

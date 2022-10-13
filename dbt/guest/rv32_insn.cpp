@@ -1,6 +1,8 @@
 #include "dbt/guest/rv32_insn.h"
 #include "dbt/guest/rv32_runtime.h"
 
+#include <sstream>
+
 namespace dbt::rv32
 {
 
@@ -60,12 +62,17 @@ std::ostream &operator<<(std::ostream &o, A i)
 
 LOG_STREAM(log_trace, "[trace]");
 
-void CPUState::DumpTrace()
+void CPUState::DumpTrace(char const *event)
 {
-	log_trace("####### B%08zx", ip);
+	std::array<char, 1024> buf;
+	auto cur = buf.begin();
+
+	cur += snprintf(cur, 80, "#### %08x #### %s\n", ip, event);
 	for (int i = 0; i < 32; ++i) {
-		log_trace("%4.4s  %08zx", insn::GRPToName(i), gpr[i]);
+		cur += sprintf(cur, "%4.4s=%08x", insn::GRPToName(i), gpr[i]);
 	}
+
+	log_trace.write(buf.data());
 }
 
 } // namespace dbt::rv32

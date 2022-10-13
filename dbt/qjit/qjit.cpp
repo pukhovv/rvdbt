@@ -141,7 +141,7 @@ HELPER_ASM void stub_trace()
 
 HELPER void helper_dump_trace(CPUState *state)
 {
-	state->DumpTrace();
+	state->DumpTrace("entry");
 }
 
 void BranchSlot::Reset()
@@ -242,6 +242,7 @@ void Codegen::DumpCode()
 
 	if (sz * 2 + 1 > buf.size()) {
 		log_qjit("jitcode is too long for dump");
+		return;
 	}
 
 	for (size_t i = 0; i < sz; ++i) {

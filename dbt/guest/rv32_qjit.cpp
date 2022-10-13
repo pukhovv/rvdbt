@@ -37,7 +37,7 @@ TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 	t.tb->ip = ip;
 	t.insn_ip = ip;
 
-	log_qjit("Translate [%08zx]", ip);
+	log_qjit("Translate [%08x]", ip);
 	t.ra->Prologue();
 	t.cg->Prologue();
 
@@ -56,7 +56,7 @@ TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 
 	t.cg->Epilogue();
 
-	log_qjit("Emit[%08zx]", ip);
+	log_qjit("Emit[%08x]", ip);
 	t.cg->EmitCode();
 	t.cg->DumpCode();
 
@@ -218,7 +218,7 @@ void QuickTranslator::TranslateInsn()
 			std::stringstream ss;                                                                \
 			ss << i;                                                                             \
 			const auto &res = ss.str();                                                          \
-			log_qjit("      %08zx: %-8s    %s", insn_ip, #name, res.c_str());                    \
+			log_qjit("      %08x: %-8s    %s", insn_ip, #name, res.c_str());                     \
 		}                                                                                            \
 		static constexpr auto flags = decltype(i)::flags;                                            \
 		if constexpr ((flags & insn::Flags::MayTrap) || flags & insn::Flags::Branch) {               \
@@ -382,6 +382,8 @@ TRANSLATOR_ShiftR(sra, asmjit::x86::Inst::kIdSar);
 TRANSLATOR_ShiftR(srl, asmjit::x86::Inst::kIdShr);
 TRANSLATOR_ArithmRR(or, asmjit::x86::Inst::kIdOr);
 TRANSLATOR_ArithmRR(and, asmjit::x86::Inst::kIdAnd);
+TRANSLATOR_TOHELPER(fence);
+TRANSLATOR_TOHELPER(fencei);
 TRANSLATOR_TOHELPER(ecall);
 TRANSLATOR_TOHELPER(ebreak);
 
