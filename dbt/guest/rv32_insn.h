@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dbt/bitfield.h"
 #include "dbt/common.h"
 #include "dbt/guest/rv32_ops.h"
 #include <limits>
@@ -19,156 +20,98 @@ enum Types : u32 {
 };
 }
 
-struct Base {
-	u8 opcode()
-	{
-		return bitseq(bitrange{0, 6});
+#define INSN_FIELD(name)                                                                                     \
+	ALWAYS_INLINE constexpr auto name()                                                                  \
+	{                                                                                                    \
+		return _##name::decode(raw);                                                                 \
+	}
+#define INSN_FIELD_SC(name, scale)                                                                           \
+	ALWAYS_INLINE constexpr auto name()                                                                  \
+	{                                                                                                    \
+		return _##name::decode(raw) << (scale);                                                      \
 	}
 
+struct Base {
 	u32 raw;
 
+	INSN_FIELD(opcode)
+
 protected:
-	struct bitrange {
-		u8 l, h;
-	};
+	using _opcode = bf_range<u8, 0, 6>;
+	using _rd = bf_range<u8, 7, 11>;
+	using _rs1 = bf_range<u8, 15, 19>;
+	using _rs2 = bf_range<u8, 20, 24>;
+	using _funct3 = bf_range<u8, 12, 14>;
+	using _funct7 = bf_range<u8, 25, 31>;
+	using _funct12 = bf_range<u16, 20, 31>;
 
-	inline constexpr std::pair<u32, u8> read_bitrange(bitrange r)
-	{
-		u32 sh = r.h - r.l + 1;
-		u32 f = (raw >> r.l) & ((u32(1) << sh) - 1);
-		return std::make_pair(f, sh);
-	}
-
-	inline constexpr u32 bitseq(bitrange r)
-	{
-		return read_bitrange(r).first;
-	}
-
-	template <typename... Types>
-	inline constexpr u32 bitseq(bitrange r, Types... args)
-	{
-		auto v = read_bitrange(r);
-		return v.first | (bitseq(args...) << v.second);
-	}
-
-	inline u32 bitseq(u8 se)
-	{
-		return se ? std::numeric_limits<u32>::max() : 0;
-	}
-
-	inline u8 rd()
-	{
-		return bitseq(bitrange{7, 11});
-	}
-	inline u8 rs1()
-	{
-		return bitseq(bitrange{15, 19});
-	}
-	inline u8 rs2()
-	{
-		return bitseq(bitrange{20, 24});
-	}
-	inline u8 funct3()
-	{
-		return bitseq(bitrange{12, 14});
-	}
-	inline u8 funct7()
-	{
-		return bitseq(bitrange{25, 31});
-	}
-	inline u16 funct12()
-	{
-		return bitseq(bitrange{20, 31});
-	}
-	inline u8 imm_se()
-	{
-		return bitseq(bitrange{31, 31});
-	}
 	static constexpr Flags::Types gen_flags = Flags::None;
 };
 
-#define BASE_FIELD(name)                                                                                     \
-	auto name()                                                                                          \
-	{                                                                                                    \
-		return Base::name();                                                                         \
-	}
-
 struct R : public Base {
-	BASE_FIELD(rd);
-	BASE_FIELD(rs1);
-	BASE_FIELD(rs2);
+	INSN_FIELD(rd)
+	INSN_FIELD(rs1)
+	INSN_FIELD(rs2)
 
 protected:
 	static constexpr Flags::Types gen_flags = Flags::HasRd;
 };
 
 struct I : public Base {
-	BASE_FIELD(rd);
-	BASE_FIELD(rs1);
-	inline i16 imm()
-	{
-		return bitseq(bitrange{20, 30}, imm_se());
-	}
+	INSN_FIELD(rd)
+	INSN_FIELD(rs1)
+	INSN_FIELD(imm)
 
 protected:
+	using _imm = bf_seq<i16, bf_pt<20, 30>, bf_pt<31, 31>>;
 	static constexpr Flags::Types gen_flags = Flags::HasRd;
 };
 
 struct IS : public Base { // imm shifts
-	BASE_FIELD(rd);
-	BASE_FIELD(rs1);
-	inline i16 imm()
-	{
-		return bitseq(bitrange{20, 24});
-	}
+	INSN_FIELD(rd)
+	INSN_FIELD(rs1)
+	INSN_FIELD(imm)
 
 protected:
+	using _imm = bf_range<u8, 20, 24>;
 	static constexpr Flags::Types gen_flags = Flags::HasRd;
 };
 
 struct S : public Base {
-	BASE_FIELD(rs1);
-	BASE_FIELD(rs2);
-	inline i16 imm()
-	{
-		return bitseq(bitrange{7, 11}, bitrange{25, 30}, imm_se());
-	}
+	INSN_FIELD(rs1)
+	INSN_FIELD(rs2)
+	INSN_FIELD(imm)
 
 protected:
+	using _imm = bf_seq<i16, bf_pt<7, 11>, bf_pt<25, 30>, bf_pt<31, 31>>;
 	static constexpr Flags::Types gen_flags = Flags::None;
 };
 
 struct B : public Base {
-	BASE_FIELD(rs1);
-	BASE_FIELD(rs2);
-	inline i16 imm()
-	{
-		return bitseq(bitrange{8, 11}, bitrange{25, 30}, bitrange{7, 7}, imm_se()) << 1u;
-	}
+	INSN_FIELD(rs1)
+	INSN_FIELD(rs2)
+	INSN_FIELD_SC(imm, 1)
 
 protected:
+	using _imm = bf_seq<i16, bf_pt<8, 11>, bf_pt<25, 30>, bf_pt<7, 7>, bf_pt<31, 31>>;
 	static constexpr Flags::Types gen_flags = Flags::None;
 };
 
 struct U : public Base {
-	BASE_FIELD(rd);
-	inline i32 imm()
-	{
-		return bitseq(bitrange{12, 31}) << 12u;
-	}
+	INSN_FIELD(rd)
+	INSN_FIELD_SC(imm, 12)
 
 protected:
+	using _imm = bf_range<u32, 12, 31>;
 	static constexpr Flags::Types gen_flags = Flags::HasRd;
 };
 
 struct J : public Base {
-	BASE_FIELD(rd);
-	inline i32 imm()
-	{
-		return bitseq(bitrange{21, 30}, bitrange{20, 20}, bitrange{12, 19}, imm_se()) << 1u;
-	}
+	INSN_FIELD(rd);
+	INSN_FIELD_SC(imm, 1)
 
 protected:
+	using _imm = bf_seq<i32, bf_pt<21, 30>, bf_pt<20, 20>, bf_pt<12, 19>, bf_pt<31, 31>>;
 	static constexpr Flags::Types gen_flags = Flags::HasRd;
 };
 

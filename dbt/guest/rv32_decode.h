@@ -161,9 +161,9 @@ struct Decoder {
 private:
 	Decoder() = delete;
 	struct DecodeParams : public Base {
-		BASE_FIELD(funct3);
-		BASE_FIELD(funct7);
-		BASE_FIELD(funct12);
+		INSN_FIELD(funct3);
+		INSN_FIELD(funct7);
+		INSN_FIELD(funct12);
 	};
 };
 

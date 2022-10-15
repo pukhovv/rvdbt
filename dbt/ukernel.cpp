@@ -30,6 +30,9 @@ void ukernel::Execute(CPUState *state)
 			state->ip += 4;
 			ukernel::Syscall(state);
 			break;
+		case rv32::TrapCode::ILLEGAL_INSN:
+			log_ukernel("illegal instruction at %08x", state->ip);
+			return;
 		default:
 			unreachable("no handle for trap");
 		}
