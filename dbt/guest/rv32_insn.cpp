@@ -50,6 +50,11 @@ std::ostream &operator<<(std::ostream &o, J i)
 {
 	return o << gpr_names[i.rd()] << " \t" << i.imm();
 }
+std::ostream &operator<<(std::ostream &o, A i)
+{
+	return o << gpr_names[i.rd()] << " \t" << gpr_names[i.rs1()] << " \t" << gpr_names[i.rs2()]
+		 << " \tra=" << i.rl() << i.aq();
+}
 
 } // namespace insn
 

@@ -2,6 +2,7 @@
 
 #define RV32_OPCODE_LIST()                                                                                   \
 	OP(ill, Base, Flags::MayTrap)                                                                        \
+	/**** RV32I ****/                                                                                    \
 	OP(lui, U, 0)                                                                                        \
 	OP(auipc, U, 0)                                                                                      \
 	OP(jal, J, Flags::Branch)                                                                            \
@@ -40,4 +41,16 @@
 	OP(or, R, 0)                                                                                         \
 	OP(and, R, 0)                                                                                        \
 	OP(ecall, Base, Flags::MayTrap)                                                                      \
-	OP(ebreak, Base, Flags::MayTrap)
+	OP(ebreak, Base, Flags::MayTrap)                                                                     \
+	/**** RV32A ****/                                                                                    \
+	OP(lrw, A, 0)                                                                                        \
+	OP(scw, A, 0)                                                                                        \
+	OP(amoswapw, A, 0)                                                                                   \
+	OP(amoaddw, A, 0)                                                                                    \
+	OP(amoxorw, A, 0)                                                                                    \
+	OP(amoandw, A, 0)                                                                                    \
+	OP(amoorw, A, 0)                                                                                     \
+	OP(amominw, A, 0)                                                                                    \
+	OP(amomaxw, A, 0)                                                                                    \
+	OP(amominuw, A, 0)                                                                                   \
+	OP(amomaxuw, A, 0)

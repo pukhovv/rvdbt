@@ -138,8 +138,8 @@ struct Decoder {
 		case 0b0001111:
 			OP_ILL; /* fence */
 		case 0b1110011:
-			switch (in.funct3()) {
-			case 0b000:
+			switch (in.funct3() | in.rd() | in.rs1()) {
+			case 0:
 				switch (in.funct12()) {
 				case 0b000000000000:
 					OP(ecall);
@@ -150,6 +150,38 @@ struct Decoder {
 				}
 			default:
 				OP_ILL; /* csr* */
+			}
+		case 0b0101111:
+			switch (in.funct3()) {
+			case 0b010:
+				switch (in.funct7() >> 2) {
+				case 0b00010:
+					OP(lrw);
+				case 0b00011:
+					OP(scw);
+				case 0b00001:
+					OP(amoswapw);
+				case 0b00000:
+					OP(amoaddw);
+				case 0b00100:
+					OP(amoxorw);
+				case 0b01100:
+					OP(amoandw);
+				case 0b01000:
+					OP(amoorw);
+				case 0b10000:
+					OP(amominw);
+				case 0b10100:
+					OP(amomaxw);
+				case 0b11000:
+					OP(amominuw);
+				case 0b11100:
+					OP(amomaxuw);
+				default:
+					OP_ILL;
+				}
+			default:
+				OP_ILL;
 			}
 		default:
 			OP_ILL;
@@ -164,6 +196,8 @@ private:
 		INSN_FIELD(funct3);
 		INSN_FIELD(funct7);
 		INSN_FIELD(funct12);
+		INSN_FIELD(rd)
+		INSN_FIELD(rs1)
 	};
 };
 

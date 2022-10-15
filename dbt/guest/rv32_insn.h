@@ -107,12 +107,25 @@ protected:
 };
 
 struct J : public Base {
-	INSN_FIELD(rd);
+	INSN_FIELD(rd)
 	INSN_FIELD_SC(imm, 1)
 
 protected:
 	using _imm = bf_seq<i32, bf_pt<21, 30>, bf_pt<20, 20>, bf_pt<12, 19>, bf_pt<31, 31>>;
 	static constexpr Flags::Types gen_flags = Flags::HasRd;
+};
+
+struct A : public Base {
+	INSN_FIELD(rd)
+	INSN_FIELD(rs1)
+	INSN_FIELD(rs2)
+	INSN_FIELD(rl)
+	INSN_FIELD(aq)
+
+protected:
+	using _rl = bf_range<u8, 25, 25>;
+	using _aq = bf_range<u8, 25, 25>;
+	static constexpr Flags::Types gen_flags = static_cast<Flags::Types>(Flags::HasRd | Flags::MayTrap);
 };
 
 char const *GRPToName(u8 r);
@@ -124,6 +137,7 @@ std::ostream &operator<<(std::ostream &o, S i);
 std::ostream &operator<<(std::ostream &o, B i);
 std::ostream &operator<<(std::ostream &o, U i);
 std::ostream &operator<<(std::ostream &o, J i);
+std::ostream &operator<<(std::ostream &o, A i);
 
 #define OP(name, format_, flags_)                                                                            \
 	struct Insn_##name : format_ {                                                                       \

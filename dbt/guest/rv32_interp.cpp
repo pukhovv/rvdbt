@@ -76,6 +76,12 @@ namespace dbt::rv32
 	{                                                                                                    \
 		s->gpr[i.rd()] = (type)s->gpr[i.rs1()] op(type) i.imm();                                     \
 	}
+#define HANDLER_Unimpl(name)                                                                                 \
+	HANDLER(name)                                                                                        \
+	{                                                                                                    \
+		log_dbt("unimplemented insn " #name);                                                        \
+		RAISE_TRAP(TrapCode::ILLEGAL_INSN);                                                          \
+	}
 
 HANDLER(ill)
 {
@@ -167,6 +173,18 @@ HANDLER(ebreak)
 	RAISE_TRAP(TrapCode::EBREAK);
 	RaiseTrap();
 }
+
+HANDLER_Unimpl(lrw);
+HANDLER_Unimpl(scw);
+HANDLER_Unimpl(amoswapw);
+HANDLER_Unimpl(amoaddw);
+HANDLER_Unimpl(amoxorw);
+HANDLER_Unimpl(amoandw);
+HANDLER_Unimpl(amoorw);
+HANDLER_Unimpl(amominw);
+HANDLER_Unimpl(amomaxw);
+HANDLER_Unimpl(amominuw);
+HANDLER_Unimpl(amomaxuw);
 
 void Interpreter::Execute(CPUState *state)
 {
