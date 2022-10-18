@@ -1,12 +1,12 @@
 #pragma once
 
-//#define CONFIG_LINUX_GUEST
+#define CONFIG_LINUX_GUEST
 
 //#define CONFIG_ZERO_MMU_BASE // TODO: verify while elf loading
 
-//#define CONFIG_USE_INTERP
-//#define CONFIG_DUMP_TRACE
-//#define CONFIG_DUMP_TRACE_VERBOSE
+#define CONFIG_USE_INTERP
+#define CONFIG_DUMP_TRACE
+#define CONFIG_DUMP_TRACE_VERBOSE
 
 //#define CONFIG_USE_STATEMAPS // TODO: Re-enable or drop after next tier introduction
 

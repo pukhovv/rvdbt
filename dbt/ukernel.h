@@ -27,6 +27,7 @@ struct ukernel {
 
 	static void SyscallDemo(CPUState *state);
 	void SyscallLinux(CPUState *state);
+	int PathResolution(int dirfd, char const *path, char *resolved);
 
 	u32 do_sys_brk(u32 newbrk);
 

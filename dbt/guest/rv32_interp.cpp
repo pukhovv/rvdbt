@@ -60,12 +60,12 @@ namespace dbt::rv32
 #define HANDLER_Load(name, type)                                                                             \
 	HANDLER(name)                                                                                        \
 	{                                                                                                    \
-		s->gpr[i.rd()] = unaligned_load<type>(vmem + s->gpr[i.rs1()] + i.imm());                     \
+		s->gpr[i.rd()] = unaligned_load<type>(vmem + (s->gpr[i.rs1()] + i.imm()));                   \
 	}
 #define HANDLER_Store(name, type)                                                                            \
 	HANDLER(name)                                                                                        \
 	{                                                                                                    \
-		unaligned_store<type>(vmem + s->gpr[i.rs1()] + i.imm(), s->gpr[i.rs2()]);                    \
+		unaligned_store<type>(vmem + (s->gpr[i.rs1()] + i.imm()), s->gpr[i.rs2()]);                  \
 	}
 #define HANDLER_ArithmRR(name, type, op)                                                                     \
 	HANDLER(name)                                                                                        \

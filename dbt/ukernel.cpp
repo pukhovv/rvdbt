@@ -7,6 +7,8 @@
 
 extern "C" {
 #include <fcntl.h>
+#include <libgen.h>
+#include <linux/limits.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -90,9 +92,24 @@ void ukernel::SyscallLinux(CPUState *state)
 
 	log_ukernel("linux syscall %0d", syscallno);
 	switch (syscallno) {
+	case 64: { // write
+		rc = write((i32)args[0], mmu::g2h(args[1]), args[2]);
+		RCERRNO(rc);
+		break;
+	}
 	case 78: { // readlinkat
-		// do not expose fd currenlty!!!
-		rc = readlinkat(-1, (char *)mmu::g2h(args[1]), (char *)mmu::g2h(args[2]), args[3]);
+		char pathbuf[PATH_MAX];
+		char const *path = (char *)mmu::g2h(args[1]);
+		if (*path) {
+			rc = PathResolution((i32)args[0], path, pathbuf);
+			if (rc < 0) {
+				rc = -errno;
+				break;
+			}
+		} else {
+			pathbuf[0] = 0;
+		}
+		rc = readlinkat((i32)args[0], pathbuf, (char *)mmu::g2h(args[2]), args[3]);
 		RCERRNO(rc);
 		break;
 	}
@@ -138,10 +155,72 @@ void ukernel::SyscallLinux(CPUState *state)
 		RCERRNO(rc);
 		break;
 	}
+	case 291: { // statx
+		char pathbuf[PATH_MAX];
+		char const *path = (char *)mmu::g2h(args[1]);
+		if (*path) {
+			rc = PathResolution((i32)args[0], path, pathbuf);
+			if (rc < 0) {
+				rc = -errno;
+				break;
+			}
+		} else {
+			pathbuf[0] = 0;
+		}
+		rc = statx((i32)args[0], pathbuf, args[2], args[3], (struct statx *)mmu::g2h(args[4]));
+		RCERRNO(rc);
+		break;
+	}
 	default:
 		Panic("unknown syscall");
 	}
 	state->gpr[10] = rc;
+}
+
+int ukernel::PathResolution(int dirfd, char const *path, char *resolved)
+{
+	char const *fake_root = "."; // TODO: set it proper somewhere
+	char rp_fake_root[PATH_MAX];
+	char rp_buf[PATH_MAX];
+
+	log_ukernel("start path resolution: %s", path);
+
+	if (!realpath(fake_root, rp_fake_root)) {
+		Panic("can't resolve dbtroot");
+	}
+	size_t rp_fake_root_len = strlen(rp_fake_root);
+
+	if (path[0] == '/') {
+		snprintf(rp_buf, sizeof(rp_buf), "%s/%s", rp_fake_root, path);
+	} else {
+		if (dirfd == AT_FDCWD) {
+			getcwd(rp_buf, sizeof(rp_buf));
+		} else {
+			char fdpath[64];
+			sprintf(fdpath, "/proc/self/fd/%d", dirfd);
+			if (readlink(fdpath, rp_buf, sizeof(rp_buf)) < 0) {
+				log_ukernel("bad dirfd");
+				return -1;
+			}
+		}
+		size_t pref_sz = strlen(rp_buf);
+		strncpy(rp_buf + pref_sz, path, sizeof(rp_buf) - pref_sz);
+	}
+
+	// TODO: that's not precise
+	// TODO: symlinks
+	if (!realpath(rp_buf, resolved)) {
+		log_ukernel("unresolved path %s", rp_buf);
+		return -1;
+	}
+	if (strncmp(resolved, rp_fake_root, rp_fake_root_len)) {
+		Panic("escaped dbtroot");
+	}
+
+	if (path[0] != '/') {
+		strcpy(resolved, path);
+	}
+	return 0;
 }
 
 u32 ukernel::do_sys_brk(u32 newbrk)
@@ -173,6 +252,12 @@ void ukernel::LoadElf(const char *path, ElfImage *elf)
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
 		Panic("no such elf file");
+	}
+
+	{ // TODO: for AT_FDCWD resolution, remove it
+		char buf[PATH_MAX];
+		strncpy(buf, path, sizeof(buf));
+		chdir(dirname(buf));
 	}
 
 	auto &ehdr = elf->ehdr;
@@ -246,6 +331,7 @@ void ukernel::LoadElf(const char *path, ElfImage *elf)
 		elf->load_addr = std::min(elf->load_addr, vaddr - phdr->p_offset);
 		elf->brk = std::max(elf->brk, vaddr + phdr->p_memsz);
 	}
+	close(fd);
 
 	brk = elf->brk; // TODO: move it out
 
