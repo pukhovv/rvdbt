@@ -238,7 +238,7 @@ void Codegen::DumpCode()
 	size_t sz = tcode.size;
 	auto p = (u8 *)tcode.ptr;
 
-	std::array<char, 1024> buf;
+	std::array<char, 4096> buf;
 
 	if (sz * 2 + 1 > buf.size()) {
 		log_qjit("jitcode is too long for dump");
@@ -302,7 +302,7 @@ void Codegen::Call(asmjit::Operand const *args, u8 nargs)
 	j.emit(asmjit::x86::Inst::kIdCall, callee);
 }
 
-void Codegen::BranchTBDir(u32 ip, u8 no, bool pre_epilogue)
+void Codegen::BranchTBDir(u32 ip)
 {
 	tcache::OnTranslateBr(ctx->tb, ip);
 	ctx->ra->BlockBoundary();

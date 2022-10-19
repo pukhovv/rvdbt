@@ -30,6 +30,8 @@ struct CPUState {
 	TrapCode trapno;
 };
 
+static constexpr u16 TB_MAX_INSNS = 64; // to synchronize debug tracing
+
 } // namespace dbt::rv32
 
 namespace dbt

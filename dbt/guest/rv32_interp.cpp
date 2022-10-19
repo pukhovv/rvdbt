@@ -201,14 +201,6 @@ HANDLER_Unimpl(amomaxw);
 HANDLER_Unimpl(amominuw);
 HANDLER_Unimpl(amomaxuw);
 
-#ifdef CONFIG_DUMP_TRACE_VERBOSE
-#define TRACE_INSN()                                                                                         \
-	state->ip = gip;                                                                                     \
-	state->DumpTrace("insn")
-#else
-#define TRACE_INSN()
-#endif
-
 void Interpreter::Execute(CPUState *state)
 {
 	u8 *vmem = mmu::base;
@@ -216,9 +208,26 @@ void Interpreter::Execute(CPUState *state)
 	void *insn_ptr;
 
 entry:
-	if constexpr (config::dump_trace) {
-		state->DumpTrace("entry");
-	}
+#ifdef CONFIG_DUMP_TRACE
+	u32 icount = 0;
+	state->ip = gip;
+	state->DumpTrace("entry");
+#define XDUMP(name)                                                                                          \
+	do {                                                                                                 \
+		if (++icount == TB_MAX_INSNS || (insn::Insn_##name::flags & insn::Flags::Branch))            \
+			goto entry;                                                                          \
+	} while (0)
+#else
+
+#define XDUMP(name)
+#endif
+#ifdef CONFIG_DUMP_TRACE_VERBOSE
+#define TRACE_INSN()                                                                                         \
+	state->ip = gip;                                                                                     \
+	state->DumpTrace("insn")
+#else
+#define TRACE_INSN()
+#endif
 
 	goto dispatch;
 
@@ -232,8 +241,7 @@ entry:
 	{                                                                                                    \
 		TRACE_INSN();                                                                                \
 		H_##name(state, gip, vmem, *(u32 *)insn_ptr);                                                \
-		if constexpr (config::dump_trace && insn::Insn_##name::flags & insn::Flags::Branch)          \
-			goto entry;                                                                          \
+		XDUMP(name);                                                                                 \
 		goto dispatch;                                                                               \
 	}
 	RV32_OPCODE_LIST()

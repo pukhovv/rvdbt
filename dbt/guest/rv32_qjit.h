@@ -8,7 +8,7 @@ namespace dbt::qjit::rv32
 using namespace dbt::rv32;
 
 struct QuickTranslator : public QuickJIT {
-	static constexpr u16 TB_MAX_INSNS = 64;
+	static constexpr u16 TB_MAX_INSNS = dbt::rv32::TB_MAX_INSNS;
 
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
 	u32 insn_ip{0};

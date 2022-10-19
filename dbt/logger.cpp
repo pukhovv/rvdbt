@@ -16,7 +16,7 @@ inline int xvsnprintf(char *dst, size_t n, char const *fmt, va_list args)
 
 void LogStream::write(const char *str) const
 {
-	std::array<char, 2048> buf;
+	std::array<char, 4096 * 2> buf;
 	auto cur = buf.begin();
 	auto const end = buf.end() - 2;
 

@@ -34,7 +34,7 @@ std::ostream &operator<<(std::ostream &o, I i)
 }
 std::ostream &operator<<(std::ostream &o, IS i)
 {
-	return o << gpr_names[i.rd()] << " \t" << gpr_names[i.rs1()] << " \t" << i.imm();
+	return o << gpr_names[i.rd()] << " \t" << gpr_names[i.rs1()] << " \t" << (u16)i.imm();
 }
 std::ostream &operator<<(std::ostream &o, S i)
 {
@@ -67,7 +67,9 @@ void CPUState::DumpTrace(char const *event)
 	std::array<char, 1024> buf;
 	auto cur = buf.begin();
 
-	cur += snprintf(cur, 80, "#### %08x #### %s\n", ip, event);
+	// cur += snprintf(cur, 80, "#### %08x #### %s\n", ip, event);
+	log_trace("#### %08x #### %s", ip, event);
+
 	for (int i = 0; i < 32; ++i) {
 		cur += sprintf(cur, "%4.4s=%08x", insn::GRPToName(i), gpr[i]);
 	}

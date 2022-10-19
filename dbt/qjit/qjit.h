@@ -78,7 +78,7 @@ struct Codegen {
 	void SetCC(asmjit::x86::CondCode cc, asmjit::Operand rd, asmjit::Operand lhs, asmjit::Operand rhs);
 
 	void Call(asmjit::Operand const *args, u8 nargs);
-	void BranchTBDir(u32 ip, u8 no, bool pre_epilogue = false);
+	void BranchTBDir(u32 ip);
 	void BranchTBInd(asmjit::Operand target);
 
 	void x86Cmp(asmjit::x86::CondCode *cc, asmjit::Operand lhs, asmjit::Operand rhs);

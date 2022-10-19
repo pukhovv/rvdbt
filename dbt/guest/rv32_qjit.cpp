@@ -50,6 +50,7 @@ TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 		}
 		if (num_insns == TB_MAX_INSNS) {
 			t.control = Control::TB_OVF;
+			t.cg->BranchTBDir(t.insn_ip);
 			break;
 		}
 	}
@@ -91,10 +92,10 @@ void QuickTranslator::TranslateBranchCC(insn::B i, asmjit::x86::CondCode cc)
 	auto br_taken = cg->j.newLabel();
 
 	cg->BranchCC(br_taken, cc, ToOperand(vrs[0]), ToOperand(vrs[1]));
-	cg->BranchTBDir(insn_ip + 4, 0);
+	cg->BranchTBDir(insn_ip + 4);
 	cg->Bind(br_taken);
 	// TODO: check alignment
-	cg->BranchTBDir(insn_ip + i.imm(), 1, true);
+	cg->BranchTBDir(insn_ip + i.imm());
 }
 
 void QuickTranslator::TranslateSetCCR(insn::R i, asmjit::x86::CondCode cc)
@@ -294,7 +295,7 @@ void QuickTranslator::TranslateInsn()
 		ra->AllocOp(std::array{vrd}, vrs, true);                                                     \
 		auto mem = CreateMemOp(vrs[0], i.imm(), sz / 8);                                             \
 		if (vrd) {                                                                                   \
-			cg->j.movop(vrd->GetPReg().r##sz(), mem);                                            \
+			cg->j.movop(vrd->GetPReg().r32(), mem);                                              \
 		} else {                                                                                     \
 			cg->j.movop(asmjit::x86::gpq(Codegen::TMP1C), mem);                                  \
 		}                                                                                            \
@@ -327,7 +328,7 @@ TRANSLATOR(jal)
 	if (i.rd()) {
 		cg->j.mov(vrd->GetPReg(), insn_ip + 4);
 	}
-	cg->BranchTBDir(insn_ip + i.imm(), 0, true);
+	cg->BranchTBDir(insn_ip + i.imm());
 }
 TRANSLATOR(jalr)
 {
