@@ -207,8 +207,8 @@ void Interpreter::Execute(CPUState *state)
 	u32 gip = state->ip;
 	void *insn_ptr;
 
-entry:
 #ifdef CONFIG_DUMP_TRACE
+entry:
 	u32 icount = 0;
 	state->ip = gip;
 	state->DumpTrace("entry");
@@ -218,9 +218,9 @@ entry:
 			goto entry;                                                                          \
 	} while (0)
 #else
-
 #define XDUMP(name)
 #endif
+
 #ifdef CONFIG_DUMP_TRACE_VERBOSE
 #define TRACE_INSN()                                                                                         \
 	state->ip = gip;                                                                                     \

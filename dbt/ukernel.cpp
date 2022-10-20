@@ -174,6 +174,7 @@ void ukernel::SyscallLinux(CPUState *state)
 	default:
 		Panic("unknown syscall");
 	}
+	log_ukernel("syscall result: %d", rc);
 	state->gpr[10] = rc;
 }
 
@@ -348,24 +349,32 @@ void ukernel::LoadElf(const char *path, ElfImage *elf)
 	elf->stack_start = mmu::h2g(stk_ptr) + stk_size;
 }
 
+static u32 AllocAVectorStr(u32 stk, void const *str, u16 sz)
+{
+	stk -= sz;
+	memcpy(mmu::g2h(stk), str, sz);
+	return stk;
+}
+
+static inline u32 AllocAVectorStr(u32 stk, char const *str)
+{
+	return AllocAVectorStr(stk, str, strlen(str) + 1);
+}
+
 void ukernel::InitAVectors(ElfImage *elf)
 {
 	u32 stk = elf->stack_start;
 	{
-		char foo_str[] = "__foo_str__";
-		stk -= sizeof(foo_str);
-		memcpy(mmu::g2h(stk), foo_str, sizeof(foo_str));
-		u32 foo_g = stk;
-		stk &= -sizeof(u32);
+		u32 foo_str_g = stk = AllocAVectorStr(stk, "__foo_str__");
+		u32 lc_all_str_g = stk = AllocAVectorStr(stk, "LC_ALL=C");
 
 		char auxv_salt[16] = {0, 1, 2, 3, 4, 5, 6};
-		stk -= sizeof(auxv_salt);
-		memcpy(mmu::g2h(stk), auxv_salt, sizeof(auxv_salt));
-		u32 auxv_salt_p = stk;
-		stk &= -sizeof(u32);
+		u32 auxv_salt_g = stk = AllocAVectorStr(stk, auxv_salt, sizeof(auxv_salt));
+
+		stk &= -4;
 
 		int argv_n = 1;
-		int envp_n = 0;
+		int envp_n = 1;
 		int auxv_n = 64;
 
 		int stk_vsz = argv_n + envp_n + auxv_n + 3;
@@ -375,11 +384,17 @@ void ukernel::InitAVectors(ElfImage *elf)
 		u32 envp_p = argv_p + sizeof(u32) * (argv_n + 1);
 		u32 auxv_p = envp_p + sizeof(u32) * (envp_n + 1);
 
-		*(u32 *)mmu::g2h(argc_p) = 1;
-		*(u32 *)mmu::g2h(argv_p) = foo_g;
-		argv_p += sizeof(u32);
-		*(u32 *)mmu::g2h(argv_p) = 0;
-		*(u32 *)mmu::g2h(envp_p) = 0;
+#define PUSH_AVVAL(vec, val)                                                                                 \
+	*(u32 *)mmu::g2h(vec) = (val);                                                                       \
+	vec += sizeof(u32)
+
+		PUSH_AVVAL(argc_p, 1);
+
+		PUSH_AVVAL(argv_p, foo_str_g);
+		PUSH_AVVAL(argv_p, 0);
+
+		PUSH_AVVAL(envp_p, lc_all_str_g);
+		PUSH_AVVAL(envp_p, 0);
 
 #define ADD_AUXV(idx, val)                                                                                   \
 	*(u32 *)mmu::g2h(auxv_p) = (idx);                                                                    \
@@ -400,11 +415,11 @@ void ukernel::InitAVectors(ElfImage *elf)
 		ADD_AUXV(AT_EUID, geteuid());
 		ADD_AUXV(AT_EGID, getegid());
 
-		ADD_AUXV(AT_EXECFN, foo_g);
+		ADD_AUXV(AT_EXECFN, foo_str_g);
 		ADD_AUXV(AT_SECURE, false);
 		ADD_AUXV(AT_HWCAP, 0);
 		ADD_AUXV(AT_CLKTCK, sysconf(_SC_CLK_TCK));
-		ADD_AUXV(AT_RANDOM, auxv_salt_p);
+		ADD_AUXV(AT_RANDOM, auxv_salt_g);
 
 		ADD_AUXV(AT_NULL, 0);
 #undef ADD_AUXV
