@@ -2,9 +2,10 @@
 
 #define CONFIG_LINUX_GUEST
 
-//#define CONFIG_ZERO_MMU_BASE // TODO: verify while elf loading
-
 //#define CONFIG_USE_INTERP
+
+#define CONFIG_ZERO_MMU_BASE // TODO: verify while elf loading
+#define CONFIG_UNSAFE_TRAPS
 
 #ifndef NDEBUG
 #define CONFIG_DUMP_TRACE
@@ -21,6 +22,11 @@ namespace config
 static constexpr bool use_interp = true;
 #else
 static constexpr bool use_interp = false;
+#endif
+#ifdef CONFIG_UNSAFE_TRAPS
+static constexpr bool unsafe_traps = true;
+#else
+static constexpr bool unsafe_traps = false;
 #endif
 #ifdef CONFIG_DUMP_TRACE
 static constexpr bool dump_trace = true;

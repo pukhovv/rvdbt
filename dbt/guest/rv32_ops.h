@@ -1,7 +1,7 @@
 #pragma once
 
 #define RV32_OPCODE_LIST()                                                                                   \
-	OP(ill, Base, Flags::MayTrap)                                                                        \
+	OP(ill, Base, Flags::Trap)                                                                           \
 	/**** RV32I ****/                                                                                    \
 	OP(lui, U, 0)                                                                                        \
 	OP(auipc, U, 0)                                                                                      \
@@ -42,8 +42,8 @@
 	OP(and, R, 0)                                                                                        \
 	OP(fence, Base, 0)                                                                                   \
 	OP(fencei, Base, 0)                                                                                  \
-	OP(ecall, Base, Flags::MayTrap)                                                                      \
-	OP(ebreak, Base, Flags::MayTrap)                                                                     \
+	OP(ecall, Base, Flags::Trap)                                                                         \
+	OP(ebreak, Base, Flags::Trap)                                                                        \
 	/**** RV32A ****/                                                                                    \
 	OP(lrw, A, 0)                                                                                        \
 	OP(scw, A, 0)                                                                                        \

@@ -41,6 +41,11 @@ TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 	t.ra->Prologue();
 	t.cg->Prologue();
 
+	u32 upper_bound = -1;
+	if (auto *tb_bound = tcache::LookupUpperBound(ip)) {
+		upper_bound = tb_bound->ip;
+	}
+
 	u32 num_insns = 0;
 	while (true) {
 		t.TranslateInsn();
@@ -48,7 +53,7 @@ TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)
 		if (t.control != Control::NEXT) {
 			break;
 		}
-		if (num_insns == TB_MAX_INSNS) {
+		if (num_insns == TB_MAX_INSNS || t.insn_ip == upper_bound) {
 			t.control = Control::TB_OVF;
 			t.cg->BranchTBDir(t.insn_ip);
 			break;
@@ -222,11 +227,12 @@ void QuickTranslator::TranslateInsn()
 			log_qjit("      %08x: %-8s    %s", insn_ip, #name, res.c_str());                     \
 		}                                                                                            \
 		static constexpr auto flags = decltype(i)::flags;                                            \
-		if constexpr ((flags & insn::Flags::MayTrap) || flags & insn::Flags::Branch) {               \
+		if constexpr (flags & insn::Flags::Branch || flags & insn::Flags::Trap ||                    \
+			      (flags & insn::Flags::MayTrap && config::unsafe_traps)) {                      \
 			cg->j.mov(vreg_ip->GetSpill(), insn_ip);                                             \
 		}                                                                                            \
 		Impl_##name(i);                                                                              \
-		if constexpr (flags & insn::Flags::Branch) {                                                 \
+		if constexpr (flags & insn::Flags::Branch || flags & insn::Flags::Trap) {                    \
 			control = QuickTranslator::Control::BRANCH;                                          \
 		}                                                                                            \
 		insn_ip += 4;                                                                                \
@@ -278,7 +284,7 @@ void QuickTranslator::TranslateInsn()
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
 		std::array vrs = {vreg_gpr[i.rs1()], vreg_gpr[i.rs2()]};                                     \
-		ra->AllocOp(no_regs(), vrs, true);                                                           \
+		ra->AllocOp(no_regs(), vrs, config::unsafe_traps);                                           \
 		auto mem = CreateMemOp(vrs[0], i.imm(), sz / 8);                                             \
 		if (vrs[1]) {                                                                                \
 			cg->j.mov(mem, vrs[1]->GetPReg().r##sz());                                           \
@@ -292,7 +298,7 @@ void QuickTranslator::TranslateInsn()
 	{                                                                                                    \
 		std::array vrs = {vreg_gpr[i.rs1()]};                                                        \
 		auto vrd = vreg_gpr[i.rd()];                                                                 \
-		ra->AllocOp(std::array{vrd}, vrs, true);                                                     \
+		ra->AllocOp(std::array{vrd}, vrs, config::unsafe_traps);                                     \
 		auto mem = CreateMemOp(vrs[0], i.imm(), sz / 8);                                             \
 		if (vrd) {                                                                                   \
 			cg->j.movop(vrd->GetPReg().r32(), mem);                                              \

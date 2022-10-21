@@ -195,12 +195,10 @@ void Codegen::Prologue()
 {
 	tcache::OnTranslate(ctx->tb);
 
-	if constexpr (config::dump_trace) {
-		j.mov(ctx->vreg_ip->GetSpill(), ctx->tb->ip);
-		j.call(stub_trace);
-	}
-	// static_assert(TB_PROLOGUE_SZ == 7);
-	// j.long_().sub(asmjit::x86::regs::rsp, ctx->ra->frame_size + 8);
+#ifdef CONFIG_DUMP_TRACE
+	j.mov(ctx->vreg_ip->GetSpill(), ctx->tb->ip);
+	j.call(stub_trace);
+#endif
 }
 
 void Codegen::Epilogue()

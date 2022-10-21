@@ -50,6 +50,15 @@ struct tcache {
 		return tb;
 	}
 
+	static TBlock *LookupUpperBound(u32 ip)
+	{
+		auto it = tcache_map.upper_bound(ip);
+		if (it == tcache_map.end()) {
+			return nullptr;
+		}
+		return it->second;
+	}
+
 	static inline void OnTranslate(TBlock *tb)
 	{
 		log_cflow("B%08x[fillcolor=cyan]", tb->ip);

@@ -16,7 +16,8 @@ enum Types : u32 {
 	None = 0,
 	Branch = 1 << 1u,
 	MayTrap = 1 << 2u,
-	HasRd = 1 << 3u,
+	Trap = 1 << 3u,
+	HasRd = 1 << 4u,
 };
 }
 
