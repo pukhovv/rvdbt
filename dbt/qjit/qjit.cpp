@@ -346,6 +346,7 @@ void Codegen::Bind(asmjit::Label l)
 
 void Codegen::BranchTBInd(asmjit::Operand target)
 {
+	tcache::OnTranslateBrind(ctx->tb);
 	assert(target.isPhysReg() && target.id() == TMP1C);
 	auto ptgt = target.as<asmjit::x86::Gp>().r32();
 

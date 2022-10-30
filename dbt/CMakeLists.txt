@@ -20,5 +20,5 @@ target_include_directories(dbtstatic PUBLIC "${PROJECT_SOURCE_DIR}")
 target_include_directories(dbtstatic SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/third_party/asmjit/src")
 
 add_executable(runelf runelf.cpp)
-target_link_libraries(runelf dbtstatic asmjit::asmjit)
+target_link_libraries(runelf PUBLIC dbtstatic asmjit::asmjit ${Boost_LIBRARIES})
 target_include_directories(runelf PUBLIC "${PROJECT_SOURCE_DIR}")

@@ -66,7 +66,20 @@ struct tcache {
 
 	static inline void OnTranslateBr(TBlock *tb, u32 tgtip)
 	{
-		log_cflow("B%08x->B%08x", tb->ip, tgtip);
+		if (rounddown(tb->ip, mmu::PAGE_SIZE) != rounddown(tgtip, mmu::PAGE_SIZE)) {
+			log_cflow("B%08x->B%08x[color=blue,penwidth=2]", tb->ip, tgtip);
+		} else if (tb->ip >= tgtip) {
+			log_cflow("B%08x->B%08x[color=red,penwidth=2,dir=back]", tgtip, tb->ip);
+		} else {
+			log_cflow("B%08x->B%08x", tb->ip, tgtip);
+		}
+	}
+
+	static inline void OnTranslateBrind(TBlock *tb)
+	{
+		log_cflow("B%08x_brind[fillcolor=purple,shape=point];"
+			  "B%08x->B%08x_brind[color=purple,penwidth=3]",
+			  tb->ip, tb->ip, tb->ip);
 	}
 
 	static inline void OnBrind(TBlock *tb)

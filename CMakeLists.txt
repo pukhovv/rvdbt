@@ -18,4 +18,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c99-designator")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address")
 set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fsanitize=address")
 
+FIND_PACKAGE(Boost 1.71 COMPONENTS program_options REQUIRED)
+INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR})
+
 add_subdirectory(dbt)

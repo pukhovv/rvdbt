@@ -10,7 +10,7 @@
 
 /****************************************************************************/
 
-#define CONFIG_USE_INTERP
+//#define CONFIG_USE_INTERP
 
 #ifndef NDEBUG
 //#define CONFIG_DUMP_TRACE

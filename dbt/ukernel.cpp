@@ -366,69 +366,76 @@ static inline u32 AllocAVectorStr(u32 stk, char const *str)
 	return AllocAVectorStr(stk, str, strlen(str) + 1);
 }
 
-void ukernel::InitAVectors(ElfImage *elf)
+void ukernel::InitAVectors(ElfImage *elf, int argv_n, char **argv)
 {
 	u32 stk = elf->stack_start;
-	{
-		u32 foo_str_g = stk = AllocAVectorStr(stk, "__foo_str__");
-		u32 lc_all_str_g = stk = AllocAVectorStr(stk, "LC_ALL=C");
 
-		char auxv_salt[16] = {0, 1, 2, 3, 4, 5, 6};
-		u32 auxv_salt_g = stk = AllocAVectorStr(stk, auxv_salt, sizeof(auxv_salt));
+	u32 foo_str_g = stk = AllocAVectorStr(stk, "__foo_str__");
+	u32 lc_all_str_g = stk = AllocAVectorStr(stk, "LC_ALL=C");
+	char auxv_salt[16] = {0, 1, 2, 3, 4, 5, 6};
+	u32 auxv_salt_g = stk = AllocAVectorStr(stk, auxv_salt, sizeof(auxv_salt));
 
-		stk &= -4;
+	u32 *argv_strings_g = (u32 *)alloca(sizeof(char *) * argv_n);
+	for (int i = 0; i < argv_n; ++i) {
+		argv_strings_g[i] = stk = AllocAVectorStr(stk, argv[i]);
+	}
 
-		int argv_n = 1;
-		int envp_n = 1;
-		int auxv_n = 64;
+	stk &= -4;
 
-		int stk_vsz = argv_n + envp_n + auxv_n + 3;
-		stk -= stk_vsz * sizeof(u32);
-		u32 argc_p = stk;
-		u32 argv_p = argc_p + sizeof(u32);
-		u32 envp_p = argv_p + sizeof(u32) * (argv_n + 1);
-		u32 auxv_p = envp_p + sizeof(u32) * (envp_n + 1);
+	int envp_n = 1;
+	int auxv_n = 64;
+
+	int stk_vsz = argv_n + envp_n + auxv_n + 3;
+	stk -= stk_vsz * sizeof(u32);
+	u32 argc_p = stk;
+	u32 argv_p = argc_p + sizeof(u32);
+	u32 envp_p = argv_p + sizeof(u32) * (argv_n + 1);
+	u32 auxv_p = envp_p + sizeof(u32) * (envp_n + 1);
 
 #define PUSH_AVVAL(vec, val)                                                                                 \
-	*(u32 *)mmu::g2h(vec) = (val);                                                                       \
-	vec += sizeof(u32)
+	do {                                                                                                 \
+		*(u32 *)mmu::g2h(vec) = (val);                                                               \
+		vec += sizeof(u32);                                                                          \
+	} while (0)
 
-		PUSH_AVVAL(argc_p, 1);
+#define PUSH_AUXV(idx, val)                                                                                  \
+	do {                                                                                                 \
+		*(u32 *)mmu::g2h(auxv_p) = (idx);                                                            \
+		*(u32 *)mmu::g2h(auxv_p + sizeof(u32)) = (val);                                              \
+		auxv_p += 2 * sizeof(u32);                                                                   \
+		/* log_ukernel("put auxv %08x=%08x", (idx), (val)); */                                       \
+	} while (0)
 
-		PUSH_AVVAL(argv_p, foo_str_g);
-		PUSH_AVVAL(argv_p, 0);
+	PUSH_AVVAL(argc_p, argv_n);
 
-		PUSH_AVVAL(envp_p, lc_all_str_g);
-		PUSH_AVVAL(envp_p, 0);
-
-#define ADD_AUXV(idx, val)                                                                                   \
-	*(u32 *)mmu::g2h(auxv_p) = (idx);                                                                    \
-	*(u32 *)mmu::g2h(auxv_p + sizeof(u32)) = (val);                                                      \
-	auxv_p += 2 * sizeof(u32);                                                                           \
-	log_ukernel("put auxv %08x=%08x", (idx), (val));
-
-		ADD_AUXV(AT_PHDR, elf->ehdr.e_phoff + elf->load_addr);
-		ADD_AUXV(AT_PHENT, sizeof(Elf32_Phdr));
-		ADD_AUXV(AT_PHNUM, elf->ehdr.e_phnum);
-		ADD_AUXV(AT_PAGESZ, mmu::PAGE_SIZE);
-		ADD_AUXV(AT_BASE, 0);
-		ADD_AUXV(AT_FLAGS, 0);
-		ADD_AUXV(AT_ENTRY, elf->entry);
-
-		ADD_AUXV(AT_UID, getuid());
-		ADD_AUXV(AT_GID, getgid());
-		ADD_AUXV(AT_EUID, geteuid());
-		ADD_AUXV(AT_EGID, getegid());
-
-		ADD_AUXV(AT_EXECFN, foo_str_g);
-		ADD_AUXV(AT_SECURE, false);
-		ADD_AUXV(AT_HWCAP, 0);
-		ADD_AUXV(AT_CLKTCK, sysconf(_SC_CLK_TCK));
-		ADD_AUXV(AT_RANDOM, auxv_salt_g);
-
-		ADD_AUXV(AT_NULL, 0);
-#undef ADD_AUXV
+	for (int i = 0; i < argv_n; ++i) {
+		PUSH_AVVAL(argv_p, argv_strings_g[i]);
 	}
+	PUSH_AVVAL(argv_p, 0);
+
+	PUSH_AVVAL(envp_p, lc_all_str_g);
+	PUSH_AVVAL(envp_p, 0);
+
+	PUSH_AUXV(AT_PHDR, elf->ehdr.e_phoff + elf->load_addr);
+	PUSH_AUXV(AT_PHENT, sizeof(Elf32_Phdr));
+	PUSH_AUXV(AT_PHNUM, elf->ehdr.e_phnum);
+	PUSH_AUXV(AT_PAGESZ, mmu::PAGE_SIZE);
+	PUSH_AUXV(AT_BASE, 0);
+	PUSH_AUXV(AT_FLAGS, 0);
+	PUSH_AUXV(AT_ENTRY, elf->entry);
+
+	PUSH_AUXV(AT_UID, getuid());
+	PUSH_AUXV(AT_GID, getgid());
+	PUSH_AUXV(AT_EUID, geteuid());
+	PUSH_AUXV(AT_EGID, getegid());
+
+	PUSH_AUXV(AT_EXECFN, foo_str_g);
+	PUSH_AUXV(AT_SECURE, false);
+	PUSH_AUXV(AT_HWCAP, 0);
+	PUSH_AUXV(AT_CLKTCK, sysconf(_SC_CLK_TCK));
+	PUSH_AUXV(AT_RANDOM, auxv_salt_g);
+
+	PUSH_AUXV(AT_NULL, 0);
 
 	elf->stack_start = stk;
 }

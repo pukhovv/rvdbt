@@ -20,7 +20,7 @@ struct ukernel {
 	};
 
 	void LoadElf(char const *path, ElfImage *img);
-	void InitAVectors(ElfImage *elf);
+	void InitAVectors(ElfImage *elf, int argv_n, char **argv);
 	static void InitThread(CPUState *state, ElfImage *elf);
 
 	void Execute(CPUState *state);

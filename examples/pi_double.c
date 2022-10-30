@@ -1,7 +1,8 @@
-#include <stdio.h>
-#include <stdint.h>
 #include <inttypes.h>
 #include <locale.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 __attribute__((constructor)) void preinit_locale()
 {
@@ -21,9 +22,13 @@ double find_pi(int prec)
 
 int main(int argc, char **argv)
 {
-	volatile int prec = 500000;
+	if (argc != 2) {
+		printf("usage: <test> <int.prec>\n");
+		return 1;
+	}
+	int prec = atoi(argv[1]);
 	double res = find_pi(prec);
-	uint64_t res_raw = *(uint64_t*)&res;
+	uint64_t res_raw = *(uint64_t *)&res;
 	printf("prec=%d, res=%.17g, raw=%" PRIx64 "\n", prec, res, res_raw);
 	return 0;
 }
