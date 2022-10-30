@@ -11,7 +11,7 @@
 
 namespace dbt
 {
-LOG_STREAM(log_cflow, "[cflow]");
+LOG_STREAM(cflow);
 
 struct alignas(8) TBlock {
 	struct TCode {
@@ -72,7 +72,7 @@ struct tcache {
 	static inline void OnBrind(TBlock *tb)
 	{
 		jmp_cache_brind[jmp_hash(tb->ip)] = tb;
-		if constexpr (log_cflow.enabled()) {
+		if (log_cflow.enabled()) {
 			if (!tb->flags.is_brind_target) {
 				log_cflow("B%08x[fillcolor=orange]", tb->ip);
 			}

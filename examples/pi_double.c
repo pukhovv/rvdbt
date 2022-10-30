@@ -21,7 +21,7 @@ double find_pi(int prec)
 
 int main(int argc, char **argv)
 {
-	volatile int prec = 5000000;
+	volatile int prec = 500000;
 	double res = find_pi(prec);
 	uint64_t res_raw = *(uint64_t*)&res;
 	printf("prec=%d, res=%.17g, raw=%" PRIx64 "\n", prec, res, res_raw);

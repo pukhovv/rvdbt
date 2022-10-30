@@ -18,7 +18,7 @@ extern "C" {
 
 namespace dbt
 {
-LOG_STREAM(log_ukernel, "[ukernel]");
+LOG_STREAM(ukernel);
 
 void ukernel::Execute(CPUState *state)
 {
@@ -90,91 +90,97 @@ void ukernel::SyscallLinux(CPUState *state)
 			(rc) = -errno;                                                                       \
 	} while (0)
 
-	log_ukernel("linux syscall %0d", syscallno);
+#define DEF_SYSCALL(no, name)                                                                                \
+	break;                                                                                               \
+	case no:                                                                                             \
+		log_ukernel("sys_%s (no=%d)", #name, syscallno);
+
 	switch (syscallno) {
-	case 64: { // write
-		rc = write((i32)args[0], mmu::g2h(args[1]), args[2]);
-		RCERRNO(rc);
-		break;
-	}
-	case 78: { // readlinkat
-		char pathbuf[PATH_MAX];
-		char const *path = (char *)mmu::g2h(args[1]);
-		if (*path) {
-			rc = PathResolution((i32)args[0], path, pathbuf);
-			if (rc < 0) {
-				rc = -errno;
-				break;
-			}
-		} else {
-			pathbuf[0] = 0;
+		DEF_SYSCALL(64, write)
+		{
+			rc = write((i32)args[0], mmu::g2h(args[1]), args[2]);
+			RCERRNO(rc);
 		}
-		rc = readlinkat((i32)args[0], pathbuf, (char *)mmu::g2h(args[2]), args[3]);
-		RCERRNO(rc);
-		break;
-	}
-	case 94: { // exit_group
-		rc = 0;
-		state->trapno = rv32::TrapCode::TERMINATED;
-		break;
-	}
-	case 160: { // uname
-		auto *un = (struct utsname *)mmu::g2h(args[0]);
-		rc = uname(un);
-		strcpy(un->machine, "riscv32");
-		RCERRNO(rc);
-		break;
-	}
-	case 174: { // getuid
-		rc = getuid();
-		RCERRNO(rc);
-		break;
-	}
-	case 175: { // geteuid
-		rc = geteuid();
-		RCERRNO(rc);
-		break;
-	}
-	case 176: { // getgid
-		rc = getgid();
-		RCERRNO(rc);
-		break;
-	}
-	case 177: { // getegid
-		rc = getegid();
-		RCERRNO(rc);
-		break;
-	}
-	case 214: { // brk
-		rc = do_sys_brk(args[0]);
-		break;
-	}
-	case 226: { // mprotect
-		// TODO: pass to mmu
-		rc = mprotect(mmu::base + args[0], args[1], args[2]);
-		RCERRNO(rc);
-		break;
-	}
-	case 291: { // statx
-		char pathbuf[PATH_MAX];
-		char const *path = (char *)mmu::g2h(args[1]);
-		if (*path) {
-			rc = PathResolution((i32)args[0], path, pathbuf);
-			if (rc < 0) {
-				rc = -errno;
-				break;
+		DEF_SYSCALL(78, readlinkat)
+		{
+			char pathbuf[PATH_MAX];
+			char const *path = (char *)mmu::g2h(args[1]);
+			if (*path) {
+				rc = PathResolution((i32)args[0], path, pathbuf);
+				if (rc < 0) {
+					rc = -errno;
+					break;
+				}
+			} else {
+				pathbuf[0] = 0;
 			}
-		} else {
-			pathbuf[0] = 0;
+			rc = readlinkat((i32)args[0], pathbuf, (char *)mmu::g2h(args[2]), args[3]);
+			RCERRNO(rc);
 		}
-		rc = statx((i32)args[0], pathbuf, args[2], args[3], (struct statx *)mmu::g2h(args[4]));
-		RCERRNO(rc);
+		DEF_SYSCALL(94, exit_group)
+		{
+			rc = 0;
+			state->trapno = rv32::TrapCode::TERMINATED;
+		}
+		DEF_SYSCALL(160, uname)
+		{
+			auto *un = (struct utsname *)mmu::g2h(args[0]);
+			rc = uname(un);
+			strcpy(un->machine, "riscv32");
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(174, getuid)
+		{
+			rc = getuid();
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(175, geteuid)
+		{
+			rc = geteuid();
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(176, getgid)
+		{
+			rc = getgid();
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(177, getegid)
+		{
+			rc = getegid();
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(214, brk)
+		{
+			rc = do_sys_brk(args[0]);
+		}
+		DEF_SYSCALL(226, mprotect)
+		{
+			// TODO: pass to mmu
+			rc = mprotect(mmu::base + args[0], args[1], args[2]);
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(291, statx)
+		{
+			char pathbuf[PATH_MAX];
+			char const *path = (char *)mmu::g2h(args[1]);
+			if (*path) {
+				rc = PathResolution((i32)args[0], path, pathbuf);
+				if (rc < 0) {
+					rc = -errno;
+				}
+			} else {
+				pathbuf[0] = 0;
+			}
+			rc =
+			    statx((i32)args[0], pathbuf, args[2], args[3], (struct statx *)mmu::g2h(args[4]));
+			RCERRNO(rc);
+		}
 		break;
-	}
 	default:
+		log_ukernel("sys_ (no=%4d) is unknown", syscallno);
 		Panic("unknown syscall");
 	}
-	log_ukernel("syscall result: %d", rc);
+	log_ukernel("sys ret: %d", rc);
 	state->gpr[10] = rc;
 }
 
@@ -208,8 +214,7 @@ int ukernel::PathResolution(int dirfd, char const *path, char *resolved)
 		strncpy(rp_buf + pref_sz, path, sizeof(rp_buf) - pref_sz);
 	}
 
-	// TODO: that's not precise
-	// TODO: symlinks
+	// TODO: make it preceise, resolve "/.." and symlinks
 	if (!realpath(rp_buf, resolved)) {
 		log_ukernel("unresolved path %s", rp_buf);
 		return -1;
@@ -246,8 +251,8 @@ u32 ukernel::do_sys_brk(u32 newbrk)
 	return newbrk;
 }
 
-// -ffreestanding -march=rv32i -O0 -fpic -fpie -nostartfiles -nolibc -static
-// -ffreestanding -march=rv32i -O0 -fpic -fpie -static
+// -march=rv32i -O2 -fpic -fpie -static
+// -march=rv32i -O2 -fpic -fpie -static -ffreestanding -nostartfiles -nolibc
 void ukernel::LoadElf(const char *path, ElfImage *elf)
 {
 	int fd = open(path, O_RDONLY);

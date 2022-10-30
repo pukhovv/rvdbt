@@ -229,7 +229,7 @@ void Codegen::EmitCode()
 
 void Codegen::DumpCode()
 {
-	if constexpr (!log_qjit.enabled()) {
+	if (!log_qjit.enabled()) {
 		return;
 	}
 	auto &tcode = ctx->tb->tcode;

@@ -7,7 +7,7 @@
 
 namespace dbt::qjit
 {
-LOG_STREAM(log_qjit, "[qjit]");
+LOG_STREAM(qjit);
 
 struct BranchSlot {
 	void Reset();
@@ -93,34 +93,6 @@ struct Codegen {
 
 	QuickJIT *ctx{};
 };
-
-#ifdef CONFIG_USE_STATEMAPS
-struct StateMap {
-	using container = u64;
-	static constexpr u8 VREG_ID_BITS = 5;
-	static constexpr u8 ENTRY_MASK = (1 << VREG_ID_BITS) - 1;
-	static constexpr u8 MAX_ENTRIES = sizeof(container) * 8 / VREG_ID_BITS;
-
-	inline u8 Get(u8 e)
-	{
-		assert(e < MAX_ENTRIES);
-		return ENTRY_MASK & (data >> (VREG_ID_BITS * e));
-	}
-	inline void Set(u8 e, u8 vreg_id)
-	{
-		assert(e < MAX_ENTRIES);
-		assert((vreg_id >> VREG_ID_BITS) == 0);
-		u8 shift = VREG_ID_BITS * e;
-		data = (data & ~(ENTRY_MASK << shift)) | (vreg_id << shift);
-	}
-
-	container data{0};
-};
-#ifdef CONFIG_USE_STATEMAPS
-void CreateStateMap();
-std::pair<bool, StateMap> active_sm{false, {}};
-#endif
-#endif
 
 struct QuickJIT {
 	QuickJIT();

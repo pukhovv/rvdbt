@@ -6,7 +6,6 @@
 #include <type_traits>
 
 #include "dbt/config.h"
-#include "dbt/logger.h"
 
 typedef uintptr_t uptr;
 typedef uint64_t u64;

@@ -9,6 +9,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "usage: runelf <elf-path>\n");
 		return 1;
 	}
+	dbt::Logger::enable("ukernel");
 
 	dbt::mmu::Init();
 	dbt::ukernel uk{};

@@ -6,7 +6,7 @@
 namespace dbt
 {
 
-LOG_STREAM(log_dbt, "[BT]");
+LOG_STREAM(dbt);
 
 extern sigjmp_buf trap_unwind_env;
 

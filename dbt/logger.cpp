@@ -14,7 +14,7 @@ inline int xvsnprintf(char *dst, size_t n, char const *fmt, va_list args)
 	return rc;
 }
 
-void LogStream::write(const char *str) const
+void LogStream::commit_write(const char *str) const
 {
 	std::array<char, 4096 * 2> buf;
 	auto cur = buf.begin();
@@ -26,7 +26,7 @@ void LogStream::write(const char *str) const
 	fwrite(buf.data(), cur - buf.begin(), sizeof(char), stderr);
 }
 
-void LogStream::operator()(const char *fmt, ...) const
+void LogStream::commit_printf(const char *fmt, ...) const
 {
 	std::array<char, 2048> buf;
 	auto cur = buf.begin();
@@ -41,6 +41,32 @@ void LogStream::operator()(const char *fmt, ...) const
 	va_end(args);
 
 	fwrite(buf.data(), cur - buf.begin(), sizeof(char), stderr);
+}
+
+LogStream::Setup::Setup(LogStream &s)
+{
+	Logger::setup(s);
+}
+
+Logger *Logger::get()
+{
+	static Logger g_logger{};
+	return &g_logger;
+}
+
+void Logger::setup(LogStream &s)
+{
+	auto self = get();
+	self->streams.emplace(s.name, &s);
+}
+
+void Logger::enable(char const *name)
+{
+	auto self = get();
+	auto s = self->streams.find(name);
+	if (s != self->streams.end()) {
+		s->second->level = true;
+	}
 }
 
 } // namespace dbt

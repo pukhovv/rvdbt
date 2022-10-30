@@ -5,7 +5,7 @@
 
 namespace dbt
 {
-LOG_STREAM(log_mmu, "[mmu]");
+LOG_STREAM(mmu);
 
 void __attribute__((noreturn)) Panic(char const *msg)
 {

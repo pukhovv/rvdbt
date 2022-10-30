@@ -220,7 +220,7 @@ void QuickTranslator::TranslateInsn()
 	void QuickTranslator::H_##name(void *insn)                                                           \
 	{                                                                                                    \
 		insn::Insn_##name i{*(u32 *)insn};                                                           \
-		if constexpr (log_qjit.enabled()) {                                                          \
+		if (log_qjit.enabled()) {                                                                    \
 			std::stringstream ss;                                                                \
 			ss << i;                                                                             \
 			const auto &res = ss.str();                                                          \

@@ -60,7 +60,7 @@ std::ostream &operator<<(std::ostream &o, A i)
 
 } // namespace insn
 
-LOG_STREAM(log_trace, "[trace]");
+LOG_STREAM(trace);
 
 void CPUState::DumpTrace(char const *event)
 {
