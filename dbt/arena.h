@@ -12,6 +12,17 @@ struct MemArena {
 	void Reset();
 	void *Allocate(size_t alloc_sz, size_t align);
 
+	template <typename T>
+	inline T *Allocate(size_t num = 1)
+	{
+		return (T *)Allocate(sizeof(T) * num, alignof(T));
+	}
+
+	~MemArena()
+	{
+		Destroy();
+	}
+
 private:
 	u8 *pool{nullptr};
 	size_t pool_sz{0};

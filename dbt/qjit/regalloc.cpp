@@ -87,12 +87,12 @@ void RegAlloc::AllocFrameSlot(VReg *v)
 	assert(!v->spill_base);
 
 	u16 slot_sz = TypeToSize(v->type);
-	if (ascope->frame_cur + slot_sz > frame_size) {
+	if (frame_cur + slot_sz > frame_size) {
 		Panic();
 	}
 	v->spill_base = frame_base;
-	v->spill_offs = ascope->frame_cur;
-	ascope->frame_cur += slot_sz;
+	v->spill_offs = frame_cur;
+	frame_cur += slot_sz;
 }
 
 void RegAlloc::Fill(VReg *v, Mask desire, Mask avoid)
@@ -115,38 +115,36 @@ void RegAlloc::Fill(VReg *v, Mask desire, Mask avoid)
 // internal
 RegAlloc::VReg *RegAlloc::AllocVReg()
 {
-	if (ascope->num_vregs == vregs.size()) {
+	if (num_vregs == vregs.size()) {
 		Panic();
 	}
-	auto *v = &vregs[ascope->num_vregs++];
+	auto *v = &vregs[num_vregs++];
 	return new (v) VReg();
 }
 
 // internal
-RegAlloc::VReg *RegAlloc::AllocVRegGlob(char const *name)
+RegAlloc::VReg *RegAlloc::AllocVRegGlob()
 {
-	assert(IsGlobalScope());
 	auto *v = AllocVReg();
-	v->name = name;
 	return v;
 }
 
-RegAlloc::VReg *RegAlloc::AllocVRegFixed(char const *name, VReg::Type type, PReg p)
+RegAlloc::VReg *RegAlloc::AllocVRegFixed(VReg::Type type, PReg p)
 {
-	auto *v = AllocVRegGlob(name);
+	auto *v = AllocVRegGlob();
 	v->p = p;
 	p2v[p] = v;
-	assert(!ascope->fixed.Test(p));
-	ascope->fixed.Set(p);
+	assert(!fixed.Test(p));
+	fixed.Set(p);
 	v->scope = VReg::Scope::FIXED;
 	v->type = type;
 	return v;
 }
 
-RegAlloc::VReg *RegAlloc::AllocVRegMem(char const *name, VReg::Type type, VReg *base, u16 offs)
+RegAlloc::VReg *RegAlloc::AllocVRegMem(VReg::Type type, VReg *base, u16 offs)
 {
 	assert(base->scope == VReg::Scope::FIXED);
-	auto *v = AllocVRegGlob(name);
+	auto *v = AllocVRegGlob();
 	v->scope = VReg::Scope::GLOBAL;
 	v->type = type;
 	v->spill_base = base;
@@ -156,9 +154,7 @@ RegAlloc::VReg *RegAlloc::AllocVRegMem(char const *name, VReg::Type type, VReg *
 
 void RegAlloc::Prologue()
 {
-	assert(IsGlobalScope());
-
-	for (int i = 0; i < ascope->num_vregs; ++i) {
+	for (int i = 0; i < num_vregs; ++i) {
 		auto *v = &vregs[i];
 
 		switch (v->scope) {
@@ -176,7 +172,7 @@ void RegAlloc::Prologue()
 
 void RegAlloc::BlockBoundary()
 {
-	for (int i = 0; i < ascope->num_vregs; ++i) {
+	for (int i = 0; i < num_vregs; ++i) {
 		auto *v = &vregs[i];
 
 		switch (v->scope) {
@@ -196,7 +192,7 @@ void RegAlloc::BlockBoundary()
 
 void RegAlloc::AllocOp(VReg **dstl, u8 dst_n, VReg **srcl, u8 src_n, bool unsafe)
 {
-	auto avoid = ascope->fixed;
+	auto avoid = fixed;
 
 	for (u8 i = 0; i < src_n; ++i) {
 		if (srcl[i]) {
@@ -209,7 +205,7 @@ void RegAlloc::AllocOp(VReg **dstl, u8 dst_n, VReg **srcl, u8 src_n, bool unsafe
 #ifdef CONFIG_USE_STATEMAPS
 		ctx->CreateStateMap();
 #endif
-		for (int i = 0; i < ascope_global.num_vregs; ++i) {
+		for (int i = 0; i < num_vregs; ++i) {
 			auto *v = &vregs[i];
 			if (v && !v->has_statemap) {
 				SyncSpill(v);
@@ -241,7 +237,7 @@ void RegAlloc::CallOp(bool use_globals)
 	}
 
 	if (use_globals) {
-		for (u8 i = 0; i < ascope_global.num_vregs; ++i) {
+		for (u8 i = 0; i < num_vregs; ++i) {
 			auto *v = &vregs[i];
 			if (v && v->scope != qjit::RegAlloc::VReg::Scope::FIXED) {
 				Spill(v);

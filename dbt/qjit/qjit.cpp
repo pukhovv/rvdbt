@@ -177,13 +177,12 @@ void Codegen::SetupCtx(QuickJIT *ctx_)
 	ctx = ctx_;
 	auto ra = ctx->ra;
 	// ra->ascope->fixed.Set(RegAlloc::PReg(asmjit::x86::Gp::kIdBp));
-	ra->ascope->fixed.Set(RegAlloc::PReg(TMP1C));
+	ra->fixed.Set(RegAlloc::PReg(TMP1C));
 
-	ra->state_base = ra->AllocVRegFixed("state", RegAlloc::VReg::Type::I64, RegAlloc::PReg(STATE));
-	ra->frame_base = ra->AllocVRegFixed("frame", RegAlloc::VReg::Type::I64, RegAlloc::PReg(SP));
+	ra->state_base = ra->AllocVRegFixed(RegAlloc::VReg::Type::I64, RegAlloc::PReg(STATE));
+	ra->frame_base = ra->AllocVRegFixed(RegAlloc::VReg::Type::I64, RegAlloc::PReg(SP));
 	if (mmu::base) {
-		ra->mem_base =
-		    ra->AllocVRegFixed("memory", RegAlloc::VReg::Type::I64, RegAlloc::PReg(MEMBASE));
+		ra->mem_base = ra->AllocVRegFixed(RegAlloc::VReg::Type::I64, RegAlloc::PReg(MEMBASE));
 	}
 #ifdef CONFIG_USE_STATEMAPS
 	ra->state_map = ra->AllocVRegFixed("statemap", RegAlloc::VReg::Type::I64,
@@ -305,8 +304,8 @@ void Codegen::BranchTBDir(u32 ip)
 	tcache::OnTranslateBr(ctx->tb, ip);
 	ctx->ra->BlockBoundary();
 
-	auto *slot = (BranchSlot *)j.bufferPtr();
 	j.embedUInt8(0, sizeof(BranchSlot));
+	auto *slot = (BranchSlot *)(j.bufferPtr() - sizeof(BranchSlot));
 	slot->gip = ip;
 	slot->Reset();
 }
@@ -407,4 +406,5 @@ QuickJIT::~QuickJIT()
 	delete ra;
 	delete cg;
 }
+
 } // namespace dbt::qjit

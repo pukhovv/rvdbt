@@ -102,7 +102,7 @@ struct tcache {
 	static JMPCache jmp_cache_brind;
 
 private:
-	tcache() {}
+	tcache() = delete;
 
 	static TBlock *LookupFull(u32 ip);
 

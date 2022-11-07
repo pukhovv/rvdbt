@@ -87,13 +87,14 @@ struct RegAlloc {
 		}
 
 		// TODO: hide these
-		char const *name{nullptr};
 		Type type{};
-		Loc loc{Loc::DEAD};
 		Scope scope{};
 		VReg *spill_base{nullptr};
 		u16 spill_offs{};
+
 		PReg p{};
+
+		Loc loc{Loc::DEAD};
 		bool spill_synced{false};
 		bool has_statemap{false};
 	};
@@ -110,33 +111,9 @@ struct RegAlloc {
 		}
 	}
 
-	struct AllocScope {
-		AllocScope(RegAlloc *ra_) : ra(ra_)
-		{
-			prev = ra->ascope;
-			ra->ascope = this;
-			if (likely(prev)) {
-				fixed = prev->fixed;
-				num_vregs = prev->num_vregs;
-				frame_cur = prev->frame_cur;
-			}
-		}
-		~AllocScope()
-		{
-			assert(ra->ascope == this);
-			ra->ascope = prev;
-		}
-		RegAlloc *ra{};
-		AllocScope *prev{};
-
-		Mask fixed{0};
-		u16 num_vregs{0};
-		u16 frame_cur{0};
-	};
-
 	void SetupCtx(QuickJIT *ctx_);
 
-	RegAlloc() : ascope_global(this) {}
+	RegAlloc() {}
 
 	PReg AllocPReg(Mask desire, Mask avoid);
 	void Spill(PReg p);
@@ -148,9 +125,9 @@ struct RegAlloc {
 	void Fill(VReg *v, Mask desire, Mask avoid);
 
 	VReg *AllocVReg();
-	VReg *AllocVRegGlob(char const *name);
-	VReg *AllocVRegFixed(char const *name, VReg::Type type, PReg p);
-	VReg *AllocVRegMem(char const *name, VReg::Type type, VReg *base, u16 offs);
+	VReg *AllocVRegGlob();
+	VReg *AllocVRegFixed(VReg::Type type, PReg p);
+	VReg *AllocVRegMem(VReg::Type type, VReg *base, u16 offs);
 
 	void Prologue();
 	void BlockBoundary();
@@ -163,15 +140,8 @@ struct RegAlloc {
 	void AllocOp(VReg **dstl, u8 dst_n, VReg **srcl, u8 src_n, bool unsafe = false);
 	void CallOp(bool use_globals = true);
 
-	bool IsGlobalScope()
-	{
-		return ascope == &ascope_global;
-	}
-
-	AllocScope *ascope{};
-	AllocScope ascope_global;
-
 	std::array<VReg, 64> vregs{};
+	u16 num_vregs{0};
 
 	VReg *state_base{nullptr};
 	VReg *frame_base{nullptr};
@@ -179,7 +149,9 @@ struct RegAlloc {
 	VReg *state_map{nullptr};
 
 	std::array<VReg *, N_PREGS> p2v{nullptr};
+	Mask fixed{0};
 	static constexpr u16 frame_size{31 * sizeof(u64)};
+	u16 frame_cur{0};
 
 	QuickJIT *ctx{};
 };

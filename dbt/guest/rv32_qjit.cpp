@@ -16,14 +16,13 @@ QuickTranslator::QuickTranslator()
 {
 	vreg_gpr[0] = nullptr;
 	for (u8 i = 1; i < vreg_gpr.size(); ++i) {
-		char const *name = rv32::insn::GRPToName(i);
 		u16 offs = offsetof(CPUState, gpr) + 4 * i;
-		vreg_gpr[i] = ra->AllocVRegMem(name, RegAlloc::VReg::Type::I32, ra->state_base, offs);
+		vreg_gpr[i] = ra->AllocVRegMem(RegAlloc::VReg::Type::I32, ra->state_base, offs);
 #ifdef CONFIG_USE_STATEMAPS
 		vreg_gpr[i]->has_statemap = true;
 #endif
 	}
-	vreg_ip = ra->AllocVRegMem("ip", RegAlloc::VReg::Type::I32, ra->state_base, offsetof(CPUState, ip));
+	vreg_ip = ra->AllocVRegMem(RegAlloc::VReg::Type::I32, ra->state_base, offsetof(CPUState, ip));
 }
 
 TBlock *QuickTranslator::Translate(CPUState *state, u32 ip)

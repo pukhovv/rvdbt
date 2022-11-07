@@ -64,7 +64,7 @@ TBlock *tcache::LookupFull(u32 gip)
 
 TBlock *tcache::AllocateTBlock()
 {
-	TBlock *res = (TBlock *)tb_pool.Allocate(sizeof(*res), std::alignment_of_v<decltype(*res)>);
+	auto *res = tb_pool.Allocate<TBlock>();
 	if (res == nullptr) {
 		Invalidate();
 	}

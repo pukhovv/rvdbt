@@ -39,7 +39,7 @@ struct mmu {
 	static u8 *base;
 
 private:
-	mmu() {}
+	mmu() = delete;
 };
 
 } // namespace dbt
