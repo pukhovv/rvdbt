@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dbt/common.h"
+#include "dbt/util/common.h"
 #include <map>
 #include <mutex>
 
@@ -15,6 +15,11 @@ struct LogStream {
 		if (unlikely(enabled())) {
 			commit_write(str);
 		}
+	}
+
+	ALWAYS_INLINE void operator()(char const *fmt) const
+	{
+		write(fmt);
 	}
 
 	template <typename... Args>

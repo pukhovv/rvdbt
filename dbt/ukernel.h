@@ -1,6 +1,5 @@
 #pragma once
 
-#include "dbt/common.h"
 #include "dbt/guest/rv32_cpu.h"
 
 extern "C" {

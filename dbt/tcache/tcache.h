@@ -1,16 +1,15 @@
 #pragma once
 
 #include "dbt/arena.h"
-#include "dbt/common.h"
-#include "dbt/core.h"
-#include "dbt/guest/rv32_cpu.h"
-#include "dbt/qjit/regalloc.h"
+#include "dbt/mmu.h"
+#include "dbt/util/logger.h"
 
 #include <array>
 #include <map>
 
 namespace dbt
 {
+LOG_STREAM(tcache);
 LOG_STREAM(cflow);
 
 struct alignas(8) TBlock {
@@ -50,36 +49,29 @@ struct tcache {
 		return tb;
 	}
 
-	static TBlock *LookupUpperBound(u32 ip)
+	static TBlock *LookupUpperBound(u32 gip);
+
+	static inline void OnTranslate(u32 ip)
 	{
-		auto it = tcache_map.upper_bound(ip);
-		if (it == tcache_map.end()) {
-			return nullptr;
-		}
-		return it->second;
+		log_cflow("B%08x[fillcolor=cyan]", ip);
 	}
 
-	static inline void OnTranslate(TBlock *tb)
+	static inline void OnTranslateBr(u32 ip, u32 tgtip)
 	{
-		log_cflow("B%08x[fillcolor=cyan]", tb->ip);
-	}
-
-	static inline void OnTranslateBr(TBlock *tb, u32 tgtip)
-	{
-		if (rounddown(tb->ip, mmu::PAGE_SIZE) != rounddown(tgtip, mmu::PAGE_SIZE)) {
-			log_cflow("B%08x->B%08x[color=blue,penwidth=2]", tb->ip, tgtip);
-		} else if (tb->ip >= tgtip) {
-			log_cflow("B%08x->B%08x[color=red,penwidth=2,dir=back]", tgtip, tb->ip);
+		if (rounddown(ip, mmu::PAGE_SIZE) != rounddown(tgtip, mmu::PAGE_SIZE)) {
+			log_cflow("B%08x->B%08x[color=blue,penwidth=2]", ip, tgtip);
+		} else if (ip >= tgtip) {
+			log_cflow("B%08x->B%08x[color=red,penwidth=2,dir=back]", tgtip, ip);
 		} else {
-			log_cflow("B%08x->B%08x", tb->ip, tgtip);
+			log_cflow("B%08x->B%08x", ip, tgtip);
 		}
 	}
 
-	static inline void OnTranslateBrind(TBlock *tb)
+	static inline void OnTranslateBrind(u32 ip)
 	{
 		log_cflow("B%08x_brind[fillcolor=purple,shape=point];"
 			  "B%08x->B%08x_brind[color=purple,penwidth=3]",
-			  tb->ip, tb->ip, tb->ip);
+			  ip, ip, ip);
 	}
 
 	static inline void OnBrind(TBlock *tb)
@@ -102,7 +94,7 @@ struct tcache {
 	static JMPCache jmp_cache_brind;
 
 private:
-	tcache() {}
+	tcache() = delete;
 
 	static TBlock *LookupFull(u32 ip);
 

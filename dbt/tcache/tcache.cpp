@@ -1,15 +1,4 @@
 #include "dbt/tcache/tcache.h"
-#include "dbt/arena.h"
-#include "dbt/core.h"
-#include "dbt/execute.h"
-#include "dbt/guest/rv32_cpu.h"
-#include "dbt/guest/rv32_insn.h"
-#include <cassert>
-#include <cstdint>
-#include <cstdio>
-#include <ostream>
-#include <sys/types.h>
-#include <type_traits>
 
 namespace dbt
 {
@@ -31,6 +20,8 @@ void tcache::Init()
 
 void tcache::Destroy()
 {
+	log_tcache("Destroy tcache, code_pool size: %zu", code_pool.GetUsedSize());
+
 	jmp_cache_generic.fill(nullptr);
 	jmp_cache_brind.fill(nullptr);
 	tcache_map.clear();
@@ -53,6 +44,15 @@ void tcache::Insert(TBlock *tb)
 	jmp_cache_generic[jmp_hash(tb->ip)] = tb;
 }
 
+TBlock *tcache::LookupUpperBound(u32 gip)
+{
+	auto it = tcache_map.upper_bound(gip);
+	if (it == tcache_map.end()) {
+		return nullptr;
+	}
+	return it->second;
+}
+
 TBlock *tcache::LookupFull(u32 gip)
 {
 	auto it = tcache_map.find(gip);
@@ -64,7 +64,7 @@ TBlock *tcache::LookupFull(u32 gip)
 
 TBlock *tcache::AllocateTBlock()
 {
-	TBlock *res = (TBlock *)tb_pool.Allocate(sizeof(*res), std::alignment_of_v<decltype(*res)>);
+	auto *res = tb_pool.Allocate<TBlock>();
 	if (res == nullptr) {
 		Invalidate();
 	}

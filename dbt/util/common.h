@@ -1,6 +1,8 @@
 #pragma once
 
+#include <bit>
 #include <cassert>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -19,6 +21,8 @@ typedef int32_t i32;
 typedef int16_t i16;
 typedef int8_t i8;
 
+#define EMPTY_MACRO(...)
+
 #define POISON_PTR ((void *)0xb00bab00deaddead)
 #define POISON_GUEST ((u32)0xdedb00ba)
 
@@ -33,6 +37,22 @@ typedef int8_t i8;
 		assert((str) && 0);                                                                          \
 		__builtin_unreachable();                                                                     \
 	} while (0)
+
+#define NO_COPY(name)                                                                                        \
+	name(const name &) = delete;                                                                         \
+	name &operator=(const name &) = delete;
+
+#define NO_MOVE(name)                                                                                        \
+	name(name &&) = delete;                                                                              \
+	name &operator=(name &&) = delete;
+
+#define DEFAULT_COPY(name)                                                                                   \
+	name(const name &) = default;                                                                        \
+	name &operator=(const name &) = default;
+
+#define DEFAULT_MOVE(name)                                                                                   \
+	name(name &&) = default;                                                                             \
+	name &operator=(name &&) = default;
 
 template <typename T, typename A>
 inline T roundup(T x, A y)
@@ -75,6 +95,22 @@ typename std::enable_if_t<!std::is_same_v<T, P>> unaligned_store(P *ptr, V val)
 {
 	unaligned_store<T>(reinterpret_cast<T *>(ptr), static_cast<T>(val));
 }
+
+// c++23
+template <class Enum>
+constexpr std::underlying_type_t<Enum> to_underlying(Enum e)
+{
+	return static_cast<std::underlying_type_t<Enum>>(e);
+}
+
+template <class Enum>
+constexpr size_t enum_bits(Enum e)
+{
+	return std::bit_width(to_underlying(e) - 1u);
+}
+
+template <typename T>
+static constexpr size_t bit_size = sizeof(T) * CHAR_BIT;
 
 namespace dbt
 {

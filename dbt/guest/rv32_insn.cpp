@@ -1,5 +1,4 @@
-#include "dbt/guest/rv32_insn.h"
-#include "dbt/guest/rv32_runtime.h"
+#include "dbt/guest/rv32_cpu.h"
 
 #include <sstream>
 
@@ -55,7 +54,7 @@ std::ostream &operator<<(std::ostream &o, J i)
 std::ostream &operator<<(std::ostream &o, A i)
 {
 	return o << gpr_names[i.rd()] << " \t" << gpr_names[i.rs1()] << " \t" << gpr_names[i.rs2()]
-		 << " \tra=" << i.rl() << i.aq();
+		 << " \tra=" << int(i.rl()) << int(i.aq());
 }
 
 } // namespace insn

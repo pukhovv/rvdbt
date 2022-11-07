@@ -1,4 +1,3 @@
-#include "dbt/core.h"
 #include "dbt/guest/rv32_cpu.h"
 #include "dbt/tcache/tcache.h"
 #include "dbt/ukernel.h"
@@ -61,5 +60,9 @@ int main(int argc, char **argv)
 
 	dbt::tcache::Init();
 	uk.Execute(&state);
+#ifndef NDEBUG
+	dbt::tcache::Destroy();
+	dbt::mmu::Destroy();
+#endif
 	return 0;
 }

@@ -1,19 +1,26 @@
 add_subdirectory(third_party)
 
 add_library(dbtstatic STATIC
+	util/logger.cpp
+
 	arena.cpp
-	core.cpp
+	mmu.cpp
 	execute.cpp
-	logger.cpp
 	ukernel.cpp
 
-	qjit/qjit.cpp
-	qjit/regalloc.cpp
 	tcache/tcache.cpp
+
+	qjit/qcompile.cpp
+	qjit/qir_opt.cpp
+	qjit/qir_printer.cpp
+	qjit/qcg/jitabi.cpp
+	qjit/qcg/qcg.cpp
+	qjit/qcg/qemit.cpp
+	qjit/qcg/qra.cpp
 
 	guest/rv32_insn.cpp
 	guest/rv32_interp.cpp
-	guest/rv32_qjit.cpp
+	guest/rv32_qir.cpp
 )
 target_include_directories(dbtstatic PUBLIC "${PROJECT_SOURCE_DIR}")
 

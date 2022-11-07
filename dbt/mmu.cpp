@@ -1,4 +1,4 @@
-#include "dbt/core.h"
+#include "dbt/mmu.h"
 #include "dbt/ukernel.h"
 #include <cstdlib>
 #include <map>
@@ -6,12 +6,6 @@
 namespace dbt
 {
 LOG_STREAM(mmu);
-
-void __attribute__((noreturn)) Panic(char const *msg)
-{
-	fprintf(stderr, "Panic: %s\n", msg);
-	abort();
-}
 
 u8 *mmu::base{nullptr};
 

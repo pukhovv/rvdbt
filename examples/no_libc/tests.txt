@@ -1,4 +1,4 @@
-// TODO: re-implement later
+// TODO: these were used when qjit was very simple, would be nice to resurrect unit tests
 
 #include "dbt/core.h"
 #include "dbt/execute.h"

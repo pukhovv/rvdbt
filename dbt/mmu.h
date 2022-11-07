@@ -1,7 +1,6 @@
 #pragma once
 
-#include "dbt/common.h"
-#include "dbt/logger.h"
+#include "dbt/util/logger.h"
 #include <csetjmp>
 #include <cstdint>
 #include <unordered_map>
@@ -39,7 +38,7 @@ struct mmu {
 	static u8 *base;
 
 private:
-	mmu() {}
+	mmu() = delete;
 };
 
 } // namespace dbt

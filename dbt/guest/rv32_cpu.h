@@ -1,7 +1,9 @@
 #pragma once
 
-#include "dbt/core.h"
 #include "dbt/guest/rv32_insn.h"
+#include "dbt/mmu.h"
+
+#include <array>
 
 namespace dbt::rv32
 {

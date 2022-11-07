@@ -1,11 +1,8 @@
 #pragma once
 
-#include "dbt/bitfield.h"
-#include "dbt/common.h"
 #include "dbt/guest/rv32_ops.h"
-#include <limits>
+#include "dbt/util/bitfield.h"
 #include <ostream>
-#include <utility>
 
 namespace dbt::rv32::insn
 {
