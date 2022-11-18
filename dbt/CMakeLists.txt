@@ -7,12 +7,15 @@ add_library(dbtstatic STATIC
 	logger.cpp
 	ukernel.cpp
 
+	qjit/qir.cpp
+	qjit/qir_printer.cpp
 	qjit/qjit.cpp
 	qjit/regalloc.cpp
 	tcache/tcache.cpp
 
 	guest/rv32_insn.cpp
 	guest/rv32_interp.cpp
+	guest/rv32_qir.cpp
 	guest/rv32_qjit.cpp
 )
 target_include_directories(dbtstatic PUBLIC "${PROJECT_SOURCE_DIR}")

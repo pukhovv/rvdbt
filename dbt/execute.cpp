@@ -1,5 +1,6 @@
 #include "dbt/execute.h"
 #include "dbt/core.h"
+#include "dbt/guest/rv32_qir.h"
 #include "dbt/guest/rv32_qjit.h"
 #include "dbt/guest/rv32_runtime.h"
 
@@ -30,6 +31,7 @@ void Execute(CPUState *state)
 		TBlock *tb = tcache::Lookup(state->ip);
 		if (tb == nullptr) {
 			tb = qjit::rv32::QuickTranslator::Translate(state, state->ip);
+			qir::rv32::RV32Translator::Translate(state, state->ip);
 			tcache::Insert(tb);
 		}
 

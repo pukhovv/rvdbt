@@ -7,6 +7,16 @@ extern "C" {
 };
 
 struct MemArena {
+	MemArena() = default;
+	MemArena(size_t size, int prot = PROT_READ | PROT_WRITE)
+	{
+		Init(size, prot);
+	}
+	~MemArena()
+	{
+		Destroy();
+	}
+
 	void Init(size_t size, int prot = PROT_READ | PROT_WRITE);
 	void Destroy();
 	void Reset();
@@ -16,11 +26,6 @@ struct MemArena {
 	inline T *Allocate(size_t num = 1)
 	{
 		return (T *)Allocate(sizeof(T) * num, alignof(T));
-	}
-
-	~MemArena()
-	{
-		Destroy();
 	}
 
 private:

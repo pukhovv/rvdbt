@@ -1,0 +1,200 @@
+#pragma once
+
+#include <iterator>
+
+namespace dbt
+{
+
+struct IListNodeBase {
+	inline IListNodeBase *getPrev() const
+	{
+		return nprev;
+	}
+	inline IListNodeBase *getNext() const
+	{
+		return nnext;
+	}
+	inline void setPrev(IListNodeBase *n)
+	{
+		nprev = n;
+	}
+	inline void setNext(IListNodeBase *n)
+	{
+		nnext = n;
+	}
+
+private:
+	IListNodeBase *nprev{}, *nnext{};
+};
+
+struct IListBase {
+	static inline void insertBefore(IListNodeBase *next, IListNodeBase *node)
+	{
+		auto prev = next->getPrev();
+		node->setNext(next);
+		node->setPrev(prev);
+		prev->setNext(node);
+		next->setPrev(node);
+	}
+
+	static inline void remove(IListNodeBase *node)
+	{
+		auto prev = node->getPrev();
+		auto next = node->getNext();
+		next->setPrev(prev);
+		prev->setNext(next);
+	}
+};
+
+template <typename T>
+struct IListSentinel;
+
+template <typename T>
+struct IListIterator;
+
+template <typename T>
+struct IListNode : IListNodeBase {
+
+	friend struct IListSentinel<T>;
+	friend struct IListIterator<T>;
+
+	IListIterator<T> getIter()
+	{
+		return IListIterator<T>(this);
+	}
+
+private:
+	IListNode *getPrev() const
+	{
+		return static_cast<IListNode *>(IListNodeBase::getPrev());
+	}
+	IListNode *getNext() const
+	{
+		return static_cast<IListNode *>(IListNodeBase::getNext());
+	}
+	void setPrev(IListNode *n)
+	{
+		IListNodeBase::setPrev(n);
+	}
+	void setNext(IListNode *n)
+	{
+		IListNodeBase::setNext(n);
+	}
+};
+
+template <typename T>
+struct IListSentinel : IListNode<T> {
+	IListSentinel() : IListNode<T>()
+	{
+		reset();
+	}
+	void reset()
+	{
+		IListNode<T>::setPrev(this);
+		IListNode<T>::setNext(this);
+	}
+	bool empty() const
+	{
+		return IListNode<T>::getPrev() == this;
+	}
+};
+
+template <typename T>
+struct IListIterator : public std::iterator<std::bidirectional_iterator_tag, T> {
+
+	IListIterator(IListIterator const &) = default;
+	IListIterator &operator=(IListIterator const &) = default;
+	~IListIterator() = default;
+
+	IListIterator(IListNode<T> &n) : pos(&n) {}
+	IListIterator(T *n) : pos(n) {}
+
+	bool operator==(IListIterator &rhs) const
+	{
+		return pos == rhs.pos;
+	}
+	bool operator!=(IListIterator &rhs) const
+	{
+		return pos != rhs.pos;
+	}
+
+	T &operator*() const
+	{
+		return *static_cast<T *>(pos);
+	}
+	T *operator->() const
+	{
+		return &operator*();
+	}
+
+	IListIterator &operator++()
+	{
+		pos = pos->getNext();
+		return *this;
+	}
+	IListIterator &operator--()
+	{
+		pos = pos->getPrev();
+		return *this;
+	}
+
+	auto getIListNode()
+	{
+		return pos;
+	}
+
+private:
+	IListNode<T> *pos{};
+};
+
+template <typename T>
+struct IList : IListBase {
+	using value_type = T;
+	using reference = T &;
+	using iterator = IListIterator<T>;
+	using difference_type = ptrdiff_t;
+	using size_type = size_t;
+
+	IList() = default;
+	~IList() = default;
+	IList(const IList &) = delete;
+	IList &operator=(IList const &) = delete;
+
+	// TODO:
+	IList(const IList &&) = delete;
+	IList &operator=(IList &&) = delete;
+
+	bool empty() const
+	{
+		return sentinel.empty();
+	}
+
+	void insert(iterator it, reference n)
+	{
+		IListBase::insertBefore(it.getIListNode(), &n);
+	}
+	void remove(reference n)
+	{
+		IListBase::remove(&n);
+	}
+	iterator erase(iterator it)
+	{
+		assert(end() != it);
+		remove(*it++);
+		return it;
+	}
+
+	iterator begin()
+	{
+		return ++iterator(sentinel);
+	}
+	iterator end()
+	{
+		return iterator(sentinel);
+	}
+
+private:
+	IListSentinel<T> sentinel;
+};
+
+} // namespace dbt

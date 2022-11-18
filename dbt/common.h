@@ -19,6 +19,8 @@ typedef int32_t i32;
 typedef int16_t i16;
 typedef int8_t i8;
 
+#define EMPTY_MACRO(...)
+
 #define POISON_PTR ((void *)0xb00bab00deaddead)
 #define POISON_GUEST ((u32)0xdedb00ba)
 
@@ -74,6 +76,13 @@ template <typename T, typename P, typename V>
 typename std::enable_if_t<!std::is_same_v<T, P>> unaligned_store(P *ptr, V val)
 {
 	unaligned_store<T>(reinterpret_cast<T *>(ptr), static_cast<T>(val));
+}
+
+// c++23
+template <class Enum>
+constexpr std::underlying_type_t<Enum> to_underlying(Enum e)
+{
+	return static_cast<std::underlying_type_t<Enum>>(e);
 }
 
 namespace dbt

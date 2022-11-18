@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dbt/common.h"
+#include "dbt/qjit/qir.h"
 #include "dbt/qjit/regalloc.h"
 #include "dbt/tcache/tcache.h"
 #include <array>
@@ -44,33 +45,6 @@ struct Codegen {
 			Panic("jit codegen failed");
 		}
 	};
-
-	static inline asmjit::x86::Gp GetPReg(RegAlloc::VReg *v)
-	{
-		assert(v);
-		assert(v->loc == RegAlloc::VReg::Loc::REG);
-		switch (v->type) {
-		case RegAlloc::VReg::Type::I32:
-			return asmjit::x86::Gpd(v->p);
-		case RegAlloc::VReg::Type::I64:
-			return asmjit::x86::Gpq(v->p);
-		default:
-			Panic();
-		}
-	}
-
-	static inline asmjit::x86::Mem GetSpillMem(RegAlloc::VReg *v)
-	{
-		assert(v);
-		assert(v->loc == RegAlloc::VReg::Loc::MEM);
-		return GetMemRef(v->spill_base, v->spill_offs, RegAlloc::TypeToSize(v->type));
-	}
-
-	static inline asmjit::x86::Mem GetMemRef(RegAlloc::VReg *v, i32 offs, u8 size)
-	{
-		assert(v->type == RegAlloc::VReg::Type::I64);
-		return asmjit::x86::Mem(GetPReg(v), offs, size);
-	}
 
 	void Bind(asmjit::Label l);
 	void BranchCC(asmjit::Label taken, asmjit::x86::CondCode cc, asmjit::Operand lhs,
