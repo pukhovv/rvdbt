@@ -7,6 +7,7 @@
 #include "dbt/qjit/qir_ops.h"
 #include "dbt/qjit/regalloc.h"
 
+#include <type_traits>
 #include <variant>
 
 namespace dbt::qir
@@ -14,7 +15,7 @@ namespace dbt::qir
 LOG_STREAM(qir);
 
 template <typename D, typename B>
-requires std::is_base_of_v<B, D> ALWAYS_INLINE D *cast(B *b)
+requires std::is_base_of_v<B, D> ALWAYS_INLINE D *as(B *b)
 {
 	if (!D::classof(b)) {
 		return nullptr;
@@ -23,9 +24,9 @@ requires std::is_base_of_v<B, D> ALWAYS_INLINE D *cast(B *b)
 }
 
 template <typename D, typename B>
-requires std::is_base_of_v<B, D> ALWAYS_INLINE D *as(B *b)
+ALWAYS_INLINE D *cast(B *b)
 {
-	auto res = cast<D>(b);
+	auto res = as<D>(b);
 	assert(res);
 	return res;
 }
@@ -47,7 +48,7 @@ enum class VType : u8 {
 	Count,
 };
 
-struct VOperand {
+struct VOperandBase {
 	bool IsConst() const
 	{
 		return is_const;
@@ -64,17 +65,19 @@ struct VOperand {
 	}
 
 protected:
-	VOperand(bool is_const_, VType type_) : is_const(is_const_), type(type_) {}
+	VOperandBase(bool is_const_, VType type_) : is_const(is_const_), type(type_) {}
 
 private:
 	bool is_const;
 	VType type;
 };
 
-struct VConst : VOperand {
-	VConst(VType type_, u32 value_) : VOperand(true, type_), value(value_) {}
+union VOperand;
 
-	static bool classof(VOperand *opr)
+struct VConst : public VOperandBase {
+	VConst(VType type_, u32 value_) : VOperandBase(true, type_), value(value_) {}
+
+	static bool classof(VOperandBase *opr)
 	{
 		return opr->IsConst();
 	}
@@ -87,11 +90,12 @@ struct VConst : VOperand {
 private:
 	u32 value;
 };
-struct VReg : VOperand {
-	VReg(VType type_, int idx_) : VOperand(false, type_), idx(idx_) {}
-	VReg() : VOperand(false, VType::UNDEF), idx{-1} {}
 
-	static bool classof(VOperand *opr)
+struct VReg : VOperandBase {
+	VReg(VType type_, int idx_) : VOperandBase(false, type_), idx(idx_) {}
+	VReg() : VOperandBase(false, VType::UNDEF), idx{-1} {}
+
+	static bool classof(VOperandBase *opr)
 	{
 		return !opr->IsConst();
 	}
@@ -110,16 +114,37 @@ private:
 	int idx;
 };
 
-union VOperandUn {
-	VOperandUn(VConst cnst_) : cnst(cnst_) {}
-	VOperandUn(VReg reg_) : reg(reg_) {}
+union VOperand {
+	VOperand(VConst cnst_) : cnst(cnst_) {}
+	VOperand(VReg reg_) : reg(reg_) {}
 
-	operator VOperand &()
+	auto IsConst() const
 	{
-		return *reinterpret_cast<VOperand *>(this);
+		return base.IsConst();
+	}
+
+	auto GetType() const
+	{
+		return base.GetType();
+	}
+
+	void SetType(VType type)
+	{
+		base.SetType(type);
+	}
+
+	VOperandBase &bcls()
+	{
+		return base;
 	}
 
 private:
+	// illegal
+	static_assert(static_cast<VOperandBase *>((VConst *)0) == 0);
+	static_assert(static_cast<VOperandBase *>((VReg *)0) == 0);
+	static_assert(std::is_trivially_copyable_v<VConst>);
+	static_assert(std::is_trivially_copyable_v<VReg>);
+	VOperandBase base;
 	VConst cnst;
 	VReg reg;
 } __attribute__((may_alias));
@@ -158,20 +183,20 @@ private:
 template <size_t N_OUT, size_t N_IN>
 struct InstWithOperands : Inst {
 protected:
-	InstWithOperands(Op opcode_, std::array<VReg, N_OUT> &&o_, std::array<VOperandUn, N_IN> &&i_)
+	InstWithOperands(Op opcode_, std::array<VReg, N_OUT> &&o_, std::array<VOperand, N_IN> &&i_)
 	    : Inst(opcode_), o{o_}, i{i_}
 	{
 	}
 
 public:
 	std::array<VReg, N_OUT> o{};
-	std::array<VOperandUn, N_IN> i{};
+	std::array<VOperand, N_IN> i{};
 };
 
 /* Common classes */
 
 struct InstUnop : InstWithOperands<1, 1> {
-	InstUnop(Op opcode_, VReg d, VOperandUn s) : InstWithOperands(opcode_, {d}, {s})
+	InstUnop(Op opcode_, VReg d, VOperand s) : InstWithOperands(opcode_, {d}, {s})
 	{
 		assert(HasOpcode(opcode_));
 	}
@@ -188,7 +213,7 @@ struct InstUnop : InstWithOperands<1, 1> {
 };
 
 struct InstBinop : InstWithOperands<1, 2> {
-	InstBinop(Op opcode_, VReg d, VOperandUn sl, VOperandUn sr) : InstWithOperands(opcode_, {d}, {sl, sr})
+	InstBinop(Op opcode_, VReg d, VOperand sl, VOperand sr) : InstWithOperands(opcode_, {d}, {sl, sr})
 	{
 		assert(HasOpcode(opcode_));
 	}
@@ -239,7 +264,7 @@ enum class CondCode : u8 {
 };
 
 struct InstBrcc : InstWithOperands<0, 2> {
-	InstBrcc(CondCode cc_, Label target_, VOperandUn s1, VOperandUn s2)
+	InstBrcc(CondCode cc_, Label target_, VOperand s1, VOperand s2)
 	    : InstWithOperands(Op::_brcc, {}, {s1, s2}), cc(cc_), target(target_)
 	{
 	}
@@ -264,12 +289,12 @@ struct InstHelper : Inst {
 
 // TODO: format
 struct InstVMLoad : InstWithOperands<1, 1> {
-	InstVMLoad(VReg d, VOperandUn ptr) : InstWithOperands(Op::_vmload, {d}, {ptr}) {}
+	InstVMLoad(VReg d, VOperand ptr) : InstWithOperands(Op::_vmload, {d}, {ptr}) {}
 };
 
 // TODO: format
 struct InstVMStore : InstWithOperands<0, 2> {
-	InstVMStore(VOperandUn ptr, VOperandUn val) : InstWithOperands(Op::_vmstore, {}, {ptr, val}) {}
+	InstVMStore(VOperand ptr, VOperand val) : InstWithOperands(Op::_vmstore, {}, {ptr, val}) {}
 };
 
 struct InstList : IList<Inst> {

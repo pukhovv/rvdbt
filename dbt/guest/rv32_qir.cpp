@@ -116,7 +116,7 @@ inline VReg RV32Translator::temp32()
 	return VReg(VType::I32, temps_idx++);
 }
 
-inline VOperandUn RV32Translator::gprop(u8 idx, VType type)
+inline VOperand RV32Translator::gprop(u8 idx, VType type)
 {
 	if (!idx) {
 		return VConst(type, 0);

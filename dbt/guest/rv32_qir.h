@@ -37,7 +37,7 @@ private:
 
 	VConst const32(u32 val);
 	VReg temp32();
-	VOperandUn gprop(u8 idx, VType type = VType::I32);
+	VOperand gprop(u8 idx, VType type = VType::I32);
 
 	void TranslateLoad(insn::I i);
 };

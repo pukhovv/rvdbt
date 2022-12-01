@@ -36,12 +36,12 @@ private:
 		sep = true;
 	}
 
-	void print(VOperand &o)
+	void print(VOperandBase &o)
 	{
-		if (auto *cnst = cast<VConst>(&o)) {
+		if (auto *cnst = as<VConst>(&o)) {
 			print(*cnst);
 		} else {
-			print(*as<VReg>(&o));
+			print(*cast<VReg>(&o));
 		}
 	}
 
@@ -74,7 +74,7 @@ private:
 		for (auto &o : ins->o)
 			print(o);
 		for (auto &i : ins->i)
-			print(i);
+			print(i.bcls());
 	}
 
 	bool sep = false;
