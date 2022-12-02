@@ -40,6 +40,7 @@ private:
 	VOperand gprop(u8 idx, VType type = VType::I32);
 
 	void TranslateLoad(insn::I i);
+	void TranslateBrcc(insn::B i, CondCode cc);
 };
 
 } // namespace dbt::qir::rv32

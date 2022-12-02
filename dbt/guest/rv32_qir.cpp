@@ -7,7 +7,7 @@
 namespace dbt::qir::rv32
 {
 
-RV32Translator::RV32Translator(qir::Region *region_) : qb(region_)
+RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock())
 {
 	vgpr[0] = VReg();
 	for (u8 i = 1; i < vgpr.size(); ++i) {
@@ -43,7 +43,7 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 		}
 		if (num_insns == TB_MAX_INSNS || t.insn_ip == upper_bound) {
 			t.control = Control::TB_OVF;
-			assert(!"must insert branch here");
+			t.qb.Create_gbr(VConst(VType::I32, t.insn_ip));
 			break;
 		}
 	}
@@ -62,6 +62,17 @@ void RV32Translator::TranslateInsn()
 
 	using decoder = insn::Decoder<RV32Translator>;
 	(this->*decoder::Decode(insn_ptr))(insn_ptr);
+}
+
+void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
+{
+	auto bb_f = qb.CreateBlock();
+	auto bb_t = qb.CreateBlock();
+	qb.Create_brcc(cc, bb_t, bb_f, gprop(i.rs1()), gprop(i.rs2()));
+	qb = Builder(bb_f);
+	qb.Create_gbr(const32(insn_ip + 4));
+	qb = Builder(bb_t);
+	qb.Create_gbr(const32(insn_ip + i.imm()));
 }
 
 #define TRANSLATOR(name)                                                                                     \
@@ -104,6 +115,12 @@ void RV32Translator::TranslateInsn()
 		if (i.rd()) {                                                                                \
 			qb.Create_##op(vgpr[i.rd()], gprop(i.rs1()), gprop(i.rs2()));                        \
 		}                                                                                            \
+	}
+
+#define TRANSLATOR_Brcc(name, cc)                                                                            \
+	TRANSLATOR(name)                                                                                     \
+	{                                                                                                    \
+		TranslateBrcc(i, CondCode::cc);                                                              \
 	}
 
 inline VConst RV32Translator::const32(u32 val)
@@ -160,18 +177,12 @@ TRANSLATOR(jalr)
 	}
 	qb.Create_gbrind(tgt);
 }
-TRANSLATOR_Unimpl(beq);
-TRANSLATOR(bne)
-{
-	auto bcc = qb.Create_brcc(CondCode::NE, Label(nullptr), gprop(i.rs1()), gprop(i.rs2()));
-	qb.Create_gbr(const32(insn_ip + 4));
-	bcc->target = Label(qb.Create_label());
-	qb.Create_gbr(const32(insn_ip + i.imm()));
-}
-TRANSLATOR_Unimpl(blt);
-TRANSLATOR_Unimpl(bge);
-TRANSLATOR_Unimpl(bltu);
-TRANSLATOR_Unimpl(bgeu);
+TRANSLATOR_Brcc(beq, EQ);
+TRANSLATOR_Brcc(bne, NE);
+TRANSLATOR_Brcc(blt, LT);
+TRANSLATOR_Brcc(bge, GE);
+TRANSLATOR_Brcc(bltu, LTU);
+TRANSLATOR_Brcc(bgeu, GEU);
 TRANSLATOR_Unimpl(lb);
 TRANSLATOR_Unimpl(lh);
 TRANSLATOR(lw)
@@ -198,22 +209,22 @@ TRANSLATOR(sw)
 TRANSLATOR_ArithmRI(addi, add);
 TRANSLATOR_Unimpl(slti);
 TRANSLATOR_Unimpl(sltiu);
-TRANSLATOR_Unimpl(xori);
-TRANSLATOR_Unimpl(ori);
+TRANSLATOR_ArithmRI(xori, xor);
+TRANSLATOR_ArithmRI(ori, or);
 TRANSLATOR_ArithmRI(andi, and);
 TRANSLATOR_ArithmRI(slli, sll);
 TRANSLATOR_Unimpl(srai);
 TRANSLATOR_Unimpl(srli);
-TRANSLATOR_Unimpl(sub);
+TRANSLATOR_ArithmRR(sub, sub);
 TRANSLATOR_ArithmRR(add, add);
 TRANSLATOR_Unimpl(sll);
 TRANSLATOR_Unimpl(slt);
 TRANSLATOR_Unimpl(sltu);
-TRANSLATOR_Unimpl(xor);
+TRANSLATOR_ArithmRR(xor, xor);
 TRANSLATOR_Unimpl(sra);
 TRANSLATOR_Unimpl(srl);
-TRANSLATOR_Unimpl(or);
-TRANSLATOR_Unimpl(and);
+TRANSLATOR_ArithmRR(or, or);
+TRANSLATOR_ArithmRR(and, and);
 TRANSLATOR_Unimpl(fence);
 TRANSLATOR_Unimpl(fencei);
 TRANSLATOR_Unimpl(ecall);

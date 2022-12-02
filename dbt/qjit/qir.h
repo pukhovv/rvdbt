@@ -231,26 +231,12 @@ struct InstBinop : InstWithOperands<1, 2> {
 
 /* Custom classes */
 
-struct InstLabel : Inst {
-	InstLabel() : Inst(Op::_label) {}
-};
-
-struct Label {
-	Label(InstLabel *ins_) : ins(ins_) {}
-
-	InstLabel *GetInst()
-	{
-		return ins;
-	}
-
-private:
-	InstLabel *ins;
-};
+struct Block;
 
 struct InstBr : Inst {
-	InstBr(Label target_) : Inst(Op::_br), target(target_) {}
+	InstBr(Block *target_) : Inst(Op::_br), target(target_) {}
 
-	Label target;
+	Block *target;
 };
 
 enum class CondCode : u8 {
@@ -264,13 +250,13 @@ enum class CondCode : u8 {
 };
 
 struct InstBrcc : InstWithOperands<0, 2> {
-	InstBrcc(CondCode cc_, Label target_, VOperand s1, VOperand s2)
-	    : InstWithOperands(Op::_brcc, {}, {s1, s2}), cc(cc_), target(target_)
+	InstBrcc(CondCode cc_, Block *bb_t_, Block *bb_f_, VOperand s1, VOperand s2)
+	    : InstWithOperands(Op::_brcc, {}, {s1, s2}), cc(cc_), bb_t(bb_t_), bb_f(bb_f_)
 	{
 	}
 
 	CondCode cc;
-	Label target;
+	Block *bb_t, *bb_f;
 };
 
 struct InstGBr : Inst {
@@ -297,45 +283,87 @@ struct InstVMStore : InstWithOperands<0, 2> {
 	InstVMStore(VOperand ptr, VOperand val) : InstWithOperands(Op::_vmstore, {}, {ptr, val}) {}
 };
 
-struct InstList : IList<Inst> {
-	InstList() = default;
+struct Region;
+
+struct Block : IListNode<Block> {
+	Block(Region *rn_) : rn(rn_) {}
+
+	IList<Inst> ilist;
+
+	inline Region *GetRegion() const
+	{
+		return rn;
+	}
+
+	inline u32 GetId() const
+	{
+		return id;
+	}
+
+	inline void SetId(u32 id_)
+	{
+		id = id_;
+	}
+
+private:
+	Region *rn;
+	u32 id{(u32)-1};
 };
 
 struct Region {
 	Region(MemArena *arena_) : arena(arena_) {}
 
-	InstList il;
+	IList<Block> blist;
+
+	Block *CreateBlock()
+	{
+		auto res = CreateInArena<Block>(this);
+		res->SetId(bb_id_counter++);
+		blist.insert(blist.end(), *res);
+		return res;
+	}
 
 	template <typename T, typename... Args>
-	T *Create(Args &&...args)
+	requires std::is_base_of_v<Inst, T> T *Create(Args &&...args)
 	{
-		auto *mem = arena->Allocate<T>();
-		assert(mem);
-		auto res = new (mem) T(std::forward<Args>(args)...);
+		auto res = CreateInArena<T>(std::forward<Args>(args)...);
 		res->SetId(inst_id_counter++);
 		return res;
 	}
 
-	template <typename T>
-	void insert_back(T *ins)
+private:
+	template <typename T, typename... Args>
+	T *CreateInArena(Args &&...args)
 	{
-		il.insert(il.end(), *ins);
+		auto *mem = arena->Allocate<T>();
+		assert(mem);
+		return new (mem) T(std::forward<Args>(args)...);
 	}
 
-private:
 	MemArena *arena;
 	u32 inst_id_counter{1};
+	u32 bb_id_counter{1};
 };
 
 struct Builder {
-	explicit Builder(Region *cr_) : cr(cr_), it(cr->il.end()) {}
-	Builder(Region *cr_, IListIterator<Inst> it_) : cr(cr_), it(it_) {}
+	explicit Builder(Block *bb_) : bb(bb_), it(bb->ilist.end()) {}
+	Builder(Block *bb_, IListIterator<Inst> it_) : bb(bb_), it(it_) {}
+
+	Block *GetBlock() const
+	{
+		return bb;
+	}
+
+	Block *CreateBlock()
+	{
+		return bb->GetRegion()->CreateBlock();
+	}
 
 	template <typename T, typename... Args>
 	T *Create(Args &&...args)
 	{
-		auto *ins = cr->Create<T>(std::forward<Args>(args)...);
-		cr->il.insert(it, *ins);
+		auto *ins = bb->GetRegion()->Create<T>(std::forward<Args>(args)...);
+		bb->ilist.insert(it, *ins);
 		return ins;
 	}
 
@@ -367,7 +395,7 @@ struct Builder {
 #undef GROUP
 
 private:
-	Region *cr;
+	Block *bb;
 	IListIterator<Inst> it;
 };
 

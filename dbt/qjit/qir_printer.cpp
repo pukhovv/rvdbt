@@ -57,15 +57,15 @@ private:
 		ss << GetVTypeNameStr(r.GetType()) << " v" << r.GetIdx();
 	}
 
-	void print(Label &l)
+	void print(Block *b)
 	{
 		addsep();
-		ss << "[" << l.GetInst()->GetId() << "]";
+		ss << "bb" << b->GetId();
 	}
 
 	void printName(Inst *ins)
 	{
-		ss << "[" << ins->GetId() << "] " << GetOpNameStr(ins->GetOpcode());
+		ss << "    [" << ins->GetId() << "] " << GetOpNameStr(ins->GetOpcode());
 	}
 
 	template <size_t N_OUT, size_t N_IN>
@@ -86,11 +86,6 @@ public:
 		ss << " DEFAULT";
 	}
 
-	void visitInstLabel(InstLabel *ins)
-	{
-		printName(ins);
-	}
-
 	void visitInstUnop(InstUnop *ins)
 	{
 		printName(ins);
@@ -108,7 +103,8 @@ public:
 		printName(ins);
 		addsep();
 		ss << GetCondCodeNameStr(ins->cc);
-		print(ins->target);
+		print(ins->bb_t);
+		print(ins->bb_f);
 		printOperands(ins);
 	}
 
@@ -141,14 +137,21 @@ public:
 
 void PrinterPass::run(Region *r)
 {
-	auto &il = r->il;
 
 	log_qirprint("################################################");
 
-	for (auto it = il.begin(); it != il.end(); ++it) {
-		PrinterVisitor vis{};
-		vis.visit(&*it);
-		log_qirprint(vis.ss.str().c_str());
+	auto &blist = r->blist;
+
+	for (auto bit = blist.begin(); bit != blist.end(); ++bit) {
+		log_qirprint("bb%u:", bit->GetId());
+
+		auto &ilist = bit->ilist;
+
+		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
+			PrinterVisitor vis{};
+			vis.visit(&*iit); // TODO:
+			log_qirprint(vis.ss.str().c_str());
+		}
 	}
 
 	log_qirprint("################################################");
