@@ -68,7 +68,9 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 {
 	auto bb_f = qb.CreateBlock();
 	auto bb_t = qb.CreateBlock();
-	qb.Create_brcc(cc, bb_t, bb_f, gprop(i.rs1()), gprop(i.rs2()));
+	qb.GetBlock()->AddSucc(bb_t);
+	qb.GetBlock()->AddSucc(bb_f);
+	qb.Create_brcc(cc, gprop(i.rs1()), gprop(i.rs2()));
 	qb = Builder(bb_f);
 	qb.Create_gbr(const32(insn_ip + 4));
 	qb = Builder(bb_t);

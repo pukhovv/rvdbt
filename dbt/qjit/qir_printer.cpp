@@ -79,7 +79,11 @@ private:
 
 	bool sep = false;
 
+	std::stringstream &ss;
+
 public:
+	PrinterVisitor(std::stringstream &ss_) : ss(ss_) {}
+
 	void visitInst(Inst *ins)
 	{
 		printName(ins);
@@ -103,8 +107,6 @@ public:
 		printName(ins);
 		addsep();
 		ss << GetCondCodeNameStr(ins->cc);
-		print(ins->bb_t);
-		print(ins->bb_f);
 		printOperands(ins);
 	}
 
@@ -131,30 +133,38 @@ public:
 		printName(ins);
 		printOperands(ins);
 	}
-
-	std::stringstream ss;
 };
+
+// static void BlockPrinter(Block *bb) {}
 
 void PrinterPass::run(Region *r)
 {
+	std::stringstream ss;
 
-	log_qirprint("################################################");
+	ss << "\n";
 
-	auto &blist = r->blist;
+	for (auto &bb : r->blist) {
+		ss << "bb" << bb.GetId() << ":";
 
-	for (auto bit = blist.begin(); bit != blist.end(); ++bit) {
-		log_qirprint("bb%u:", bit->GetId());
+		ss << " succs[ ";
+		for (auto const &s : bb.GetSuccs()) {
+			ss << (*s).GetId() << " ";
+		}
+		ss << "] preds[ ";
+		for (auto const &p : bb.GetPreds()) {
+			ss << (*p).GetId() << " ";
+		}
+		ss << "]\n";
 
-		auto &ilist = bit->ilist;
+		auto &ilist = bb.ilist;
 
 		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
-			PrinterVisitor vis{};
+			PrinterVisitor vis{ss};
 			vis.visit(&*iit); // TODO:
-			log_qirprint(vis.ss.str().c_str());
+			ss << "\n";
 		}
 	}
-
-	log_qirprint("################################################");
+	log_qirprint(ss.str().c_str());
 }
 
 } // namespace dbt::qir

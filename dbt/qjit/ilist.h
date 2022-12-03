@@ -100,7 +100,12 @@ struct IListSentinel : IListNode<T> {
 };
 
 template <typename T>
-struct IListIterator : public std::iterator<std::bidirectional_iterator_tag, T> {
+struct IListIterator {
+	using iterator_category = std::bidirectional_iterator_tag;
+	using value_type = T;
+	using difference_type = uintptr_t;
+	using pointer = T *;
+	using reference = T &;
 
 	IListIterator(IListIterator const &) = default;
 	IListIterator &operator=(IListIterator const &) = default;
@@ -109,11 +114,11 @@ struct IListIterator : public std::iterator<std::bidirectional_iterator_tag, T> 
 	IListIterator(IListNode<T> &n) : pos(&n) {}
 	IListIterator(T *n) : pos(n) {}
 
-	bool operator==(IListIterator &rhs) const
+	bool operator==(IListIterator const &rhs) const
 	{
 		return pos == rhs.pos;
 	}
-	bool operator!=(IListIterator &rhs) const
+	bool operator!=(IListIterator const &rhs) const
 	{
 		return pos != rhs.pos;
 	}
@@ -138,7 +143,7 @@ struct IListIterator : public std::iterator<std::bidirectional_iterator_tag, T> 
 		return *this;
 	}
 
-	auto getIListNode()
+	auto getIListNode() const
 	{
 		return pos;
 	}
@@ -151,6 +156,7 @@ template <typename T>
 struct IList : IListBase {
 	using value_type = T;
 	using reference = T &;
+	using pointer = T *;
 	using iterator = IListIterator<T>;
 	using difference_type = ptrdiff_t;
 	using size_type = size_t;
@@ -169,10 +175,23 @@ struct IList : IListBase {
 		return sentinel.empty();
 	}
 
+	void insert(iterator it, pointer n)
+	{
+		IListBase::insertBefore(it.getIListNode(), n);
+	}
 	void insert(iterator it, reference n)
 	{
-		IListBase::insertBefore(it.getIListNode(), &n);
+		insert(it, &n);
 	}
+	void push_back(pointer n)
+	{
+		insert(end(), n);
+	}
+	void push_back(reference n)
+	{
+		insert(end(), &n);
+	}
+
 	void remove(reference n)
 	{
 		IListBase::remove(&n);

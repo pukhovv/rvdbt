@@ -3,6 +3,8 @@
 #include "dbt/core.h"
 #include "dbt/guest/rv32_insn.h"
 
+#include <array>
+
 namespace dbt::rv32
 {
 enum class TrapCode : u32 {

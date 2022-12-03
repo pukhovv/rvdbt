@@ -7,6 +7,7 @@
 #include "dbt/qjit/qir_ops.h"
 #include "dbt/qjit/regalloc.h"
 
+#include <algorithm>
 #include <type_traits>
 #include <variant>
 
@@ -250,13 +251,11 @@ enum class CondCode : u8 {
 };
 
 struct InstBrcc : InstWithOperands<0, 2> {
-	InstBrcc(CondCode cc_, Block *bb_t_, Block *bb_f_, VOperand s1, VOperand s2)
-	    : InstWithOperands(Op::_brcc, {}, {s1, s2}), cc(cc_), bb_t(bb_t_), bb_f(bb_f_)
+	InstBrcc(CondCode cc_, VOperand s1, VOperand s2) : InstWithOperands(Op::_brcc, {}, {s1, s2}), cc(cc_)
 	{
 	}
 
 	CondCode cc;
-	Block *bb_t, *bb_f;
 };
 
 struct InstGBr : Inst {
@@ -283,6 +282,7 @@ struct InstVMStore : InstWithOperands<0, 2> {
 	InstVMStore(VOperand ptr, VOperand val) : InstWithOperands(Op::_vmstore, {}, {ptr, val}) {}
 };
 
+struct Block;
 struct Region;
 
 struct Block : IListNode<Block> {
@@ -305,8 +305,38 @@ struct Block : IListNode<Block> {
 		id = id_;
 	}
 
+	struct Link : IListNode<Link> {
+		static Link *Create(Region *rn_, Block *to);
+
+		Block &operator*() const
+		{
+			return *ptr;
+		}
+
+	private:
+		Link(Block *bb) : ptr(bb) {}
+
+		Block *ptr;
+	};
+
+	void AddSucc(Block *succ)
+	{
+		succs.push_back(Link::Create(rn, succ));
+		succ->preds.push_back(Link::Create(rn, this));
+	}
+
+	auto &GetSuccs()
+	{
+		return succs;
+	}
+	auto &GetPreds()
+	{
+		return preds;
+	}
+
 private:
 	Region *rn;
+	IList<Link> succs, preds;
 	u32 id{(u32)-1};
 };
 
@@ -331,6 +361,11 @@ struct Region {
 		return res;
 	}
 
+	MemArena *GetArena()
+	{
+		return arena;
+	}
+
 private:
 	template <typename T, typename... Args>
 	T *CreateInArena(Args &&...args)
@@ -344,6 +379,13 @@ private:
 	u32 inst_id_counter{1};
 	u32 bb_id_counter{1};
 };
+
+inline Block::Link *Block::Link::Create(Region *rn_, Block *to)
+{
+	auto *mem = rn_->GetArena()->Allocate<Block::Link>();
+	assert(mem);
+	return new (mem) Block::Link(to);
+}
 
 struct Builder {
 	explicit Builder(Block *bb_) : bb(bb_), it(bb->ilist.end()) {}
