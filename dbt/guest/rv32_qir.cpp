@@ -77,6 +77,25 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 	qb.Create_gbr(const32(insn_ip + i.imm()));
 }
 
+void RV32Translator::TranslateLoad(insn::I i, VType type, VSign sgn)
+{
+	auto tmp = temp32();
+
+	qb.Create_add(tmp, gprop(i.rs1()), const32(i.imm())); // constfold
+	if (i.rd()) {
+		qb.Create_vmload(type, sgn, vgpr[i.rd()].WithType(VType::I32), tmp);
+	} else {
+		qb.Create_vmload(type, sgn, tmp.WithType(VType::I32), tmp);
+	}
+}
+
+void RV32Translator::TranslateStore(insn::S i, VType type, VSign sgn)
+{
+	auto tmp = temp32();
+	qb.Create_add(tmp, gprop(i.rs1()), const32(i.imm()));
+	qb.Create_vmstore(type, sgn, tmp, gprop(i.rs2(), type));
+}
+
 #define TRANSLATOR(name)                                                                                     \
 	void RV32Translator::H_##name(void *insn)                                                            \
 	{                                                                                                    \
@@ -123,6 +142,18 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
 		TranslateBrcc(i, CondCode::cc);                                                              \
+	}
+
+#define TRANSLATOR_Load(name, type, sgn)                                                                     \
+	TRANSLATOR(name)                                                                                     \
+	{                                                                                                    \
+		TranslateLoad(i, VType::type, VSign::sgn);                                                   \
+	}
+
+#define TRANSLATOR_Store(name, type, sgn)                                                                    \
+	TRANSLATOR(name)                                                                                     \
+	{                                                                                                    \
+		TranslateStore(i, VType::type, VSign::sgn);                                                  \
 	}
 
 inline VConst RV32Translator::const32(u32 val)
@@ -185,29 +216,14 @@ TRANSLATOR_Brcc(blt, LT);
 TRANSLATOR_Brcc(bge, GE);
 TRANSLATOR_Brcc(bltu, LTU);
 TRANSLATOR_Brcc(bgeu, GEU);
-TRANSLATOR_Unimpl(lb);
-TRANSLATOR_Unimpl(lh);
-TRANSLATOR(lw)
-{
-	auto tmp = temp32();
-
-	qb.Create_add(tmp, gprop(i.rs1()), const32(i.imm())); // constfold
-	if (i.rd()) {
-		qb.Create_vmload(vgpr[i.rd()].WithType(VType::I32), tmp);
-	} else {
-		qb.Create_vmload(tmp.WithType(VType::I32), tmp);
-	}
-}
-TRANSLATOR_Unimpl(lbu);
-TRANSLATOR_Unimpl(lhu);
-TRANSLATOR_Unimpl(sb);
-TRANSLATOR_Unimpl(sh);
-TRANSLATOR(sw)
-{
-	auto tmp = temp32();
-	qb.Create_add(tmp, gprop(i.rs1()), const32(i.imm()));
-	qb.Create_vmstore(tmp, gprop(i.rs2(), VType::I32));
-}
+TRANSLATOR_Load(lb, I8, S);
+TRANSLATOR_Load(lh, I16, S);
+TRANSLATOR_Load(lw, I32, S);
+TRANSLATOR_Load(lbu, I8, U);
+TRANSLATOR_Load(lhu, I16, U);
+TRANSLATOR_Store(sb, I8, U);
+TRANSLATOR_Store(sh, I16, U);
+TRANSLATOR_Store(sw, I32, U);
 TRANSLATOR_ArithmRI(addi, add);
 TRANSLATOR_Unimpl(slti);
 TRANSLATOR_Unimpl(sltiu);
@@ -215,16 +231,16 @@ TRANSLATOR_ArithmRI(xori, xor);
 TRANSLATOR_ArithmRI(ori, or);
 TRANSLATOR_ArithmRI(andi, and);
 TRANSLATOR_ArithmRI(slli, sll);
-TRANSLATOR_Unimpl(srai);
-TRANSLATOR_Unimpl(srli);
+TRANSLATOR_ArithmRI(srai, sra);
+TRANSLATOR_ArithmRI(srli, srl);
 TRANSLATOR_ArithmRR(sub, sub);
 TRANSLATOR_ArithmRR(add, add);
-TRANSLATOR_Unimpl(sll);
+TRANSLATOR_ArithmRR(sll, sll);
 TRANSLATOR_Unimpl(slt);
 TRANSLATOR_Unimpl(sltu);
 TRANSLATOR_ArithmRR(xor, xor);
-TRANSLATOR_Unimpl(sra);
-TRANSLATOR_Unimpl(srl);
+TRANSLATOR_ArithmRR(sra, sra);
+TRANSLATOR_ArithmRR(srl, srl);
 TRANSLATOR_ArithmRR(or, or);
 TRANSLATOR_ArithmRR(and, and);
 TRANSLATOR_Unimpl(fence);

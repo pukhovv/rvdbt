@@ -36,6 +36,26 @@ private:
 		sep = true;
 	}
 
+	static constexpr char prop_sep = ':';
+
+	void print(VType type)
+	{
+		ss << prop_sep;
+		ss << GetVTypeNameStr(type);
+	}
+
+	void print(VSign sgn)
+	{
+		ss << prop_sep;
+		ss << (sgn == VSign::U ? 'u' : 's');
+	}
+
+	void print(CondCode cc)
+	{
+		ss << prop_sep;
+		ss << GetCondCodeNameStr(cc);
+	}
+
 	void print(VOperandBase &o)
 	{
 		if (auto *cnst = as<VConst>(&o)) {
@@ -105,8 +125,7 @@ public:
 	void visitInstBrcc(InstBrcc *ins)
 	{
 		printName(ins);
-		addsep();
-		ss << GetCondCodeNameStr(ins->cc);
+		print(ins->cc);
 		printOperands(ins);
 	}
 
@@ -125,12 +144,16 @@ public:
 	void visitInstVMLoad(InstVMLoad *ins)
 	{
 		printName(ins);
+		print(ins->sz);
+		print(ins->sgn);
 		printOperands(ins);
 	}
 
 	void visitInstVMStore(InstVMStore *ins)
 	{
 		printName(ins);
+		print(ins->sz);
+		print(ins->sgn);
 		printOperands(ins);
 	}
 };
@@ -141,10 +164,8 @@ void PrinterPass::run(Region *r)
 {
 	std::stringstream ss;
 
-	ss << "\n";
-
 	for (auto &bb : r->blist) {
-		ss << "bb" << bb.GetId() << ":";
+		ss << "\nbb" << bb.GetId() << ":";
 
 		ss << " succs[ ";
 		for (auto const &s : bb.GetSuccs()) {
@@ -154,14 +175,14 @@ void PrinterPass::run(Region *r)
 		for (auto const &p : bb.GetPreds()) {
 			ss << (*p).GetId() << " ";
 		}
-		ss << "]\n";
+		ss << "]";
 
 		auto &ilist = bb.ilist;
 
 		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
+			ss << "\n";
 			PrinterVisitor vis{ss};
 			vis.visit(&*iit); // TODO:
-			ss << "\n";
 		}
 	}
 	log_qirprint(ss.str().c_str());

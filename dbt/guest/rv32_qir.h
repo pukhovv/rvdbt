@@ -39,7 +39,8 @@ private:
 	VReg temp32();
 	VOperand gprop(u8 idx, VType type = VType::I32);
 
-	void TranslateLoad(insn::I i);
+	void TranslateLoad(insn::I i, VType type, VSign sgn);
+	void TranslateStore(insn::S i, VType type, VSign sgn);
 	void TranslateBrcc(insn::B i, CondCode cc);
 };
 

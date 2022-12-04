@@ -49,6 +49,11 @@ enum class VType : u8 {
 	Count,
 };
 
+enum class VSign : u8 {
+	U = 0,
+	S = 1,
+};
+
 struct VOperandBase {
 	bool IsConst() const
 	{
@@ -274,12 +279,24 @@ struct InstHelper : Inst {
 
 // TODO: format
 struct InstVMLoad : InstWithOperands<1, 1> {
-	InstVMLoad(VReg d, VOperand ptr) : InstWithOperands(Op::_vmload, {d}, {ptr}) {}
+	InstVMLoad(VType sz_, VSign sgn_, VReg d, VOperand ptr)
+	    : InstWithOperands(Op::_vmload, {d}, {ptr}), sz(sz_), sgn(sgn_)
+	{
+	}
+
+	VType sz;
+	VSign sgn;
 };
 
 // TODO: format
 struct InstVMStore : InstWithOperands<0, 2> {
-	InstVMStore(VOperand ptr, VOperand val) : InstWithOperands(Op::_vmstore, {}, {ptr, val}) {}
+	InstVMStore(VType sz_, VSign sgn_, VOperand ptr, VOperand val)
+	    : InstWithOperands(Op::_vmstore, {}, {ptr, val}), sz(sz_), sgn(sgn_)
+	{
+	}
+
+	VType sz;
+	VSign sgn;
 };
 
 struct Block;
