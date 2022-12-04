@@ -156,6 +156,13 @@ public:
 		print(ins->sgn);
 		printOperands(ins);
 	}
+
+	void visitInstHcall(InstHcall *ins)
+	{
+		printName(ins);
+		ss << " [" << ins->stub << "]";
+		printOperands(ins);
+	}
 };
 
 // static void BlockPrinter(Block *bb) {}

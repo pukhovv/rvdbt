@@ -1,5 +1,6 @@
 #include "dbt/guest/rv32_qir.h"
 #include "dbt/guest/rv32_decode.h"
+#include "dbt/guest/rv32_runtime.h"
 #include "dbt/qjit/qir_printer.h"
 
 #include <sstream>
@@ -96,6 +97,11 @@ void RV32Translator::TranslateStore(insn::S i, VType type, VSign sgn)
 	qb.Create_vmstore(type, sgn, tmp, gprop(i.rs2(), type));
 }
 
+inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
+{
+	qb.Create_hcall(stub, const32(i.raw));
+}
+
 #define TRANSLATOR(name)                                                                                     \
 	void RV32Translator::H_##name(void *insn)                                                            \
 	{                                                                                                    \
@@ -154,6 +160,11 @@ void RV32Translator::TranslateStore(insn::S i, VType type, VSign sgn)
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
 		TranslateStore(i, VType::type, VSign::sgn);                                                  \
+	}
+#define TRANSLATOR_Helper(name)                                                                              \
+	TRANSLATOR(name)                                                                                     \
+	{                                                                                                    \
+		TranslateHelper(i, (void *)HelperOp_##name);                                                 \
 	}
 
 inline VConst RV32Translator::const32(u32 val)
@@ -243,21 +254,21 @@ TRANSLATOR_ArithmRR(sra, sra);
 TRANSLATOR_ArithmRR(srl, srl);
 TRANSLATOR_ArithmRR(or, or);
 TRANSLATOR_ArithmRR(and, and);
-TRANSLATOR_Unimpl(fence);
-TRANSLATOR_Unimpl(fencei);
-TRANSLATOR_Unimpl(ecall);
-TRANSLATOR_Unimpl(ebreak);
+TRANSLATOR_Helper(fence);
+TRANSLATOR_Helper(fencei);
+TRANSLATOR_Helper(ecall);
+TRANSLATOR_Helper(ebreak);
 
-TRANSLATOR_Unimpl(lrw);
-TRANSLATOR_Unimpl(scw);
-TRANSLATOR_Unimpl(amoswapw);
-TRANSLATOR_Unimpl(amoaddw);
-TRANSLATOR_Unimpl(amoxorw);
-TRANSLATOR_Unimpl(amoandw);
-TRANSLATOR_Unimpl(amoorw);
-TRANSLATOR_Unimpl(amominw);
-TRANSLATOR_Unimpl(amomaxw);
-TRANSLATOR_Unimpl(amominuw);
-TRANSLATOR_Unimpl(amomaxuw);
+TRANSLATOR_Helper(lrw);
+TRANSLATOR_Helper(scw);
+TRANSLATOR_Helper(amoswapw);
+TRANSLATOR_Helper(amoaddw);
+TRANSLATOR_Helper(amoxorw);
+TRANSLATOR_Helper(amoandw);
+TRANSLATOR_Helper(amoorw);
+TRANSLATOR_Helper(amominw);
+TRANSLATOR_Helper(amomaxw);
+TRANSLATOR_Helper(amominuw);
+TRANSLATOR_Helper(amomaxuw);
 
 } // namespace dbt::qir::rv32

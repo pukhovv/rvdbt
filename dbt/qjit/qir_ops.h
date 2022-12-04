@@ -1,7 +1,7 @@
 #pragma once
 
 #define QIR_DEF_LIST(SOP, COP, GROUP)                                                                        \
-	COP(helper, InstHelper)                                                                              \
+	COP(hcall, InstHcall)                                                                                \
 	COP(br, InstBr)                                                                                      \
 	COP(brcc, InstBrcc)                                                                                  \
 	COP(gbr, InstGBr)                                                                                    \

@@ -273,11 +273,13 @@ struct InstGBrind : InstWithOperands<0, 1> {
 	InstGBrind(VReg tpc_) : InstWithOperands(Op::_gbrind, {}, {tpc_}) {}
 };
 
-struct InstHelper : Inst {
-	InstHelper() : Inst(Op::_helper) {}
+struct InstHcall : InstWithOperands<0, 1> {
+	// TODO: variable number of operands
+	InstHcall(void *stub_, VOperand arg_) : InstWithOperands(Op::_hcall, {}, {arg_}), stub(stub_) {}
+
+	void *stub;
 };
 
-// TODO: format
 struct InstVMLoad : InstWithOperands<1, 1> {
 	InstVMLoad(VType sz_, VSign sgn_, VReg d, VOperand ptr)
 	    : InstWithOperands(Op::_vmload, {d}, {ptr}), sz(sz_), sgn(sgn_)
@@ -288,7 +290,6 @@ struct InstVMLoad : InstWithOperands<1, 1> {
 	VSign sgn;
 };
 
-// TODO: format
 struct InstVMStore : InstWithOperands<0, 2> {
 	InstVMStore(VType sz_, VSign sgn_, VOperand ptr, VOperand val)
 	    : InstWithOperands(Op::_vmstore, {}, {ptr, val}), sz(sz_), sgn(sgn_)
