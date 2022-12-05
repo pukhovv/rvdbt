@@ -78,6 +78,20 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 	qb.Create_gbr(const32(insn_ip + i.imm()));
 }
 
+inline void RV32Translator::TranslateSetcc(rv32::insn::R i, CondCode cc)
+{
+	if (i.rd()) {
+		qb.Create_setcc(cc, vgpr[i.rd()], gprop(i.rs1()), gprop(i.rs2()));
+	}
+}
+
+inline void RV32Translator::TranslateSetcc(rv32::insn::I i, CondCode cc)
+{
+	if (i.rd()) {
+		qb.Create_setcc(cc, vgpr[i.rd()], gprop(i.rs1()), const32(i.imm()));
+	}
+}
+
 void RV32Translator::TranslateLoad(insn::I i, VType type, VSign sgn)
 {
 	auto tmp = temp32();
@@ -150,6 +164,12 @@ inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
 		TranslateBrcc(i, CondCode::cc);                                                              \
 	}
 
+#define TRANSLATOR_Setcc(name, cc)                                                                           \
+	TRANSLATOR(name)                                                                                     \
+	{                                                                                                    \
+		TranslateSetcc(i, CondCode::cc);                                                             \
+	}
+
 #define TRANSLATOR_Load(name, type, sgn)                                                                     \
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
@@ -161,6 +181,7 @@ inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
 	{                                                                                                    \
 		TranslateStore(i, VType::type, VSign::sgn);                                                  \
 	}
+
 #define TRANSLATOR_Helper(name)                                                                              \
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
@@ -236,8 +257,8 @@ TRANSLATOR_Store(sb, I8, U);
 TRANSLATOR_Store(sh, I16, U);
 TRANSLATOR_Store(sw, I32, U);
 TRANSLATOR_ArithmRI(addi, add);
-TRANSLATOR_Unimpl(slti);
-TRANSLATOR_Unimpl(sltiu);
+TRANSLATOR_Setcc(slti, LT);
+TRANSLATOR_Setcc(sltiu, LTU);
 TRANSLATOR_ArithmRI(xori, xor);
 TRANSLATOR_ArithmRI(ori, or);
 TRANSLATOR_ArithmRI(andi, and);
@@ -247,8 +268,8 @@ TRANSLATOR_ArithmRI(srli, srl);
 TRANSLATOR_ArithmRR(sub, sub);
 TRANSLATOR_ArithmRR(add, add);
 TRANSLATOR_ArithmRR(sll, sll);
-TRANSLATOR_Unimpl(slt);
-TRANSLATOR_Unimpl(sltu);
+TRANSLATOR_Setcc(slt, LT);
+TRANSLATOR_Setcc(sltu, LTU);
 TRANSLATOR_ArithmRR(xor, xor);
 TRANSLATOR_ArithmRR(sra, sra);
 TRANSLATOR_ArithmRR(srl, srl);

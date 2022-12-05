@@ -300,6 +300,15 @@ struct InstVMStore : InstWithOperands<0, 2> {
 	VSign sgn;
 };
 
+struct InstSetcc : InstWithOperands<1, 2> {
+	InstSetcc(CondCode cc_, VReg d, VOperand sl, VOperand sr)
+	    : InstWithOperands(Op::_setcc, {d}, {sl, sr}), cc(cc_)
+	{
+	}
+
+	CondCode cc;
+};
+
 struct Block;
 struct Region;
 

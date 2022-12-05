@@ -42,7 +42,9 @@ private:
 	void TranslateLoad(insn::I i, VType type, VSign sgn);
 	void TranslateStore(insn::S i, VType type, VSign sgn);
 	void TranslateBrcc(insn::B i, CondCode cc);
-	void TranslateHelper(insn::Base i, void *stub);
+	inline void TranslateSetcc(insn::R i, CondCode cc);
+	inline void TranslateSetcc(insn::I i, CondCode cc);
+	inline void TranslateHelper(insn::Base i, void *stub);
 };
 
 } // namespace dbt::qir::rv32

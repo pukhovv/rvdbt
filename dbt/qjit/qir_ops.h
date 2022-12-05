@@ -8,7 +8,7 @@
 	COP(gbrind, InstGBrind)                                                                              \
 	COP(vmload, InstVMLoad)                                                                              \
 	COP(vmstore, InstVMStore)                                                                            \
-	/*COP(setcc, InstSetcc)     */                                                                       \
+	COP(setcc, InstSetcc)                                                                                \
 	/* unary */                                                                                          \
 	SOP(mov, InstUnop)                                                                                   \
 	GROUP(InstUnop, mov, mov)                                                                            \
