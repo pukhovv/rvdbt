@@ -94,7 +94,7 @@ private:
 		for (auto &o : ins->o)
 			print(o);
 		for (auto &i : ins->i)
-			print(i.bcls());
+			print(*i.bcls());
 	}
 
 	bool sep = false;

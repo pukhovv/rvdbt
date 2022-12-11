@@ -49,6 +49,20 @@ enum class VType : u8 {
 	Count,
 };
 
+inline u8 VTypeToSize(VType type)
+{
+	switch (type) {
+	case VType::I8:
+		return 1;
+	case VType::I16:
+		return 2;
+	case VType::I32:
+		return 4;
+	default:
+		unreachable("");
+	}
+}
+
 enum class VSign : u8 {
 	U = 0,
 	S = 1,
@@ -106,7 +120,7 @@ struct VReg : VOperandBase {
 		return !opr->IsConst();
 	}
 
-	u32 GetIdx() const
+	i16 GetIdx() const
 	{
 		return idx;
 	}
@@ -116,8 +130,19 @@ struct VReg : VOperandBase {
 		return VReg(type_, GetIdx());
 	}
 
+	u8 GetPreg() const
+	{
+		return p;
+	}
+
+	void SetPreg(u8 p_)
+	{
+		p = p_;
+	}
+
 private:
-	int idx;
+	i16 idx;
+	u8 p;
 };
 
 union VOperand {
@@ -139,9 +164,19 @@ union VOperand {
 		base.SetType(type);
 	}
 
-	VOperandBase &bcls()
+	VOperandBase *bcls()
 	{
-		return base;
+		return &base;
+	}
+
+	auto &ToReg()
+	{
+		return *qir::cast<qir::VReg>(bcls());
+	}
+
+	auto &ToConst()
+	{
+		return *qir::cast<qir::VConst>(bcls());
 	}
 
 private:
@@ -254,6 +289,26 @@ enum class CondCode : u8 {
 	GEU,
 	Count,
 };
+
+inline CondCode InverseCC(CondCode cc)
+{
+	switch (cc) {
+	case CondCode::EQ:
+		return CondCode::NE;
+	case CondCode::NE:
+		return CondCode::EQ;
+	case CondCode::LT:
+		return CondCode::GE;
+	case CondCode::GE:
+		return CondCode::LT;
+	case CondCode::LTU:
+		return CondCode::GEU;
+	case CondCode::GEU:
+		return CondCode::LTU;
+	default:
+		unreachable("");
+	}
+}
 
 struct InstBrcc : InstWithOperands<0, 2> {
 	InstBrcc(CondCode cc_, VOperand s1, VOperand s2) : InstWithOperands(Op::_brcc, {}, {s1, s2}), cc(cc_)

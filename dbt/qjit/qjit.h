@@ -6,22 +6,11 @@
 #include "dbt/tcache/tcache.h"
 #include <array>
 
+#include "dbt/qjit/qjit_stubs.h"
+
 namespace dbt::qjit
 {
 LOG_STREAM(qjit);
-
-struct BranchSlot {
-	void Reset();
-	void Link(void *to);
-
-	u8 code[12];
-	u32 gip;
-} __attribute__((packed));
-
-#define HELPER extern "C" NOINLINE __attribute__((used))
-#define HELPER_ASM extern "C" NOINLINE __attribute__((used, naked))
-
-HELPER_ASM BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr);
 
 struct QuickJIT;
 

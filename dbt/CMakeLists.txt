@@ -10,6 +10,7 @@ add_library(dbtstatic STATIC
 	qjit/qir.cpp
 	qjit/qir_printer.cpp
 	qjit/qjit.cpp
+	qjit/qcg.cpp
 	qjit/regalloc.cpp
 	tcache/tcache.cpp
 

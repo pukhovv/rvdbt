@@ -60,7 +60,7 @@ struct IListNode : IListNodeBase {
 
 	IListIterator<T> getIter()
 	{
-		return IListIterator<T>(this);
+		return IListIterator<T>(*this);
 	}
 
 private:
