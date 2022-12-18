@@ -20,7 +20,10 @@ void LogStream::commit_write(const char *str) const
 	auto cur = buf.begin();
 	auto const end = buf.end() - 2;
 
-	cur += snprintf(cur, end - cur, "%-12s%s", prefix, str);
+	int res = snprintf(cur, end - cur, "%-12s%s", prefix, str);
+	assert(res >= 0);
+	cur += res;
+
 	*cur++ = '\n';
 
 	fwrite(buf.data(), cur - buf.begin(), sizeof(char), stderr);
@@ -35,8 +38,15 @@ void LogStream::commit_printf(const char *fmt, ...) const
 	va_list args;
 	va_start(args, fmt);
 
-	cur += snprintf(cur, end - cur, "%-12s", prefix);
-	cur += vsnprintf(cur, end - cur, fmt, args);
+	int res = snprintf(cur, end - cur, "%-12s", prefix);
+	assert(res >= 0);
+	cur += res;
+
+	assert(strlen(fmt) < end - cur); // use write instead
+	res = vsnprintf(cur, end - cur, fmt, args);
+	assert(res >= 0);
+	cur += res;
+
 	*cur++ = '\n';
 	va_end(args);
 

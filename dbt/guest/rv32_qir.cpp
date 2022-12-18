@@ -8,22 +8,61 @@
 namespace dbt::qir::rv32
 {
 
-RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock())
+namespace GlobalRegId
 {
-	vgpr[0] = VReg();
-	for (u8 i = 1; i < vgpr.size(); ++i) {
-		// u16 offs = offsetof(CPUState, gpr) + 4 * i;
-		vgpr[i] = VReg(VType::I32, i);
-	}
-	vreg_ip = VReg(VType::I32, 32);
+enum {
+	GPR_START = 0,
+	GPR_END = 31,
+	IP = GPR_END,
+	END,
+};
+} // namespace GlobalRegId
 
-	temps_idx = 33; // TODO: temps
+static inline VReg vgpr(u8 id, VType type = VType::I32)
+{
+	assert(id != 0);
+	return VReg(type, GlobalRegId::GPR_START + id - 1);
 }
+
+static inline VConst vconst(u32 val, VType type = VType::I32)
+{
+	return VConst(type, val);
+}
+
+static inline VReg vtemp(qir::Builder &qb, VType type = VType::I32)
+{
+	return qb.CreateVReg(type);
+}
+
+static inline VOperand gprop(u8 id, VType type = VType::I32)
+{
+	if (!id) {
+		return vconst(0, type);
+	}
+	return vgpr(id, type);
+}
+
+StateInfo const *RV32Translator::GetStateInfo()
+{
+	static std::array<StateReg, GlobalRegId::END> state_regs{};
+	static StateInfo state_info{state_regs.data(), state_regs.size()};
+
+	for (u8 i = 1; i < 32; ++i) {
+		u16 offs = offsetof(CPUState, gpr) + 4 * i;
+		int vreg_no = GlobalRegId::GPR_START + i - 1;
+		state_regs[vreg_no] = StateReg{offs, VType::I32, rv32::insn::GRPToName(i)};
+	}
+	state_regs[GlobalRegId::IP] = StateReg{offsetof(CPUState, ip), VType::I32, "ip"};
+
+	return &state_info;
+}
+
+RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()) {}
 
 TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 {
 	MemArena arena(1024 * 64);
-	qir::Region region(&arena);
+	qir::Region region(&arena, GetStateInfo());
 
 	RV32Translator t(&region);
 	t.insn_ip = ip;
@@ -73,32 +112,32 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 	qb.GetBlock()->AddSucc(bb_f);
 	qb.Create_brcc(cc, gprop(i.rs1()), gprop(i.rs2()));
 	qb = Builder(bb_f);
-	qb.Create_gbr(const32(insn_ip + 4));
+	qb.Create_gbr(vconst(insn_ip + 4));
 	qb = Builder(bb_t);
-	qb.Create_gbr(const32(insn_ip + i.imm()));
+	qb.Create_gbr(vconst(insn_ip + i.imm()));
 }
 
 inline void RV32Translator::TranslateSetcc(rv32::insn::R i, CondCode cc)
 {
 	if (i.rd()) {
-		qb.Create_setcc(cc, vgpr[i.rd()], gprop(i.rs1()), gprop(i.rs2()));
+		qb.Create_setcc(cc, vgpr(i.rd()), gprop(i.rs1()), gprop(i.rs2()));
 	}
 }
 
 inline void RV32Translator::TranslateSetcc(rv32::insn::I i, CondCode cc)
 {
 	if (i.rd()) {
-		qb.Create_setcc(cc, vgpr[i.rd()], gprop(i.rs1()), const32(i.imm()));
+		qb.Create_setcc(cc, vgpr(i.rd()), gprop(i.rs1()), vconst(i.imm()));
 	}
 }
 
 void RV32Translator::TranslateLoad(insn::I i, VType type, VSign sgn)
 {
-	auto tmp = temp32();
+	auto tmp = vtemp(qb);
 
-	qb.Create_add(tmp, gprop(i.rs1()), const32(i.imm())); // constfold
+	qb.Create_add(tmp, gprop(i.rs1()), vconst(i.imm())); // constfold
 	if (i.rd()) {
-		qb.Create_vmload(type, sgn, vgpr[i.rd()].WithType(VType::I32), tmp);
+		qb.Create_vmload(type, sgn, vgpr(i.rd()).WithType(VType::I32), tmp);
 	} else {
 		qb.Create_vmload(type, sgn, tmp.WithType(VType::I32), tmp);
 	}
@@ -106,14 +145,14 @@ void RV32Translator::TranslateLoad(insn::I i, VType type, VSign sgn)
 
 void RV32Translator::TranslateStore(insn::S i, VType type, VSign sgn)
 {
-	auto tmp = temp32();
-	qb.Create_add(tmp, gprop(i.rs1()), const32(i.imm()));
+	auto tmp = vtemp(qb);
+	qb.Create_add(tmp, gprop(i.rs1()), vconst(i.imm()));
 	qb.Create_vmstore(type, sgn, tmp, gprop(i.rs2(), type));
 }
 
 inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
 {
-	qb.Create_hcall(stub, const32(i.raw));
+	qb.Create_hcall(stub, vconst(i.raw));
 }
 
 #define TRANSLATOR(name)                                                                                     \
@@ -146,7 +185,7 @@ inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
 		if (i.rd()) {                                                                                \
-			qb.Create_##op(vgpr[i.rd()], gprop(i.rs1()), const32(i.imm()));                      \
+			qb.Create_##op(vgpr(i.rd()), gprop(i.rs1()), vconst(i.imm()));                       \
 		}                                                                                            \
 	}
 
@@ -154,7 +193,7 @@ inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
 		if (i.rd()) {                                                                                \
-			qb.Create_##op(vgpr[i.rd()], gprop(i.rs1()), gprop(i.rs2()));                        \
+			qb.Create_##op(vgpr(i.rd()), gprop(i.rs1()), gprop(i.rs2()));                        \
 		}                                                                                            \
 	}
 
@@ -188,42 +227,24 @@ inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
 		TranslateHelper(i, (void *)HelperOp_##name);                                                 \
 	}
 
-inline VConst RV32Translator::const32(u32 val)
-{
-	return VConst(VType::I32, val);
-}
-
-inline VReg RV32Translator::temp32()
-{
-	return VReg(VType::I32, temps_idx++);
-}
-
-inline VOperand RV32Translator::gprop(u8 idx, VType type)
-{
-	if (!idx) {
-		return VConst(type, 0);
-	}
-	return vgpr[idx].WithType(type);
-}
-
 TRANSLATOR_Unimpl(ill);
 TRANSLATOR(lui)
 {
 	if (i.rd()) {
-		qb.Create_mov(vgpr[i.rd()], const32(i.imm()));
+		qb.Create_mov(vgpr(i.rd()), vconst(i.imm()));
 	}
 }
 TRANSLATOR(auipc)
 {
 	if (i.rd()) {
-		qb.Create_mov(vgpr[i.rd()], const32(i.imm() + insn_ip));
+		qb.Create_mov(vgpr(i.rd()), vconst(i.imm() + insn_ip));
 	}
 }
 TRANSLATOR(jal)
 {
 	// TODO: check alignment
 	if (i.rd()) {
-		qb.Create_mov(vgpr[i.rd()], const32(insn_ip + 4));
+		qb.Create_mov(vgpr(i.rd()), vconst(insn_ip + 4));
 	}
 
 	qb.Create_gbr(VConst(VType::I32, insn_ip + i.imm()));
@@ -231,14 +252,14 @@ TRANSLATOR(jal)
 TRANSLATOR(jalr)
 {
 	// TODO: check alignment
-	auto tgt = temp32();
+	auto tgt = vtemp(qb);
 
 	// constfold
-	qb.Create_add(tgt, gprop(i.rs1()), const32(i.imm()));
-	qb.Create_and(tgt, tgt, const32(~(u32)1));
+	qb.Create_add(tgt, gprop(i.rs1()), vconst(i.imm()));
+	qb.Create_and(tgt, tgt, vconst(~(u32)1));
 
 	if (i.rd()) {
-		qb.Create_mov(vgpr[i.rd()], const32(insn_ip + 4));
+		qb.Create_mov(vgpr(i.rd()), vconst(insn_ip + 4));
 	}
 	qb.Create_gbrind(tgt);
 }

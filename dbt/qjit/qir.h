@@ -111,6 +111,8 @@ private:
 	u32 value;
 };
 
+using PReg = u8;
+
 struct VReg : VOperandBase {
 	VReg(VType type_, int idx_) : VOperandBase(false, type_), idx(idx_) {}
 	VReg() : VOperandBase(false, VType::UNDEF), idx{-1} {}
@@ -130,19 +132,19 @@ struct VReg : VOperandBase {
 		return VReg(type_, GetIdx());
 	}
 
-	u8 GetPreg() const
+	PReg GetPreg() const
 	{
 		return p;
 	}
 
-	void SetPreg(u8 p_)
+	void SetPreg(PReg p_)
 	{
 		p = p_;
 	}
 
 private:
 	i16 idx;
-	u8 p;
+	PReg p;
 };
 
 union VOperand {
@@ -422,8 +424,30 @@ private:
 	u32 id{(u32)-1};
 };
 
+struct StateReg {
+	u16 state_offs;
+	VType type;
+	char const *name;
+};
+
+struct StateInfo {
+	StateReg const *GetStateReg(VReg vreg) const
+	{
+		if (vreg.GetIdx() < n_regs) {
+			return &regs[vreg.GetIdx()];
+		}
+		return nullptr;
+	}
+
+	StateReg *regs{};
+	u16 n_regs{};
+};
+
 struct Region {
-	Region(MemArena *arena_) : arena(arena_) {}
+	Region(MemArena *arena_, StateInfo const *state_info_) : arena(arena_), state_info(state_info_)
+	{
+		vreg_id_counter = state_info->n_regs;
+	}
 
 	IList<Block> blist;
 
@@ -433,6 +457,11 @@ struct Region {
 		res->SetId(bb_id_counter++);
 		blist.insert(blist.end(), *res);
 		return res;
+	}
+
+	VReg CreateVreg(VType type)
+	{
+		return VReg(type, vreg_id_counter++);
 	}
 
 	template <typename T, typename... Args>
@@ -448,6 +477,16 @@ struct Region {
 		return arena;
 	}
 
+	u32 GetNumBlocks() const
+	{
+		return bb_id_counter;
+	}
+
+	StateInfo const *GetStateInfo() const
+	{
+		return state_info;
+	}
+
 private:
 	template <typename T, typename... Args>
 	T *CreateInArena(Args &&...args)
@@ -458,8 +497,12 @@ private:
 	}
 
 	MemArena *arena;
-	u32 inst_id_counter{1};
-	u32 bb_id_counter{1};
+
+	StateInfo const *state_info{};
+
+	u32 vreg_id_counter{0};
+	u32 inst_id_counter{0};
+	u32 bb_id_counter{0};
 };
 
 inline Block::Link *Block::Link::Create(Region *rn_, Block *to)
@@ -478,9 +521,14 @@ struct Builder {
 		return bb;
 	}
 
-	Block *CreateBlock()
+	Block *CreateBlock() const
 	{
 		return bb->GetRegion()->CreateBlock();
+	}
+
+	VReg CreateVReg(VType type) const
+	{
+		return bb->GetRegion()->CreateVreg(type);
 	}
 
 	template <typename T, typename... Args>

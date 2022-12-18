@@ -15,8 +15,8 @@ struct RV32Translator {
 
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
 	u32 insn_ip{0};
-	std::array<VReg, 32> vgpr;
-	VReg vreg_ip{};
+	
+	static StateInfo const *GetStateInfo(); 
 
 #define OP(name, format_, flags_)                                                                            \
 	void H_##name(void *insn);                                                                           \
@@ -32,12 +32,6 @@ private:
 	void TranslateInsn();
 
 	qir::Builder qb;
-
-	int temps_idx = 0; // TODO: temps
-
-	VConst const32(u32 val);
-	VReg temp32();
-	VOperand gprop(u8 idx, VType type = VType::I32);
 
 	void TranslateLoad(insn::I i, VType type, VSign sgn);
 	void TranslateStore(insn::S i, VType type, VSign sgn);

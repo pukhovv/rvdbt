@@ -14,7 +14,7 @@ char const *const op_names[to_underlying(Op::Count)] = {
 
 char const *const vtype_names[to_underlying(VType::Count)] = {
 #define X(name, str) [to_underlying(VType::name)] = #str,
-    X(UNDEF, invalid) X(I32, i32)
+    X(UNDEF, invalid) X(I8, i8) X(I16, i16) X(I32, i32)
 #undef X
 };
 
@@ -28,12 +28,7 @@ struct PrinterVisitor : InstVisitor<PrinterVisitor, void> {
 private:
 	void addsep()
 	{
-		if (sep) {
-			ss << ", ";
-		} else {
-			ss << " ";
-		}
-		sep = true;
+		ss << " ";
 	}
 
 	static constexpr char prop_sep = ':';
@@ -68,24 +63,31 @@ private:
 	void print(VConst &c)
 	{
 		addsep();
-		ss << GetVTypeNameStr(c.GetType()) << " 0x" << std::hex << c.GetValue() << std::dec;
+		ss << "[$" << std::hex << c.GetValue() << std::dec << "|" << GetVTypeNameStr(c.GetType())
+		   << "]";
 	}
 
 	void print(VReg &r)
 	{
 		addsep();
-		ss << GetVTypeNameStr(r.GetType()) << " v" << r.GetIdx();
+		auto sinfo = region->GetStateInfo();
+		if (auto sreg = sinfo->GetStateReg(r); sreg) {
+			ss << "[@" << sreg->name;
+		} else {
+			ss << "[%" << r.GetIdx() - sinfo->n_regs;
+		}
+		ss << "|" << GetVTypeNameStr(r.GetType()) << "]";
 	}
 
 	void print(Block *b)
 	{
 		addsep();
-		ss << "bb" << b->GetId();
+		ss << "bb." << b->GetId();
 	}
 
 	void printName(Inst *ins)
 	{
-		ss << "    [" << ins->GetId() << "] " << GetOpNameStr(ins->GetOpcode());
+		ss << "    #" << ins->GetId() << " " << GetOpNameStr(ins->GetOpcode());
 	}
 
 	template <size_t N_OUT, size_t N_IN>
@@ -97,12 +99,11 @@ private:
 			print(*i.bcls());
 	}
 
-	bool sep = false;
-
+	Region *region;
 	std::stringstream &ss;
 
 public:
-	PrinterVisitor(std::stringstream &ss_) : ss(ss_) {}
+	PrinterVisitor(Region *region_, std::stringstream &ss_) : region(region_), ss(ss_) {}
 
 	void visitInst(Inst *ins)
 	{
@@ -172,7 +173,7 @@ void PrinterPass::run(Region *r)
 	std::stringstream ss;
 
 	for (auto &bb : r->blist) {
-		ss << "\nbb" << bb.GetId() << ":";
+		ss << "\nbb." << bb.GetId() << ":";
 
 		ss << " succs[ ";
 		for (auto const &s : bb.GetSuccs()) {
@@ -188,7 +189,7 @@ void PrinterPass::run(Region *r)
 
 		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
 			ss << "\n";
-			PrinterVisitor vis{ss};
+			PrinterVisitor vis(r, ss);
 			vis.visit(&*iit); // TODO:
 		}
 	}

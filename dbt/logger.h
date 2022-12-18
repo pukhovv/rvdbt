@@ -17,6 +17,11 @@ struct LogStream {
 		}
 	}
 
+	ALWAYS_INLINE void operator()(char const *fmt) const
+	{
+		write(fmt);
+	}
+
 	template <typename... Args>
 	ALWAYS_INLINE void operator()(char const *fmt, const Args... args) const
 	{
