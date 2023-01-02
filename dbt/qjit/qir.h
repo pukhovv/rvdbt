@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <variant>
+#include <vector>
 
 namespace dbt::qir
 {
@@ -431,10 +432,10 @@ struct StateReg {
 };
 
 struct StateInfo {
-	StateReg const *GetStateReg(VReg vreg) const
+	StateReg const *GetStateReg(u16 idx) const
 	{
-		if (vreg.GetIdx() < n_regs) {
-			return &regs[vreg.GetIdx()];
+		if (idx < n_regs) {
+			return &regs[idx];
 		}
 		return nullptr;
 	}
@@ -443,11 +444,55 @@ struct StateInfo {
 	u16 n_regs{};
 };
 
-struct Region {
-	Region(MemArena *arena_, StateInfo const *state_info_) : arena(arena_), state_info(state_info_)
+struct VRegsInfo {
+	VRegsInfo(StateInfo const *glob_info_) : glob_info(glob_info_) {}
+
+	inline auto NumGlobals() const
 	{
-		vreg_id_counter = state_info->n_regs;
+		return glob_info->n_regs;
 	}
+
+	inline auto NumAll() const
+	{
+		return glob_info->n_regs + loc_info.size();
+	}
+
+	inline bool IsGlobal(u16 idx) const
+	{
+		return idx < glob_info->n_regs;
+	}
+
+	inline bool IsLocal(u16 idx) const
+	{
+		return !IsGlobal(idx);
+	}
+
+	inline StateReg const *GetGlobalInfo(u16 idx) const
+	{
+		assert(IsGlobal(idx));
+		return &glob_info->regs[idx];
+	}
+
+	inline VType GetLocalType(u16 idx) const
+	{
+		assert(IsLocal(idx));
+		return loc_info[idx - glob_info->n_regs];
+	}
+
+	inline u16 AddLocal(VType type)
+	{
+		auto idx = loc_info.size() + glob_info->n_regs;
+		loc_info.push_back(type);
+		return idx;
+	}
+
+private:
+	StateInfo const *glob_info{};
+	std::vector<VType> loc_info{};
+};
+
+struct Region {
+	Region(MemArena *arena_, StateInfo const *state_info_) : arena(arena_), vregs_info(state_info_) {}
 
 	IList<Block> blist;
 
@@ -461,7 +506,7 @@ struct Region {
 
 	VReg CreateVreg(VType type)
 	{
-		return VReg(type, vreg_id_counter++);
+		return VReg(type, vregs_info.AddLocal(type));
 	}
 
 	template <typename T, typename... Args>
@@ -482,9 +527,9 @@ struct Region {
 		return bb_id_counter;
 	}
 
-	StateInfo const *GetStateInfo() const
+	VRegsInfo const *GetVRegsInfo()
 	{
-		return state_info;
+		return &vregs_info;
 	}
 
 private:
@@ -498,9 +543,8 @@ private:
 
 	MemArena *arena;
 
-	StateInfo const *state_info{};
+	VRegsInfo vregs_info;
 
-	u32 vreg_id_counter{0};
 	u32 inst_id_counter{0};
 	u32 bb_id_counter{0};
 };

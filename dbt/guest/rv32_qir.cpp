@@ -5,6 +5,8 @@
 
 #include <sstream>
 
+#include "dbt/qjit/qcg.h" // TODO: remove from here!
+
 namespace dbt::qir::rv32
 {
 
@@ -59,6 +61,11 @@ StateInfo const *RV32Translator::GetStateInfo()
 
 RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()) {}
 
+// TODO: make like this:
+//	translate -> qir frontend
+//		  -> qir passes
+//		  -> qir codegen
+//
 TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 {
 	MemArena arena(1024 * 64);
@@ -93,7 +100,7 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 	PrinterPass printer;
 	printer.run(&region);
 
-	return nullptr;
+	return qcg::QCodegen::Generate(&region);
 }
 
 void RV32Translator::TranslateInsn()

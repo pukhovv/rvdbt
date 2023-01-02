@@ -47,12 +47,13 @@ struct QEmit {
 	inline void SetBlock(qir::Block *bb_)
 	{
 		bb = bb_;
+		j.bind(labels[bb->GetId()]);
 	}
 
 	TBlock *EmitTBlock();
 	static void DumpTBlock(TBlock *tb);
 
-	void Prologue();
+	void Prologue() {} // TODO: unused
 	void StateSpill(qir::PReg p, qir::VType type, u16 offs);
 	void StateFill(qir::PReg p, qir::VType type, u16 offs);
 	void LocSpill(qir::PReg p, qir::VType type, u16 offs);
@@ -63,6 +64,7 @@ struct QEmit {
 #undef OP
 
 private:
+// TODO: as list
 #define DEF_FIX_REG(name, id)                                                                                \
 	static constexpr auto name = asmjit::x86::Gp::id;                                                    \
 	static constexpr auto R##name = asmjit::x86::gpq(name);
@@ -71,13 +73,14 @@ private:
 	DEF_FIX_REG(MEMBASE, kIdR12);
 	DEF_FIX_REG(SP, kIdSp);
 	DEF_FIX_REG(TMP1C, kIdCx);
+	static constexpr RegMask GPR_FIXED = (1 << STATE) | (1 << MEMBASE) | (1 << SP) | (1 << TMP1C);
 #undef DEF_FIX_REG
 
 public:
 #define R(name) (1u << asmjit::x86::Gp::Id::kId##name)
 	static constexpr u8 GPR_NUM = 16;
 	static constexpr RegMask GPR_ALL = ((u32)1 << GPR_NUM) - 1;
-	static constexpr RegMask GPR_POOL = GPR_ALL & ~(STATE | MEMBASE | SP | TMP1C);
+	static constexpr RegMask GPR_POOL = GPR_ALL & ~GPR_FIXED;
 	static constexpr RegMask GPR_CALL_CLOBBER{R(Ax) | R(Di) | R(Si) | R(Dx) | R(Cx) | R(R8) | R(R9) |
 						  R(R10) | R(R11)};
 	static constexpr RegMask GPR_CALL_SAVED = GPR_ALL & ~GPR_CALL_CLOBBER;
@@ -137,7 +140,7 @@ struct QRegAlloc {
 		bool spill_synced{false};
 	};
 
-	QRegAlloc() {}
+	QRegAlloc(QEmit *qe_, qir::VRegsInfo const *vregs_info_);
 
 	qir::PReg AllocPReg(RegMask desire, RegMask avoid);
 	void EmitSpill(RTrack *v);
@@ -151,7 +154,6 @@ struct QRegAlloc {
 	void Fill(RTrack *v, RegMask desire, RegMask avoid);
 
 	RTrack *AddTrack();
-	RTrack *AddTrackGlobal();
 	RTrack *AddTrackGlobal(qir::VType type, u16 state_offs);
 	RTrack *AddTrackLocal(qir::VType type);
 
@@ -166,27 +168,30 @@ struct QRegAlloc {
 	void AllocOp(RTrack **dstl, u8 dst_n, RTrack **srcl, u8 src_n, bool unsafe = false);
 	void CallOp(bool use_globals = true);
 
-	std::array<RTrack, MAX_VREGS> vregs{};
-	std::array<RTrack *, N_PREGS> p2v{nullptr};
-	u16 n_vregs{0};
+	static constexpr u16 frame_size{31 * sizeof(u64)};
+
+	qir::VRegsInfo const *vregs_info;
+	QEmit *qe{};
 
 	RegMask fixed{0};
-	static constexpr u16 frame_size{31 * sizeof(u64)};
 	u16 frame_cur{0};
 
-	QEmit *qe{};
+	u16 n_vregs{0};
+	std::array<RTrack, MAX_VREGS> vregs{};
+	std::array<RTrack *, N_PREGS> p2v{nullptr};
 };
 
 struct QCodegen {
 	static TBlock *Generate(qir::Region *r);
 
 private:
-	QCodegen(qir::Region *region_, QEmit *qe_) : region(region_), qe(qe_) {}
+	QCodegen(qir::Region *region_, QEmit *ce_, QRegAlloc *ra_) : region(region_), ce(ce_), ra(ra_) {}
 
 	void Translate();
 
 	qir::Region *region;
-	QEmit *qe;
+	QEmit *ce;
+	QRegAlloc *ra;
 };
 
 }; // namespace dbt::qcg

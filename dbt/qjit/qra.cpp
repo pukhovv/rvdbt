@@ -3,6 +3,22 @@
 namespace dbt::qcg
 {
 
+QRegAlloc::QRegAlloc(QEmit *qe_, qir::VRegsInfo const *vregs_info_) : vregs_info(vregs_info_), qe(qe_)
+{
+	auto n_globals = vregs_info->NumGlobals();
+	auto n_all = vregs_info->NumAll();
+
+	for (u16 i = 0; i < n_globals; ++i) {
+		auto *gr = vregs_info->GetGlobalInfo(i);
+		AddTrackGlobal(gr->type, gr->state_offs);
+	}
+
+	for (u16 i = n_globals; i < n_all; ++i) {
+		auto type = vregs_info->GetLocalType(i);
+		AddTrackLocal(type);
+	}
+}
+
 qir::PReg QRegAlloc::AllocPReg(RegMask desire, RegMask avoid)
 {
 	RegMask target = desire & ~avoid;
@@ -26,7 +42,20 @@ void QRegAlloc::EmitSpill(RTrack *v)
 	if (v->is_global) {
 		qe->StateSpill(v->p, v->type, v->spill_offs);
 	} else {
+		if (v->spill_offs == RTrack::NO_SPILL) {
+			AllocFrameSlot(v);
+		}
 		qe->LocSpill(v->p, v->type, v->spill_offs);
+	}
+}
+
+void QRegAlloc::EmitFill(RTrack *v)
+{
+	if (v->is_global) {
+		qe->StateFill(v->p, v->type, v->spill_offs);
+	} else {
+		assert(v->spill_offs != RTrack::NO_SPILL);
+		qe->LocFill(v->p, v->type, v->spill_offs);
 	}
 }
 
@@ -49,9 +78,6 @@ void QRegAlloc::SyncSpill(RTrack *v)
 {
 	if (v->spill_synced) { // or fixed
 		return;
-	}
-	if (v->spill_offs == RTrack::NO_SPILL) {
-		AllocFrameSlot(v);
 	}
 	switch (v->loc) {
 	case RTrack::Location::MEM:
@@ -119,18 +145,21 @@ QRegAlloc::RTrack *QRegAlloc::AddTrack()
 	return new (v) RTrack();
 }
 
-// internal
-QRegAlloc::RTrack *QRegAlloc::AddTrackGlobal()
-{
-	return AddTrack();
-}
-
 QRegAlloc::RTrack *QRegAlloc::AddTrackGlobal(qir::VType type, u16 state_offs)
 {
 	auto *v = AddTrack();
 	v->is_global = true;
 	v->type = type;
 	v->spill_offs = state_offs;
+	return v;
+}
+
+QRegAlloc::RTrack *QRegAlloc::AddTrackLocal(qir::VType type)
+{
+	auto *v = AddTrack();
+	v->is_global = false;
+	v->type = type;
+	v->spill_offs = RTrack::NO_SPILL;
 	return v;
 }
 
@@ -168,8 +197,8 @@ void QRegAlloc::AllocOp(RTrack **dstl, u8 dst_n, RTrack **srcl, u8 src_n, bool u
 	if (unsafe) {
 		for (int i = 0; i < n_vregs; ++i) {
 			auto *v = &vregs[i];
-			if (v) {
-				SyncSpill(v);
+			if (v->is_global) {
+				SyncSpill(v); // continue in interpreter if exception occurs
 			}
 		}
 	}

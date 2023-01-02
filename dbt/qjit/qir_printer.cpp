@@ -70,11 +70,12 @@ private:
 	void print(VReg &r)
 	{
 		addsep();
-		auto sinfo = region->GetStateInfo();
-		if (auto sreg = sinfo->GetStateReg(r); sreg) {
-			ss << "[@" << sreg->name;
+		auto idx = r.GetIdx();
+		auto vinfo = region->GetVRegsInfo();
+		if (vinfo->IsGlobal(idx)) {
+			ss << "[@" << vinfo->GetGlobalInfo(idx)->name;
 		} else {
-			ss << "[%" << r.GetIdx() - sinfo->n_regs;
+			ss << "[%" << idx;
 		}
 		ss << "|" << GetVTypeNameStr(r.GetType()) << "]";
 	}

@@ -19,6 +19,55 @@ QEmit::QEmit(qir::Region *region)
 	}
 }
 
+// TODO: return tcode span
+TBlock *QEmit::EmitTBlock()
+{
+	auto tb = tcache::AllocateTBlock();
+	if (tb == nullptr) {
+		Panic();
+	}
+
+	jcode.flatten();
+	jcode.resolveUnresolvedLinks();
+
+	size_t jit_sz = jcode.codeSize();
+	tb->tcode.size = jit_sz;
+	tb->tcode.ptr = tcache::AllocateCode(jit_sz, 8);
+	if (tb->tcode.ptr == nullptr) {
+		Panic();
+	}
+
+	jcode.relocateToBase((uintptr_t)tb->tcode.ptr);
+	if (jit_sz < jcode.codeSize()) {
+		Panic();
+	}
+	jcode.copyFlattenedData(tb->tcode.ptr, tb->tcode.size);
+	tb->tcode.size = jcode.codeSize();
+	return tb;
+}
+
+void QEmit::DumpTBlock(TBlock *tb)
+{
+	if (!log_qcg.enabled()) {
+		return;
+	}
+	auto &tcode = tb->tcode;
+	size_t sz = tcode.size;
+	auto p = (u8 *)tcode.ptr;
+
+	std::array<char, 4096> buf;
+
+	if (sz * 2 + 1 > buf.size()) {
+		log_qcg("jitcode is too long for dump");
+		return;
+	}
+
+	for (size_t i = 0; i < sz; ++i) {
+		sprintf(&buf[2 * i], "%02x", p[i]);
+	}
+	log_qcg.write(buf.data());
+}
+
 static inline asmjit::x86::Gp make_gpr(qir::PReg pr, qir::VType type)
 {
 	switch (type) {
@@ -140,7 +189,7 @@ void QEmit::Emit_brcc(qir::InstBrcc *ins)
 
 void QEmit::Emit_gbr(qir::InstGBr *ins)
 {
-	//tcache::OnTranslateBr(tb, ins->tpc.GetValue());
+	// tcache::OnTranslateBr(tb, ins->tpc.GetValue());
 
 	j.embedUInt8(0, sizeof(qjit::BranchSlot));
 	auto *slot = (qjit::BranchSlot *)(j.bufferPtr() - sizeof(qjit::BranchSlot));
