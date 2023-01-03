@@ -140,7 +140,8 @@ struct QRegAlloc {
 		bool spill_synced{false};
 	};
 
-	QRegAlloc(QEmit *qe_, qir::VRegsInfo const *vregs_info_);
+	QRegAlloc(qir::Region *region_);
+	void Run();
 
 	qir::RegN AllocPReg(RegMask desire, RegMask avoid);
 	void EmitSpill(RTrack *v);
@@ -165,13 +166,15 @@ struct QRegAlloc {
 	{
 		AllocOp(dst.data(), dst.size(), src.data(), src.size(), unsafe);
 	}
-	void AllocOp(RTrack **dstl, u8 dst_n, RTrack **srcl, u8 src_n, bool unsafe = false);
+	void AllocOp(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n, bool unsafe = false);
 	void CallOp(bool use_globals = true);
 
 	static constexpr u16 frame_size{31 * sizeof(u64)};
 
-	qir::VRegsInfo const *vregs_info;
-	QEmit *qe{};
+	qir::Region *region{};
+	qir::VRegsInfo const *vregs_info{};
+	// QEmit *qe{};
+	qir::Builder qb{nullptr};
 
 	RegMask fixed{0};
 	u16 frame_cur{0};
@@ -181,17 +184,20 @@ struct QRegAlloc {
 	std::array<RTrack *, N_PREGS> p2v{nullptr};
 };
 
+struct QRegAllocPass {
+	static void run(qir::Region *region);
+};
+
 struct QCodegen {
 	static TBlock *Generate(qir::Region *r);
 
 private:
-	QCodegen(qir::Region *region_, QEmit *ce_, QRegAlloc *ra_) : region(region_), ce(ce_), ra(ra_) {}
+	QCodegen(qir::Region *region_, QEmit *ce_) : region(region_), ce(ce_) {}
 
 	void Translate();
 
 	qir::Region *region;
 	QEmit *ce;
-	QRegAlloc *ra;
 
 	friend struct QCodegenVisitor;
 };

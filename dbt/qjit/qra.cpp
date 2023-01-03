@@ -3,7 +3,7 @@
 namespace dbt::qcg
 {
 
-QRegAlloc::QRegAlloc(QEmit *qe_, qir::VRegsInfo const *vregs_info_) : vregs_info(vregs_info_), qe(qe_)
+QRegAlloc::QRegAlloc(qir::Region *region_) : region(region_), vregs_info(region->GetVRegsInfo())
 {
 	auto n_globals = vregs_info->NumGlobals();
 	auto n_all = vregs_info->NumAll();
@@ -39,24 +39,18 @@ qir::RegN QRegAlloc::AllocPReg(RegMask desire, RegMask avoid)
 
 void QRegAlloc::EmitSpill(RTrack *v)
 {
-	if (v->is_global) {
-		qe->StateSpill(v->p, v->type, v->spill_offs);
-	} else {
-		if (v->spill_offs == RTrack::NO_SPILL) {
-			AllocFrameSlot(v);
-		}
-		qe->LocSpill(v->p, v->type, v->spill_offs);
+	if (!v->is_global && (v->spill_offs == RTrack::NO_SPILL)) {
+		AllocFrameSlot(v);
 	}
+	auto pgpr = qir::VOperand::MakePGPR(v->type, v->p);
+	qb.Create_mov(qir::VOperand::MakeSlot(v->is_global, v->type, v->spill_offs), pgpr);
 }
 
 void QRegAlloc::EmitFill(RTrack *v)
 {
-	if (v->is_global) {
-		qe->StateFill(v->p, v->type, v->spill_offs);
-	} else {
-		assert(v->spill_offs != RTrack::NO_SPILL);
-		qe->LocFill(v->p, v->type, v->spill_offs);
-	}
+	assert(v->spill_offs != RTrack::NO_SPILL);
+	auto pgpr = qir::VOperand::MakePGPR(v->type, v->p);
+	qb.Create_mov(pgpr, qir::VOperand::MakeSlot(v->is_global, v->type, v->spill_offs));
 }
 
 void QRegAlloc::Spill(qir::RegN p)
@@ -98,7 +92,7 @@ void QRegAlloc::Release(RTrack *v)
 	if (v->is_global) { // return if fixed
 		v->loc = RTrack::Location::MEM;
 	} else {
-		v->loc = kill ? RTrack::Location::DEAD : RTrack::Location::MEM;
+		v->loc = kill ? RTrack::Location::DEAD : RTrack::Location::MEM; // TODO: liveness
 	}
 	if (release_reg) {
 		p2v[v->p] = nullptr;
@@ -183,14 +177,17 @@ void QRegAlloc::BlockBoundary()
 	}
 }
 
-void QRegAlloc::AllocOp(RTrack **dstl, u8 dst_n, RTrack **srcl, u8 src_n, bool unsafe)
+void QRegAlloc::AllocOp(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n, bool unsafe)
 {
 	auto avoid = fixed;
 
 	for (u8 i = 0; i < src_n; ++i) {
-		if (srcl[i]) {
-			Fill(srcl[i], PREGS_POOL, avoid);
-			avoid.Set(srcl[i]->p);
+		auto opr = &srcl[i];
+		if (opr->IsVGPR()) {
+			auto src = &vregs[opr->GetVGPR()];
+			Fill(src, PREGS_POOL, avoid);
+			avoid.Set(src->p);
+			*opr = qir::VOperand::MakePGPR(opr->GetType(), src->p);
 		}
 	}
 
@@ -204,17 +201,22 @@ void QRegAlloc::AllocOp(RTrack **dstl, u8 dst_n, RTrack **srcl, u8 src_n, bool u
 	}
 
 	for (u8 i = 0; i < dst_n; ++i) {
-		auto *dst = dstl[i];
-		if (dst->loc != RTrack::Location::REG) {
-			dst->p = AllocPReg(PREGS_POOL, avoid);
-			p2v[dst->p] = dst;
-			dst->loc = RTrack::Location::REG;
+		auto opr = &dstl[i];
+		if (opr->IsVGPR()) {
+			auto dst = &vregs[opr->GetVGPR()];
+			if (dst->loc != RTrack::Location::REG) {
+				dst->p = AllocPReg(PREGS_POOL, avoid);
+				p2v[dst->p] = dst;
+				dst->loc = RTrack::Location::REG;
+			}
+			avoid.Set(dst->p);
+			dst->spill_synced = false;
+			*opr = qir::VOperand::MakePGPR(opr->GetType(), dst->p);
 		}
-		avoid.Set(dst->p);
-		dst->spill_synced = false;
 	}
 }
 
+// TODO: resurrect allocation for helpers
 void QRegAlloc::CallOp(bool use_globals)
 {
 	for (u8 p = 0; p < N_PREGS; ++p) {
@@ -231,6 +233,104 @@ void QRegAlloc::CallOp(bool use_globals)
 			}
 		}
 	}
+}
+
+struct QRegAllocVisitor : qir::InstVisitor<QRegAllocVisitor, void> {
+	using Base = qir::InstVisitor<QRegAllocVisitor, void>;
+
+	template <size_t N_OUT, size_t N_IN>
+	void AllocOperands(qir::InstWithOperands<N_OUT, N_IN> *ins, bool unsafe)
+	{
+		ra->AllocOp(ins->o, ins->i, unsafe); // TODO: move unsafe to flags
+	}
+
+public:
+	QRegAllocVisitor(QRegAlloc *ra_) : ra(ra_) {}
+
+	void visitInst(qir::Inst *ins)
+	{
+		unreachable("");
+	}
+
+	void visitInstUnop(qir::InstUnop *ins)
+	{
+		AllocOperands(ins, false);
+	}
+
+	void visitInstBinop(qir::InstBinop *ins)
+	{
+		AllocOperands(ins, false);
+	}
+
+	void visitInstSetcc(qir::InstSetcc *ins)
+	{
+		AllocOperands(ins, false);
+	}
+
+	void visitInstBr(qir::InstBr *ins)
+	{
+		// has no voperands
+		ra->BlockBoundary();
+	}
+
+	void visitInstBrcc(qir::InstBrcc *ins)
+	{
+		// has no voperands
+		ra->BlockBoundary();
+	}
+
+	void visitInstGBr(qir::InstGBr *ins)
+	{
+		// has no voperands
+		ra->BlockBoundary();
+	}
+
+	void visitInstGBrind(qir::InstGBrind *ins)
+	{
+		AllocOperands(ins, false);
+		ra->BlockBoundary(); // merge into AllocOp
+	}
+
+	void visitInstVMLoad(qir::InstVMLoad *ins)
+	{
+		AllocOperands(ins, true);
+	}
+
+	void visitInstVMStore(qir::InstVMStore *ins)
+	{
+		AllocOperands(ins, true);
+	}
+
+	void visitInstHcall(qir::InstHcall *ins)
+	{
+		ra->CallOp(true);
+	}
+
+private:
+	QRegAlloc *ra{};
+};
+
+void QRegAlloc::Run()
+{
+	Prologue();
+
+	auto &blist = region->blist;
+	for (auto &bb : blist) {
+		auto &ilist = bb.ilist;
+
+		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
+			qb = qir::Builder(&bb, iit);
+			QRegAllocVisitor(this).visit(&*iit);
+		}
+
+		// BlockBoundary();
+	}
+}
+
+void QRegAllocPass::run(qir::Region *region)
+{
+	QRegAlloc ra(region);
+	ra.Run();
 }
 
 } // namespace dbt::qcg

@@ -55,23 +55,31 @@ private:
 	{
 		addsep();
 		auto type = o.GetType();
+		ss << "[";
 		if (o.IsConst()) {
-			ss << "[$" << std::hex << o.GetConst() << std::dec << "|" << GetVTypeNameStr(type)
-			   << "]";
+			ss << "$" << std::hex << o.GetConst() << std::dec;
 		} else if (o.IsVGPR()) {
 			auto vreg = o.GetVGPR();
 			auto vinfo = region->GetVRegsInfo();
 			if (vinfo->IsGlobal(vreg)) {
-				ss << "[@" << vinfo->GetGlobalInfo(vreg)->name;
+				ss << "@" << vinfo->GetGlobalInfo(vreg)->name;
 			} else {
-				ss << "[%" << vreg;
+				ss << "%" << vreg;
 			}
-			ss << "|" << GetVTypeNameStr(type) << "]";
 		} else if (o.IsPGPR()) {
-			unreachable("");
+			ss << "_" << o.GetPGPR();
+		} else if (o.IsSlot()) {
+			auto offs = o.GetSlotOffs();
+			if (o.IsGSlot()) {
+				ss << "g";
+			} else {
+				ss << "l";
+			}
+			ss << ":" << std::hex << offs << std::dec;
 		} else {
 			unreachable("");
 		}
+		ss << "|" << GetVTypeNameStr(type) << "]";
 	}
 
 	void print(Block *b)
@@ -102,8 +110,7 @@ public:
 
 	void visitInst(Inst *ins)
 	{
-		printName(ins);
-		ss << " DEFAULT";
+		unreachable("");
 	}
 
 	void visitInstUnop(InstUnop *ins)
@@ -116,6 +123,18 @@ public:
 	{
 		printName(ins);
 		printOperands(ins);
+	}
+
+	void visitInstSetcc(InstSetcc *ins)
+	{
+		printName(ins);
+		print(ins->cc);
+		printOperands(ins);
+	}
+
+	void visitInstBr(InstBr *ins)
+	{
+		printName(ins);
 	}
 
 	void visitInstBrcc(InstBrcc *ins)
@@ -188,7 +207,9 @@ void PrinterPass::run(Region *r)
 			vis.visit(&*iit); // TODO:
 		}
 	}
-	log_qirprint(ss.str().c_str());
+
+	auto str = ss.str();
+	log_qirprint(str.c_str());
 }
 
 } // namespace dbt::qir

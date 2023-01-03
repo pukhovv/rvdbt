@@ -6,7 +6,7 @@ namespace dbt::qir
 {
 
 struct PrinterPass {
-	void run(Region *r);
+	static void run(Region *r);
 };
 
 extern char const *const op_names[to_underlying(Op::Count)];

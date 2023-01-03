@@ -1,19 +1,21 @@
 #include "dbt/qjit/qcg.h"
+#include "dbt/qjit/qir_printer.h"
 
 namespace dbt::qcg
 {
 
 TBlock *QCodegen::Generate(qir::Region *r)
 {
-	auto vregs_info = r->GetVRegsInfo();
 	QEmit ce(r);
-	QRegAlloc ra(&ce, vregs_info);
-	QCodegen cg(r, &ce, &ra);
+	QCodegen cg(r, &ce);
+
+	log_qcg("Allocate regs");
+	QRegAllocPass::run(r);
+	qir::PrinterPass::run(r);
+	return nullptr;
 
 	log_qcg("Generate");
-	ra.Prologue();
 	ce.Prologue();
-
 	cg.Translate();
 
 	log_qcg("Emit code");

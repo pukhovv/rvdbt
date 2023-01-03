@@ -101,8 +101,7 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 	PrinterPass printer;
 	printer.run(&region);
 
-	// return qcg::QCodegen::Generate(&region);
-	return nullptr;
+	return qcg::QCodegen::Generate(&region);
 }
 
 void RV32Translator::TranslateInsn()

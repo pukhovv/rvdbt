@@ -80,7 +80,8 @@ private:
 	enum class Kind : u8 {
 		CONST = 0,
 		GPR,
-		// FPR, STATE_SLOT, STACK_SLOT
+		SLOT,
+		// FPR
 		BAD,
 		Count,
 	};
@@ -120,6 +121,16 @@ public:
 		return VOperand(value);
 	}
 
+	static inline VOperand MakeSlot(bool is_glob, VType type, u16 offs)
+	{
+		uintptr_t value = 0;
+		value = f_kind::encode(value, Kind::SLOT);
+		value = f_type::encode(value, type);
+		value = f_slot_offs::encode(value, offs);
+		value = f_slot_is_global::encode(value, is_glob);
+		return VOperand(value);
+	}
+
 	inline VType GetType() const
 	{
 		return static_cast<VType>(f_type::decode(value));
@@ -130,25 +141,40 @@ public:
 		return GetKind() == Kind::CONST;
 	}
 
-	inline bool IsV() const
-	{
-		return f_is_virtual::decode(value);
-	}
-
 	// preg or vreg
 	inline bool IsGPR() const
 	{
 		return GetKind() == Kind::GPR;
 	}
 
+	inline bool IsSlot() const
+	{
+		return GetKind() == Kind::SLOT;
+	}
+
+	inline bool IsV() const
+	{
+		return f_is_virtual::decode(value);
+	}
+
 	inline bool IsPGPR() const
 	{
-		return IsGPR() && !IsV();
+		return IsGPR() && !IsV(); // TODO: split checks and add asserts
 	}
 
 	inline bool IsVGPR() const
 	{
 		return IsGPR() && IsV();
+	}
+
+	inline bool IsGSlot() const
+	{
+		return IsSlot() && f_slot_is_global::decode(value);
+	}
+
+	inline bool IsLSlot() const
+	{
+		return IsSlot() && !f_slot_is_global::decode(value);
 	}
 
 	inline u32 GetConst() const
@@ -169,6 +195,12 @@ public:
 		return f_reg::decode(value);
 	}
 
+	inline u16 GetSlotOffs() const
+	{
+		assert(IsSlot());
+		return f_slot_offs::decode(value);
+	}
+
 private:
 	inline Kind GetKind() const
 	{
@@ -185,6 +217,8 @@ private:
 	static constexpr auto data_bits = bit_size<uintptr_t> - last_::container_size;
 	using f_reg = last_::next<RegN, bit_size<RegN>>;
 	using f_const = last_::next<u32, 32>; // TODO: cpool
+	using f_slot_offs = last_::next<u16, 16>;
+	using f_slot_is_global = f_slot_offs::next<bool, 1>;
 };
 
 //////////////////////////////////////////////////////////////////////

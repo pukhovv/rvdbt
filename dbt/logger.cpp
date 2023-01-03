@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 namespace dbt
 {
@@ -14,43 +15,50 @@ inline int xvsnprintf(char *dst, size_t n, char const *fmt, va_list args)
 	return rc;
 }
 
+static thread_local std::vector<char> g_log_buf(1024 * 2);
+
 void LogStream::commit_write(const char *str) const
 {
-	std::array<char, 4096 * 2> buf;
-	auto cur = buf.begin();
-	auto const end = buf.end() - 2;
+	auto &buf = g_log_buf;
 
-	int res = snprintf(cur, end - cur, "%-12s%s", prefix, str);
-	assert(res >= 0);
-	cur += res;
+retry:
+	int res = snprintf(buf.data(), buf.size(), "%-12s%s\n", prefix, str);
+	assert(res > 0);
+	if (res >= buf.size()) {
+		buf.resize(res + 1);
+		goto retry;
+	}
 
-	*cur++ = '\n';
-
-	fwrite(buf.data(), cur - buf.begin(), sizeof(char), stderr);
+	fwrite(buf.data(), res, sizeof(char), stderr);
 }
 
 void LogStream::commit_printf(const char *fmt, ...) const
 {
-	std::array<char, 2048> buf;
-	auto cur = buf.begin();
-	auto const end = buf.end() - 2;
+	auto &buf = g_log_buf;
+	size_t cur = 0;
+
+	int res = snprintf(buf.data(), buf.size(), "%-12s", prefix);
+	assert(res >= 0);
+	cur += res;
 
 	va_list args;
 	va_start(args, fmt);
-
-	int res = snprintf(cur, end - cur, "%-12s", prefix);
+retry:
+	res = vsnprintf(buf.data() + cur, buf.size() - cur, fmt, args);
 	assert(res >= 0);
+	if (res + cur + 1 >= buf.size()) { // +1 for newline
+		buf.resize(res + cur + 1 + 1);
+		goto retry;
+	}
 	cur += res;
 
-	assert(strlen(fmt) < end - cur); // use write instead
-	res = vsnprintf(cur, end - cur, fmt, args);
-	assert(res >= 0);
-	cur += res;
-
-	*cur++ = '\n';
 	va_end(args);
 
-	fwrite(buf.data(), cur - buf.begin(), sizeof(char), stderr);
+	buf[cur] = '\n';
+	cur += 1;
+	assert(cur <= buf.size());
+
+	fwrite(buf.data(), cur, sizeof(char), stderr);
 }
 
 LogStream::Setup::Setup(LogStream &s)
