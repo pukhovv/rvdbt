@@ -209,7 +209,7 @@ void PrinterPass::run(Region *r)
 	}
 
 	auto str = ss.str();
-	log_qirprint(str.c_str());
+	log_qirprint.write(str.c_str());
 }
 
 } // namespace dbt::qir

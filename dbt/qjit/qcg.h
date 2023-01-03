@@ -137,7 +137,7 @@ struct QRegAlloc {
 
 		qir::RegN p{};
 		Location loc{Location::DEAD};
-		bool spill_synced{false};
+		bool spill_synced{false}; // valid if loc is REG
 	};
 
 	QRegAlloc(qir::Region *region_);
@@ -160,6 +160,7 @@ struct QRegAlloc {
 
 	void Prologue();
 	void BlockBoundary();
+	void RegionBoundary();
 
 	template <typename DstA, typename SrcA>
 	void AllocOp(DstA &&dst, SrcA &&src, bool unsafe = false)

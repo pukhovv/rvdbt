@@ -159,7 +159,7 @@ QRegAlloc::RTrack *QRegAlloc::AddTrackLocal(qir::VType type)
 
 void QRegAlloc::Prologue()
 {
-	for (int i = 0; i < n_vregs; ++i) {
+	for (qir::RegN i = 0; i < n_vregs; ++i) {
 		auto *v = &vregs[i];
 
 		if (v->is_global) {
@@ -172,8 +172,20 @@ void QRegAlloc::Prologue()
 
 void QRegAlloc::BlockBoundary()
 {
-	for (int i = 0; i < n_vregs; ++i) {
+	for (qir::RegN i = 0; i < n_vregs; ++i) {
 		Spill(&vregs[i]); // skip if fixed
+	}
+}
+
+void QRegAlloc::RegionBoundary()
+{
+	for (qir::RegN i = 0; i < n_vregs; ++i) {
+		auto vreg = &vregs[i];
+		if (vreg->is_global) {
+			Spill(vreg);
+		} else {
+			Release<false>(vreg);
+		}
 	}
 }
 
@@ -282,13 +294,13 @@ public:
 	void visitInstGBr(qir::InstGBr *ins)
 	{
 		// has no voperands
-		ra->BlockBoundary();
+		ra->RegionBoundary();
 	}
 
 	void visitInstGBrind(qir::InstGBrind *ins)
 	{
 		AllocOperands(ins, false);
-		ra->BlockBoundary(); // merge into AllocOp
+		ra->RegionBoundary(); // merge into AllocOp
 	}
 
 	void visitInstVMLoad(qir::InstVMLoad *ins)
