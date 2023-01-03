@@ -68,7 +68,7 @@ void QEmit::DumpTBlock(TBlock *tb)
 	log_qcg.write(buf.data());
 }
 
-static inline asmjit::x86::Gp make_gpr(qir::PReg pr, qir::VType type)
+static inline asmjit::x86::Gp make_gpr(qir::RegN pr, qir::VType type)
 {
 	switch (type) {
 	case qir::VType::I8:
@@ -82,22 +82,22 @@ static inline asmjit::x86::Gp make_gpr(qir::PReg pr, qir::VType type)
 	}
 }
 
-static inline asmjit::x86::Gp make_gpr(qir::VReg &vr)
+static inline asmjit::x86::Gp make_gpr(qir::VOperand opr)
 {
-	return make_gpr(vr.GetPreg(), vr.GetType());
+	return make_gpr(opr.GetPGPR(), opr.GetType());
 }
 
-static inline asmjit::Imm make_imm(qir::VConst &vc)
+static inline asmjit::Imm make_imm(qir::VOperand opr)
 {
-	return asmjit::imm(vc.GetValue());
+	return asmjit::imm(opr.GetConst());
 }
 
-static inline asmjit::Operand make_operand(qir::VOperand &op)
+static inline asmjit::Operand make_operand(qir::VOperand opr)
 {
-	if (op.IsConst()) {
-		return asmjit::imm(op.ToConst().GetValue());
+	if (opr.IsConst()) {
+		return make_imm(opr);
 	}
-	return make_gpr(op.ToReg());
+	return make_gpr(opr);
 }
 
 static inline asmjit::x86::CondCode make_cc(qir::CondCode cc)
@@ -120,28 +120,28 @@ static inline asmjit::x86::CondCode make_cc(qir::CondCode cc)
 	}
 }
 
-void QEmit::StateFill(qir::PReg p, qir::VType type, u16 offs)
+void QEmit::StateFill(qir::RegN p, qir::VType type, u16 offs)
 {
 	auto slot = asmjit::x86::ptr(RSTATE, offs);
 	slot.setSize(VTypeToSize(type));
 	j.mov(make_gpr(p, type), slot);
 }
 
-void QEmit::StateSpill(qir::PReg p, qir::VType type, u16 offs)
+void QEmit::StateSpill(qir::RegN p, qir::VType type, u16 offs)
 {
 	auto slot = asmjit::x86::ptr(RSTATE, offs);
 	slot.setSize(VTypeToSize(type));
 	j.mov(slot, make_gpr(p, type));
 }
 
-void QEmit::LocFill(qir::PReg p, qir::VType type, u16 offs)
+void QEmit::LocFill(qir::RegN p, qir::VType type, u16 offs)
 {
 	auto slot = asmjit::x86::ptr(RSP, offs);
 	slot.setSize(VTypeToSize(type));
 	j.mov(make_gpr(p, type), slot);
 }
 
-void QEmit::LocSpill(qir::PReg p, qir::VType type, u16 offs)
+void QEmit::LocSpill(qir::RegN p, qir::VType type, u16 offs)
 {
 	auto slot = asmjit::x86::ptr(RSP, offs);
 	slot.setSize(VTypeToSize(type));
@@ -189,19 +189,15 @@ void QEmit::Emit_brcc(qir::InstBrcc *ins)
 
 void QEmit::Emit_gbr(qir::InstGBr *ins)
 {
-	// tcache::OnTranslateBr(tb, ins->tpc.GetValue());
-
 	j.embedUInt8(0, sizeof(qjit::BranchSlot));
 	auto *slot = (qjit::BranchSlot *)(j.bufferPtr() - sizeof(qjit::BranchSlot));
-	slot->gip = ins->tpc.GetValue();
+	slot->gip = ins->tpc.GetConst();
 	slot->Reset();
 }
 
 void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 {
-	// tcache::OnTranslateBrind(tb);
-
-	auto ptgt = make_gpr(ins->i[0].ToReg());
+	auto ptgt = make_gpr(ins->i[0]);
 	{ // TODO: force si alloc
 		auto tmp_ptgt = asmjit::x86::gpq(asmjit::x86::Gp::kIdSi);
 		j.mov(tmp_ptgt, ptgt);
@@ -250,9 +246,9 @@ void QEmit::Emit_vmload(qir::InstVMLoad *ins)
 
 	asmjit::x86::Mem mem;
 	if (likely(!vbase.IsConst())) {
-		mem = asmjit::x86::ptr(pmembase, make_gpr(vbase.ToReg()));
+		mem = asmjit::x86::ptr(pmembase, make_gpr(vbase));
 	} else {
-		mem = asmjit::x86::ptr(pmembase, vbase.ToConst().GetValue());
+		mem = asmjit::x86::ptr(pmembase, vbase.GetConst());
 	}
 
 	assert(vrd.GetType() == qir::VType::I32);
@@ -292,9 +288,9 @@ void QEmit::Emit_vmstore(qir::InstVMStore *ins)
 
 	asmjit::x86::Mem mem;
 	if (likely(!vbase.IsConst())) {
-		mem = asmjit::x86::ptr(pmembase, make_gpr(vbase.ToReg()));
+		mem = asmjit::x86::ptr(pmembase, make_gpr(vbase));
 	} else {
-		mem = asmjit::x86::ptr(pmembase, vbase.ToConst().GetValue());
+		mem = asmjit::x86::ptr(pmembase, vbase.GetConst());
 	}
 
 	assert(ins->sgn == qir::VSign::U);
@@ -328,34 +324,37 @@ void QEmit::Emit_mov(qir::InstUnop *ins)
 template <asmjit::x86::Inst::Id Op>
 ALWAYS_INLINE void QEmit::EmitInstBinopCommutative(qir::InstBinop *ins)
 {
+	// canonicalize
+	if (ins->i[0].IsConst()) {
+		std::swap(ins->i[0], ins->i[1]);
+	}
+
 	// constfolded
 	auto &vrd = ins->o[0];
-	auto vs1 = &ins->i[0];
-	auto vs2 = &ins->i[1];
+	auto vs1 = ins->i[0];
+	auto vs2 = ins->i[1];
 	auto prd = make_gpr(vrd);
 
-	// canonicalize
-	if (vs1->IsConst()) {
+	// canonicalize // TODO: do first and remove indir
+	if (vs1.IsConst()) {
 		std::swap(vs1, vs2);
 	}
 	// rd rx x
-	auto &rs1 = vs1->ToReg();
-	auto prs1 = make_gpr(rs1);
+	auto prs1 = make_gpr(vs1);
 
-	if (vrd.GetIdx() == rs1.GetIdx()) { // rd rd x
-		j.emit(Op, prd, make_operand(*vs2));
+	if (vrd.GetPGPR() == vs1.GetPGPR()) { // rd rd x
+		j.emit(Op, prd, make_operand(vs2));
 		return;
 	}
 	// rd r1 x
-	if (vs2->IsConst()) { // rd r1 c
+	if (vs2.IsConst()) { // rd r1 c
 		j.emit(asmjit::x86::Inst::kIdMov, prd, prs1);
-		j.emit(Op, prd, make_imm(vs2->ToConst()));
+		j.emit(Op, prd, make_imm(vs2));
 		return;
 	}
 	// rd r1 rx
-	auto &rs2 = vs2->ToReg();
-	auto prs2 = make_gpr(rs2);
-	if (vrd.GetIdx() == vs2->ToReg().GetIdx()) { // rd r1 rd
+	auto prs2 = make_gpr(vs2);
+	if (vrd.GetPGPR() == vs2.GetPGPR()) { // rd r1 rd
 		j.emit(Op, prd, prs1);
 		return;
 	}
@@ -369,16 +368,15 @@ ALWAYS_INLINE void QEmit::EmitInstBinopNonCommutative(qir::InstBinop *ins)
 {
 	// constfolded
 	auto &vrd = ins->o[0];
-	auto vs1 = &ins->i[0];
-	auto vs2 = &ins->i[1];
+	auto vs1 = ins->i[0];
+	auto vs2 = ins->i[1];
 	auto prd = make_gpr(vrd);
 	auto ptmp = asmjit::x86::Gp(prd, TMP1C);
 
-	if (vs1->IsConst()) { // rd c rx
-		auto cs1 = make_imm(vs1->ToConst());
-		auto &vrs2 = vs2->ToReg();
-		auto prs2 = make_gpr(vrs2);
-		if (vrd.GetIdx() == vrs2.GetIdx()) { // rd c rd
+	if (vs1.IsConst()) { // rd c rx
+		auto cs1 = make_imm(vs1);
+		auto prs2 = make_gpr(vs2);
+		if (vrd.GetPGPR() == vs2.GetPGPR()) { // rd c rd
 			j.mov(ptmp, cs1);
 			j.emit(Op, ptmp, prd);
 			j.mov(prd, ptmp);
@@ -389,25 +387,23 @@ ALWAYS_INLINE void QEmit::EmitInstBinopNonCommutative(qir::InstBinop *ins)
 		return;
 	}
 	// rd rx x
-	auto &rs1 = vs1->ToReg();
-	auto prs1 = make_gpr(rs1);
+	auto prs1 = make_gpr(vs1);
 
 	// rd rx x
-	if (vrd.GetIdx() == rs1.GetIdx()) { // rd rd x
-		j.emit(Op, prd, make_operand(*vs2));
+	if (vrd.GetPGPR() == vs1.GetPGPR()) { // rd rd x
+		j.emit(Op, prd, make_operand(vs2));
 		return;
 	}
 	// rd r1 x
-	if (vs2->IsConst()) { // rd r1 c
+	if (vs2.IsConst()) { // rd r1 c
 		j.emit(asmjit::x86::Inst::kIdMov, prd, prs1);
-		j.emit(Op, prd, make_imm(vs2->ToConst()));
+		j.emit(Op, prd, make_imm(vs2));
 		return;
 	}
 	// rd r1 rx
-	auto &rs2 = vs2->ToReg();
-	auto prs2 = make_gpr(rs2);
-	if (vrd.GetIdx() == vs2->ToReg().GetIdx()) { // rd r1 rd
-		j.mov(ptmp, prs1);		     // TODO: liveness: may kill if r1 is dead
+	auto prs2 = make_gpr(vs2);
+	if (vrd.GetPGPR() == vs2.GetPGPR()) { // rd r1 rd
+		j.mov(ptmp, prs1);	      // TODO: liveness: may kill if r1 is dead
 		j.emit(Op, ptmp, prd);
 		j.mov(prd, ptmp);
 		return;

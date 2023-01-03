@@ -20,20 +20,20 @@ enum {
 };
 } // namespace GlobalRegId
 
-static inline VReg vgpr(u8 id, VType type = VType::I32)
+static inline VOperand vgpr(u8 id, VType type = VType::I32)
 {
 	assert(id != 0);
-	return VReg(type, GlobalRegId::GPR_START + id - 1);
+	return VOperand::MakeVGPR(type, GlobalRegId::GPR_START + id - 1);
 }
 
-static inline VConst vconst(u32 val, VType type = VType::I32)
+static inline VOperand vconst(u32 val, VType type = VType::I32)
 {
-	return VConst(type, val);
+	return VOperand::MakeConst(type, val);
 }
 
-static inline VReg vtemp(qir::Builder &qb, VType type = VType::I32)
+static inline VOperand vtemp(qir::Builder &qb, VType type = VType::I32)
 {
-	return qb.CreateVReg(type);
+	return VOperand::MakeVGPR(type, qb.CreateVGPR(type));
 }
 
 static inline VOperand gprop(u8 id, VType type = VType::I32)
@@ -58,6 +58,7 @@ StateInfo const *RV32Translator::GetStateInfo()
 
 	return &state_info;
 }
+StateInfo const *const RV32Translator::state_info = GetStateInfo();
 
 RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()) {}
 
@@ -90,7 +91,7 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 		}
 		if (num_insns == TB_MAX_INSNS || t.insn_ip == upper_bound) {
 			t.control = Control::TB_OVF;
-			t.qb.Create_gbr(VConst(VType::I32, t.insn_ip));
+			t.qb.Create_gbr(VOperand::MakeConst(VType::I32, t.insn_ip));
 			break;
 		}
 	}
@@ -100,7 +101,8 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 	PrinterPass printer;
 	printer.run(&region);
 
-	return qcg::QCodegen::Generate(&region);
+	// return qcg::QCodegen::Generate(&region);
+	return nullptr;
 }
 
 void RV32Translator::TranslateInsn()
@@ -144,9 +146,9 @@ void RV32Translator::TranslateLoad(insn::I i, VType type, VSign sgn)
 
 	qb.Create_add(tmp, gprop(i.rs1()), vconst(i.imm())); // constfold
 	if (i.rd()) {
-		qb.Create_vmload(type, sgn, vgpr(i.rd()).WithType(VType::I32), tmp);
+		qb.Create_vmload(type, sgn, vgpr(i.rd()), tmp);
 	} else {
-		qb.Create_vmload(type, sgn, tmp.WithType(VType::I32), tmp);
+		qb.Create_vmload(type, sgn, tmp, tmp);
 	}
 }
 
@@ -254,7 +256,7 @@ TRANSLATOR(jal)
 		qb.Create_mov(vgpr(i.rd()), vconst(insn_ip + 4));
 	}
 
-	qb.Create_gbr(VConst(VType::I32, insn_ip + i.imm()));
+	qb.Create_gbr(vconst(insn_ip + i.imm()));
 }
 TRANSLATOR(jalr)
 {

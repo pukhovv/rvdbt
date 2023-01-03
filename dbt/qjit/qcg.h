@@ -12,15 +12,15 @@ LOG_STREAM(qcg);
 struct RegMask {
 	constexpr RegMask(u32 data_) : data(data_) {}
 
-	constexpr inline bool Test(qir::PReg r) const
+	constexpr inline bool Test(qir::RegN r) const
 	{
 		return data & (1u << r);
 	}
-	constexpr inline void Set(qir::PReg r)
+	constexpr inline void Set(qir::RegN r)
 	{
 		data |= (1u << r);
 	}
-	constexpr inline void Clear(qir::PReg r)
+	constexpr inline void Clear(qir::RegN r)
 	{
 		data &= ~(1u << r);
 	}
@@ -54,10 +54,10 @@ struct QEmit {
 	static void DumpTBlock(TBlock *tb);
 
 	void Prologue() {} // TODO: unused
-	void StateSpill(qir::PReg p, qir::VType type, u16 offs);
-	void StateFill(qir::PReg p, qir::VType type, u16 offs);
-	void LocSpill(qir::PReg p, qir::VType type, u16 offs);
-	void LocFill(qir::PReg p, qir::VType type, u16 offs);
+	void StateSpill(qir::RegN p, qir::VType type, u16 offs);
+	void StateFill(qir::RegN p, qir::VType type, u16 offs);
+	void LocSpill(qir::RegN p, qir::VType type, u16 offs);
+	void LocFill(qir::RegN p, qir::VType type, u16 offs);
 
 #define OP(name, cls) void Emit_##name(qir::cls *ins);
 	QIR_OPS_LIST(OP)
@@ -135,17 +135,17 @@ struct QRegAlloc {
 			REG,
 		};
 
-		qir::PReg p{};
+		qir::RegN p{};
 		Location loc{Location::DEAD};
 		bool spill_synced{false};
 	};
 
 	QRegAlloc(QEmit *qe_, qir::VRegsInfo const *vregs_info_);
 
-	qir::PReg AllocPReg(RegMask desire, RegMask avoid);
+	qir::RegN AllocPReg(RegMask desire, RegMask avoid);
 	void EmitSpill(RTrack *v);
 	void EmitFill(RTrack *v);
-	void Spill(qir::PReg p);
+	void Spill(qir::RegN p);
 	void Spill(RTrack *v);
 	void SyncSpill(RTrack *v);
 	template <bool kill>
@@ -192,6 +192,8 @@ private:
 	qir::Region *region;
 	QEmit *ce;
 	QRegAlloc *ra;
+
+	friend struct QCodegenVisitor;
 };
 
 }; // namespace dbt::qcg

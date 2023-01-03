@@ -1,6 +1,8 @@
 #pragma once
 
+#include <bit>
 #include <cassert>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -84,6 +86,15 @@ constexpr std::underlying_type_t<Enum> to_underlying(Enum e)
 {
 	return static_cast<std::underlying_type_t<Enum>>(e);
 }
+
+template <class Enum>
+constexpr size_t enum_bits(Enum e)
+{
+	return std::bit_width(to_underlying(e) - 1u);
+}
+
+template <typename T>
+static constexpr size_t bit_size = sizeof(T) * CHAR_BIT;
 
 namespace dbt
 {

@@ -51,33 +51,27 @@ private:
 		ss << GetCondCodeNameStr(cc);
 	}
 
-	void print(VOperandBase &o)
-	{
-		if (auto *cnst = as<VConst>(&o)) {
-			print(*cnst);
-		} else {
-			print(*cast<VReg>(&o));
-		}
-	}
-
-	void print(VConst &c)
+	void print(VOperand o)
 	{
 		addsep();
-		ss << "[$" << std::hex << c.GetValue() << std::dec << "|" << GetVTypeNameStr(c.GetType())
-		   << "]";
-	}
-
-	void print(VReg &r)
-	{
-		addsep();
-		auto idx = r.GetIdx();
-		auto vinfo = region->GetVRegsInfo();
-		if (vinfo->IsGlobal(idx)) {
-			ss << "[@" << vinfo->GetGlobalInfo(idx)->name;
+		auto type = o.GetType();
+		if (o.IsConst()) {
+			ss << "[$" << std::hex << o.GetConst() << std::dec << "|" << GetVTypeNameStr(type)
+			   << "]";
+		} else if (o.IsVGPR()) {
+			auto vreg = o.GetVGPR();
+			auto vinfo = region->GetVRegsInfo();
+			if (vinfo->IsGlobal(vreg)) {
+				ss << "[@" << vinfo->GetGlobalInfo(vreg)->name;
+			} else {
+				ss << "[%" << vreg;
+			}
+			ss << "|" << GetVTypeNameStr(type) << "]";
+		} else if (o.IsPGPR()) {
+			unreachable("");
 		} else {
-			ss << "[%" << idx;
+			unreachable("");
 		}
-		ss << "|" << GetVTypeNameStr(r.GetType()) << "]";
 	}
 
 	void print(Block *b)
@@ -97,7 +91,7 @@ private:
 		for (auto &o : ins->o)
 			print(o);
 		for (auto &i : ins->i)
-			print(*i.bcls());
+			print(i);
 	}
 
 	Region *region;

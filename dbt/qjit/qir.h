@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dbt/arena.h"
+#include "dbt/bitfield.h"
 #include "dbt/common.h"
 #include "dbt/logger.h"
 #include "dbt/qjit/ilist.h"
@@ -8,6 +9,7 @@
 #include "dbt/qjit/regalloc.h"
 
 #include <algorithm>
+#include <bit>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -68,6 +70,125 @@ enum class VSign : u8 {
 	U = 0,
 	S = 1,
 };
+
+//////////////////////////////////////////////////////////////////////
+
+using RegN = u16;
+
+struct VOperand {
+private:
+	enum class Kind : u8 {
+		CONST = 0,
+		GPR,
+		// FPR, STATE_SLOT, STACK_SLOT
+		BAD,
+		Count,
+	};
+
+	inline VOperand(uintptr_t value_) : value(value_) {}
+
+public:
+	// TODO: delete operators
+
+	inline VOperand() : value(f_kind::encode(uintptr_t(0), Kind::BAD)) {}
+
+	static inline VOperand MakeVGPR(VType type, RegN reg)
+	{
+		uintptr_t value = 0;
+		value = f_kind::encode(value, Kind::GPR);
+		value = f_type::encode(value, type);
+		value = f_is_virtual::encode(value, true);
+		value = f_reg::encode(value, reg);
+		return VOperand(value);
+	}
+
+	static inline VOperand MakePGPR(VType type, RegN reg)
+	{
+		uintptr_t value = 0;
+		value = f_kind::encode(value, Kind::GPR);
+		value = f_type::encode(value, type);
+		value = f_reg::encode(value, reg);
+		return VOperand(value);
+	}
+
+	static inline VOperand MakeConst(VType type, u32 cval)
+	{
+		uintptr_t value = 0;
+		value = f_kind::encode(value, Kind::CONST);
+		value = f_type::encode(value, type);
+		value = f_const::encode(value, cval);
+		return VOperand(value);
+	}
+
+	inline VType GetType() const
+	{
+		return static_cast<VType>(f_type::decode(value));
+	}
+
+	inline bool IsConst() const
+	{
+		return GetKind() == Kind::CONST;
+	}
+
+	inline bool IsV() const
+	{
+		return f_is_virtual::decode(value);
+	}
+
+	// preg or vreg
+	inline bool IsGPR() const
+	{
+		return GetKind() == Kind::GPR;
+	}
+
+	inline bool IsPGPR() const
+	{
+		return IsGPR() && !IsV();
+	}
+
+	inline bool IsVGPR() const
+	{
+		return IsGPR() && IsV();
+	}
+
+	inline u32 GetConst() const
+	{
+		assert(IsConst());
+		return f_const::decode(value);
+	}
+
+	inline RegN GetPGPR() const
+	{
+		assert(IsPGPR());
+		return f_reg::decode(value);
+	}
+
+	inline RegN GetVGPR() const
+	{
+		assert(IsVGPR());
+		return f_reg::decode(value);
+	}
+
+private:
+	inline Kind GetKind() const
+	{
+		return static_cast<Kind>(f_kind::decode(value));
+	}
+
+	uintptr_t value{0};
+
+	using f_kind = bf_first<std::underlying_type_t<Kind>, enum_bits(Kind::Count)>;
+	using f_type = f_kind::next<std::underlying_type_t<VType>, enum_bits(VType::Count)>;
+	using f_is_virtual = f_type::next<bool, 1>;
+	using last_ = f_is_virtual;
+
+	static constexpr auto data_bits = bit_size<uintptr_t> - last_::container_size;
+	using f_reg = last_::next<RegN, bit_size<RegN>>;
+	using f_const = last_::next<u32, 32>; // TODO: cpool
+};
+
+//////////////////////////////////////////////////////////////////////
+#if 0
 
 struct VOperandBase {
 	bool IsConst() const
@@ -193,6 +314,8 @@ private:
 	VReg reg;
 } __attribute__((may_alias));
 
+#endif
+
 struct Inst : IListNode<Inst> {
 	inline Op GetOpcode() const
 	{
@@ -227,20 +350,20 @@ private:
 template <size_t N_OUT, size_t N_IN>
 struct InstWithOperands : Inst {
 protected:
-	InstWithOperands(Op opcode_, std::array<VReg, N_OUT> &&o_, std::array<VOperand, N_IN> &&i_)
+	InstWithOperands(Op opcode_, std::array<VOperand, N_OUT> &&o_, std::array<VOperand, N_IN> &&i_)
 	    : Inst(opcode_), o{o_}, i{i_}
 	{
 	}
 
 public:
-	std::array<VReg, N_OUT> o{};
+	std::array<VOperand, N_OUT> o{};
 	std::array<VOperand, N_IN> i{};
 };
 
 /* Common classes */
 
 struct InstUnop : InstWithOperands<1, 1> {
-	InstUnop(Op opcode_, VReg d, VOperand s) : InstWithOperands(opcode_, {d}, {s})
+	InstUnop(Op opcode_, VOperand d, VOperand s) : InstWithOperands(opcode_, {d}, {s})
 	{
 		assert(HasOpcode(opcode_));
 	}
@@ -257,7 +380,7 @@ struct InstUnop : InstWithOperands<1, 1> {
 };
 
 struct InstBinop : InstWithOperands<1, 2> {
-	InstBinop(Op opcode_, VReg d, VOperand sl, VOperand sr) : InstWithOperands(opcode_, {d}, {sl, sr})
+	InstBinop(Op opcode_, VOperand d, VOperand sl, VOperand sr) : InstWithOperands(opcode_, {d}, {sl, sr})
 	{
 		assert(HasOpcode(opcode_));
 	}
@@ -321,14 +444,18 @@ struct InstBrcc : InstWithOperands<0, 2> {
 	CondCode cc;
 };
 
+// TODO: group with gbrind?
 struct InstGBr : Inst {
-	InstGBr(VConst tpc_) : Inst(Op::_gbr), tpc(tpc_) {}
+	InstGBr(VOperand tpc_) : Inst(Op::_gbr), tpc(tpc_)
+	{
+		assert(tpc_.IsConst());
+	}
 
-	VConst tpc;
+	VOperand tpc;
 };
 
 struct InstGBrind : InstWithOperands<0, 1> {
-	InstGBrind(VReg tpc_) : InstWithOperands(Op::_gbrind, {}, {tpc_}) {}
+	InstGBrind(VOperand tpc_) : InstWithOperands(Op::_gbrind, {}, {tpc_}) {}
 };
 
 struct InstHcall : InstWithOperands<0, 1> {
@@ -339,7 +466,7 @@ struct InstHcall : InstWithOperands<0, 1> {
 };
 
 struct InstVMLoad : InstWithOperands<1, 1> {
-	InstVMLoad(VType sz_, VSign sgn_, VReg d, VOperand ptr)
+	InstVMLoad(VType sz_, VSign sgn_, VOperand d, VOperand ptr)
 	    : InstWithOperands(Op::_vmload, {d}, {ptr}), sz(sz_), sgn(sgn_)
 	{
 	}
@@ -359,7 +486,7 @@ struct InstVMStore : InstWithOperands<0, 2> {
 };
 
 struct InstSetcc : InstWithOperands<1, 2> {
-	InstSetcc(CondCode cc_, VReg d, VOperand sl, VOperand sr)
+	InstSetcc(CondCode cc_, VOperand d, VOperand sl, VOperand sr)
 	    : InstWithOperands(Op::_setcc, {d}, {sl, sr}), cc(cc_)
 	{
 	}
@@ -432,7 +559,7 @@ struct StateReg {
 };
 
 struct StateInfo {
-	StateReg const *GetStateReg(u16 idx) const
+	StateReg const *GetStateReg(RegN idx) const
 	{
 		if (idx < n_regs) {
 			return &regs[idx];
@@ -441,7 +568,7 @@ struct StateInfo {
 	}
 
 	StateReg *regs{};
-	u16 n_regs{};
+	RegN n_regs{};
 };
 
 struct VRegsInfo {
@@ -457,29 +584,29 @@ struct VRegsInfo {
 		return glob_info->n_regs + loc_info.size();
 	}
 
-	inline bool IsGlobal(u16 idx) const
+	inline bool IsGlobal(RegN idx) const
 	{
 		return idx < glob_info->n_regs;
 	}
 
-	inline bool IsLocal(u16 idx) const
+	inline bool IsLocal(RegN idx) const
 	{
 		return !IsGlobal(idx);
 	}
 
-	inline StateReg const *GetGlobalInfo(u16 idx) const
+	inline StateReg const *GetGlobalInfo(RegN idx) const
 	{
 		assert(IsGlobal(idx));
 		return &glob_info->regs[idx];
 	}
 
-	inline VType GetLocalType(u16 idx) const
+	inline VType GetLocalType(RegN idx) const
 	{
 		assert(IsLocal(idx));
 		return loc_info[idx - glob_info->n_regs];
 	}
 
-	inline u16 AddLocal(VType type)
+	inline RegN AddLocal(VType type)
 	{
 		auto idx = loc_info.size() + glob_info->n_regs;
 		loc_info.push_back(type);
@@ -504,11 +631,6 @@ struct Region {
 		return res;
 	}
 
-	VReg CreateVreg(VType type)
-	{
-		return VReg(type, vregs_info.AddLocal(type));
-	}
-
 	template <typename T, typename... Args>
 	requires std::is_base_of_v<Inst, T> T *Create(Args &&...args)
 	{
@@ -517,17 +639,17 @@ struct Region {
 		return res;
 	}
 
-	MemArena *GetArena()
-	{
-		return arena;
-	}
-
 	u32 GetNumBlocks() const
 	{
 		return bb_id_counter;
 	}
 
-	VRegsInfo const *GetVRegsInfo()
+	MemArena *GetArena()
+	{
+		return arena;
+	}
+
+	VRegsInfo *GetVRegsInfo()
 	{
 		return &vregs_info;
 	}
@@ -570,9 +692,9 @@ struct Builder {
 		return bb->GetRegion()->CreateBlock();
 	}
 
-	VReg CreateVReg(VType type) const
+	RegN CreateVGPR(VType type) const
 	{
-		return bb->GetRegion()->CreateVreg(type);
+		return bb->GetRegion()->GetVRegsInfo()->AddLocal(type);
 	}
 
 	template <typename T, typename... Args>

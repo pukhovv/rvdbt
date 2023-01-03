@@ -19,16 +19,16 @@ QRegAlloc::QRegAlloc(QEmit *qe_, qir::VRegsInfo const *vregs_info_) : vregs_info
 	}
 }
 
-qir::PReg QRegAlloc::AllocPReg(RegMask desire, RegMask avoid)
+qir::RegN QRegAlloc::AllocPReg(RegMask desire, RegMask avoid)
 {
 	RegMask target = desire & ~avoid;
-	for (qir::PReg p = 0; p < N_PREGS; ++p) {
+	for (qir::RegN p = 0; p < N_PREGS; ++p) {
 		if (!p2v[p] && target.Test(p)) {
 			return p;
 		}
 	}
 
-	for (qir::PReg p = 0; p < N_PREGS; ++p) {
+	for (qir::RegN p = 0; p < N_PREGS; ++p) {
 		if (target.Test(p)) {
 			Spill(p);
 			return p;
@@ -59,7 +59,7 @@ void QRegAlloc::EmitFill(RTrack *v)
 	}
 }
 
-void QRegAlloc::Spill(qir::PReg p)
+void QRegAlloc::Spill(qir::RegN p)
 {
 	RTrack *v = p2v[p];
 	if (!v) {
@@ -198,7 +198,7 @@ void QRegAlloc::AllocOp(RTrack **dstl, u8 dst_n, RTrack **srcl, u8 src_n, bool u
 		for (int i = 0; i < n_vregs; ++i) {
 			auto *v = &vregs[i];
 			if (v->is_global) {
-				SyncSpill(v); // continue in interpreter if exception occurs
+				SyncSpill(v);
 			}
 		}
 	}

@@ -15,8 +15,6 @@ struct RV32Translator {
 
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
 	u32 insn_ip{0};
-	
-	static StateInfo const *GetStateInfo(); 
 
 #define OP(name, format_, flags_)                                                                            \
 	void H_##name(void *insn);                                                                           \
@@ -28,6 +26,9 @@ struct RV32Translator {
 	static TBlock *Translate(CPUState *state, u32 ip);
 
 private:
+	static StateInfo const *GetStateInfo(); 
+	static StateInfo const *const state_info; 
+
 	explicit RV32Translator(qir::Region *region);
 	void TranslateInsn();
 

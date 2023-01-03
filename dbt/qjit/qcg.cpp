@@ -27,6 +27,28 @@ struct QCodegenVisitor : qir::InstVisitor<QCodegenVisitor, void> {
 
 	using Base = qir::InstVisitor<QCodegenVisitor, void>;
 
+#if 0
+	template <size_t N_OUT, size_t N_IN>
+	void AllocPregs(std::array<qir::VReg, N_OUT> &out, std::array<qir::VOperand, N_OUT> &in)
+	{
+		std::array<qir::VReg *, N_OUT> out_regs;
+		std::array<qir::VReg *, N_IN> in_regs;
+		size_t n_in_regs = 0;
+
+		for (size_t idx = 0; idx < out.size(); ++idx) {
+			out_regs = &out[idx];
+		}
+
+		for (qir::VOperand &o : in) {
+			if (!o.IsConst()) {
+				in_regs[n_in_regs++] = &o.ToReg();
+			}
+		}
+
+		
+	}
+#endif
+
 public:
 	QCodegenVisitor(QCodegen *cg_) : cg(cg_) {}
 
@@ -34,6 +56,8 @@ public:
 	{
 		unreachable("");
 	}
+
+	void visitInstBinop(qir::InstBinop *ins) {}
 
 private:
 	[[maybe_unused]] QCodegen *cg;
