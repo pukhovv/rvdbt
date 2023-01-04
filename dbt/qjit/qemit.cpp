@@ -92,12 +92,23 @@ static inline asmjit::Imm make_imm(qir::VOperand opr)
 	return asmjit::imm(opr.GetConst());
 }
 
+static inline asmjit::x86::Mem make_slot(qir::VOperand opr)
+{
+	auto offs = opr.GetSlotOffs();
+	auto size = VTypeToSize(opr.GetType());
+	auto base = opr.IsLSlot() ? QEmit::RSP : QEmit::RSTATE;
+	return asmjit::x86::Mem(base, offs, size);
+}
+
 static inline asmjit::Operand make_operand(qir::VOperand opr)
 {
+	if (likely(opr.IsGPR())) {
+		return make_gpr(opr);
+	}
 	if (opr.IsConst()) {
 		return make_imm(opr);
 	}
-	return make_gpr(opr);
+	return make_slot(opr);
 }
 
 static inline asmjit::x86::CondCode make_cc(qir::CondCode cc)
@@ -118,6 +129,11 @@ static inline asmjit::x86::CondCode make_cc(qir::CondCode cc)
 	default:
 		unreachable("");
 	}
+}
+
+void QEmit::Prologue()
+{
+	j.int3();
 }
 
 void QEmit::StateFill(qir::RegN p, qir::VType type, u16 offs)
@@ -171,14 +187,15 @@ void QEmit::Emit_brcc(qir::InstBrcc *ins)
 	auto &bb_ff = *++bb->getIter();
 
 	// constfolded
-	auto vs1 = &ins->i[0];
-	auto vs2 = &ins->i[1];
-	auto cc = ins->cc;
-	if (vs1->IsConst()) {
-		std::swap(vs1, vs2);
-		cc = qir::InverseCC(cc);
+	if (ins->i[0].IsConst()) {
+		std::swap(ins->i[0], ins->i[1]);
+		ins->cc = qir::InverseCC(ins->cc);
 	}
-	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(*vs1), make_operand(*vs2));
+	auto vs1 = ins->i[0];
+	auto vs2 = ins->i[1];
+	auto cc = ins->cc;
+
+	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(vs1), make_operand(vs2));
 	auto jcc = asmjit::x86::Inst::jccFromCond(make_cc(cc));
 	j.emit(jcc, labels[bb_t.GetId()]);
 
@@ -199,7 +216,7 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 {
 	auto ptgt = make_gpr(ins->i[0]);
 	{ // TODO: force si alloc
-		auto tmp_ptgt = asmjit::x86::gpq(asmjit::x86::Gp::kIdSi);
+		auto tmp_ptgt = asmjit::x86::gpd(asmjit::x86::Gp::kIdSi);
 		j.mov(tmp_ptgt, ptgt);
 		ptgt = tmp_ptgt;
 	}
@@ -318,7 +335,7 @@ void QEmit::Emit_setcc(qir::InstSetcc *ins)
 
 void QEmit::Emit_mov(qir::InstUnop *ins)
 {
-	j.emit(asmjit::x86::Inst::kIdMov, make_gpr(ins->o[0]), make_operand(ins->i[0]));
+	j.emit(asmjit::x86::Inst::kIdMov, make_operand(ins->o[0]), make_operand(ins->i[0]));
 }
 
 template <asmjit::x86::Inst::Id Op>

@@ -70,7 +70,7 @@ RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()
 TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 {
 	MemArena arena(1024 * 64);
-	qir::Region region(&arena, GetStateInfo());
+	qir::Region region(&arena, state_info);
 
 	RV32Translator t(&region);
 	t.insn_ip = ip;
@@ -102,6 +102,13 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 	printer.run(&region);
 
 	return qcg::QCodegen::Generate(&region);
+}
+
+void RV32Translator::PreSideeff()
+{
+	auto offs = state_info->GetStateReg(GlobalRegId::IP)->state_offs;
+	auto ip_spill = qir::VOperand::MakeSlot(true, qir::VType::I32, offs);
+	qb.Create_mov(ip_spill, vconst(insn_ip, qir::VType::I32));
 }
 
 void RV32Translator::TranslateInsn()
@@ -174,6 +181,10 @@ inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
 			log_qir("      %08x: %-8s    %s", insn_ip, #name, res.c_str());                      \
 		}                                                                                            \
 		static constexpr auto flags = decltype(i)::flags;                                            \
+		if constexpr (flags & insn::Flags::Branch || flags & insn::Flags::Trap ||                    \
+			      (flags & insn::Flags::MayTrap && config::unsafe_traps)) {                      \
+			PreSideeff();                                                                        \
+		}                                                                                            \
 		V_##name(i);                                                                                 \
 		if constexpr (flags & insn::Flags::Branch || flags & insn::Flags::Trap) {                    \
 			control = RV32Translator::Control::BRANCH;                                           \

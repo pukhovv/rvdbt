@@ -71,8 +71,6 @@ enum class VSign : u8 {
 	S = 1,
 };
 
-//////////////////////////////////////////////////////////////////////
-
 using RegN = u16;
 
 struct VOperand {
@@ -221,136 +219,12 @@ private:
 	using f_slot_is_global = f_slot_offs::next<bool, 1>;
 };
 
-//////////////////////////////////////////////////////////////////////
-#if 0
-
-struct VOperandBase {
-	bool IsConst() const
-	{
-		return is_const;
-	}
-
-	VType GetType() const
-	{
-		return type;
-	}
-
-	void SetType(VType type_)
-	{
-		type = type_;
-	}
-
-protected:
-	VOperandBase(bool is_const_, VType type_) : is_const(is_const_), type(type_) {}
-
-private:
-	bool is_const;
-	VType type;
-};
-
-union VOperand;
-
-struct VConst : public VOperandBase {
-	VConst(VType type_, u32 value_) : VOperandBase(true, type_), value(value_) {}
-
-	static bool classof(VOperandBase *opr)
-	{
-		return opr->IsConst();
-	}
-
-	u32 GetValue() const
-	{
-		return value;
-	}
-
-private:
-	u32 value;
-};
-
-using PReg = u8;
-
-struct VReg : VOperandBase {
-	VReg(VType type_, int idx_) : VOperandBase(false, type_), idx(idx_) {}
-	VReg() : VOperandBase(false, VType::UNDEF), idx{-1} {}
-
-	static bool classof(VOperandBase *opr)
-	{
-		return !opr->IsConst();
-	}
-
-	i16 GetIdx() const
-	{
-		return idx;
-	}
-
-	VReg WithType(VType type_)
-	{
-		return VReg(type_, GetIdx());
-	}
-
-	PReg GetPreg() const
-	{
-		return p;
-	}
-
-	void SetPreg(PReg p_)
-	{
-		p = p_;
-	}
-
-private:
-	i16 idx;
-	PReg p;
-};
-
-union VOperand {
-	VOperand(VConst cnst_) : cnst(cnst_) {}
-	VOperand(VReg reg_) : reg(reg_) {}
-
-	auto IsConst() const
-	{
-		return base.IsConst();
-	}
-
-	auto GetType() const
-	{
-		return base.GetType();
-	}
-
-	void SetType(VType type)
-	{
-		base.SetType(type);
-	}
-
-	VOperandBase *bcls()
-	{
-		return &base;
-	}
-
-	auto &ToReg()
-	{
-		return *qir::cast<qir::VReg>(bcls());
-	}
-
-	auto &ToConst()
-	{
-		return *qir::cast<qir::VConst>(bcls());
-	}
-
-private:
-	// illegal
-	static_assert(static_cast<VOperandBase *>((VConst *)0) == 0);
-	static_assert(static_cast<VOperandBase *>((VReg *)0) == 0);
-	static_assert(std::is_trivially_copyable_v<VConst>);
-	static_assert(std::is_trivially_copyable_v<VReg>);
-	VOperandBase base;
-	VConst cnst;
-	VReg reg;
-} __attribute__((may_alias));
-
-#endif
-
 struct Inst : IListNode<Inst> {
+	enum Flags { // TODO: rethink, refactor, gen by ir defs
+		SIDEEFF = 1 << 0,
+		REXIT = 1 << 1,
+	};
+
 	inline Op GetOpcode() const
 	{
 		return opcode;
@@ -366,6 +240,16 @@ struct Inst : IListNode<Inst> {
 		id = id_;
 	}
 
+	inline auto GetFlags() const
+	{
+		return flags;
+	}
+
+	inline void SetFlags(u8 flags_)
+	{
+		flags = flags_;
+	}
+
 protected:
 	inline Inst(Op opcode_) : opcode(opcode_) {}
 
@@ -377,8 +261,9 @@ private:
 
 	friend struct Region;
 
-	Op opcode;
 	u32 id{(u32)-1};
+	Op opcode;
+	u8 flags{0};
 };
 
 template <size_t N_OUT, size_t N_IN>
@@ -482,6 +367,7 @@ struct InstBrcc : InstWithOperands<0, 2> {
 struct InstGBr : Inst {
 	InstGBr(VOperand tpc_) : Inst(Op::_gbr), tpc(tpc_)
 	{
+		SetFlags(Flags::REXIT);
 		assert(tpc_.IsConst());
 	}
 
@@ -489,12 +375,18 @@ struct InstGBr : Inst {
 };
 
 struct InstGBrind : InstWithOperands<0, 1> {
-	InstGBrind(VOperand tpc_) : InstWithOperands(Op::_gbrind, {}, {tpc_}) {}
+	InstGBrind(VOperand tpc_) : InstWithOperands(Op::_gbrind, {}, {tpc_})
+	{
+		SetFlags(Flags::REXIT);
+	}
 };
 
 struct InstHcall : InstWithOperands<0, 1> {
 	// TODO: variable number of operands
-	InstHcall(void *stub_, VOperand arg_) : InstWithOperands(Op::_hcall, {}, {arg_}), stub(stub_) {}
+	InstHcall(void *stub_, VOperand arg_) : InstWithOperands(Op::_hcall, {}, {arg_}), stub(stub_)
+	{
+		SetFlags(Flags::SIDEEFF);
+	}
 
 	void *stub;
 };
@@ -503,6 +395,7 @@ struct InstVMLoad : InstWithOperands<1, 1> {
 	InstVMLoad(VType sz_, VSign sgn_, VOperand d, VOperand ptr)
 	    : InstWithOperands(Op::_vmload, {d}, {ptr}), sz(sz_), sgn(sgn_)
 	{
+		SetFlags(Flags::SIDEEFF);
 	}
 
 	VType sz;
@@ -513,6 +406,7 @@ struct InstVMStore : InstWithOperands<0, 2> {
 	InstVMStore(VType sz_, VSign sgn_, VOperand ptr, VOperand val)
 	    : InstWithOperands(Op::_vmstore, {}, {ptr, val}), sz(sz_), sgn(sgn_)
 	{
+		SetFlags(Flags::SIDEEFF);
 	}
 
 	VType sz;

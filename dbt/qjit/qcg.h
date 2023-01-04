@@ -53,7 +53,7 @@ struct QEmit {
 	TBlock *EmitTBlock();
 	static void DumpTBlock(TBlock *tb);
 
-	void Prologue() {} // TODO: unused
+	void Prologue();
 	void StateSpill(qir::RegN p, qir::VType type, u16 offs);
 	void StateFill(qir::RegN p, qir::VType type, u16 offs);
 	void LocSpill(qir::RegN p, qir::VType type, u16 offs);
@@ -63,7 +63,6 @@ struct QEmit {
 	QIR_OPS_LIST(OP)
 #undef OP
 
-private:
 // TODO: as list
 #define DEF_FIX_REG(name, id)                                                                                \
 	static constexpr auto name = asmjit::x86::Gp::id;                                                    \
@@ -195,7 +194,7 @@ struct QCodegen {
 private:
 	QCodegen(qir::Region *region_, QEmit *ce_) : region(region_), ce(ce_) {}
 
-	void Translate();
+	void Run();
 
 	qir::Region *region;
 	QEmit *ce;

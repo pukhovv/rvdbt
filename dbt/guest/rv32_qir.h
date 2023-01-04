@@ -26,10 +26,11 @@ struct RV32Translator {
 	static TBlock *Translate(CPUState *state, u32 ip);
 
 private:
-	static StateInfo const *GetStateInfo(); 
-	static StateInfo const *const state_info; 
+	static StateInfo const *GetStateInfo();
+	static StateInfo const *const state_info;
 
 	explicit RV32Translator(qir::Region *region);
+	void PreSideeff();
 	void TranslateInsn();
 
 	qir::Builder qb;

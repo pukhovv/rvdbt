@@ -105,11 +105,12 @@ void QRegAlloc::AllocFrameSlot(RTrack *v)
 	assert(!v->is_global);
 
 	u16 slot_sz = qir::VTypeToSize(v->type);
-	if (frame_cur + slot_sz > frame_size) {
+	u16 slot_offs = roundup(frame_cur, slot_sz);
+	if (slot_offs + slot_sz > frame_size) {
 		Panic();
 	}
-	v->spill_offs = frame_cur;
-	frame_cur += slot_sz;
+	v->spill_offs = slot_offs;
+	frame_cur = slot_offs + slot_sz;
 }
 
 void QRegAlloc::Fill(RTrack *v, RegMask desire, RegMask avoid)
@@ -251,9 +252,10 @@ struct QRegAllocVisitor : qir::InstVisitor<QRegAllocVisitor, void> {
 	using Base = qir::InstVisitor<QRegAllocVisitor, void>;
 
 	template <size_t N_OUT, size_t N_IN>
-	void AllocOperands(qir::InstWithOperands<N_OUT, N_IN> *ins, bool unsafe)
+	void AllocOperands(qir::InstWithOperands<N_OUT, N_IN> *ins)
 	{
-		ra->AllocOp(ins->o, ins->i, unsafe); // TODO: move unsafe to flags
+		bool sideeff = ins->GetFlags() & qir::Inst::Flags::SIDEEFF;
+		ra->AllocOp(ins->o, ins->i, sideeff);
 	}
 
 public:
@@ -266,17 +268,17 @@ public:
 
 	void visitInstUnop(qir::InstUnop *ins)
 	{
-		AllocOperands(ins, false);
+		AllocOperands(ins);
 	}
 
 	void visitInstBinop(qir::InstBinop *ins)
 	{
-		AllocOperands(ins, false);
+		AllocOperands(ins);
 	}
 
 	void visitInstSetcc(qir::InstSetcc *ins)
 	{
-		AllocOperands(ins, false);
+		AllocOperands(ins);
 	}
 
 	void visitInstBr(qir::InstBr *ins)
@@ -287,7 +289,7 @@ public:
 
 	void visitInstBrcc(qir::InstBrcc *ins)
 	{
-		// has no voperands
+		AllocOperands(ins);
 		ra->BlockBoundary();
 	}
 
@@ -299,18 +301,18 @@ public:
 
 	void visitInstGBrind(qir::InstGBrind *ins)
 	{
-		AllocOperands(ins, false);
+		AllocOperands(ins);
 		ra->RegionBoundary(); // merge into AllocOp
 	}
 
 	void visitInstVMLoad(qir::InstVMLoad *ins)
 	{
-		AllocOperands(ins, true);
+		AllocOperands(ins);
 	}
 
 	void visitInstVMStore(qir::InstVMStore *ins)
 	{
-		AllocOperands(ins, true);
+		AllocOperands(ins);
 	}
 
 	void visitInstHcall(qir::InstHcall *ins)
@@ -334,8 +336,6 @@ void QRegAlloc::Run()
 			qb = qir::Builder(&bb, iit);
 			QRegAllocVisitor(this).visit(&*iit);
 		}
-
-		// BlockBoundary();
 	}
 }
 
