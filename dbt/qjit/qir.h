@@ -326,13 +326,18 @@ struct InstBr : Inst {
 	Block *target;
 };
 
+// TODO: bits
 enum class CondCode : u8 {
 	EQ,
 	NE,
+	LE,
 	LT,
 	GE,
+	GT,
+	LEU,
 	LTU,
 	GEU,
+	GTU,
 	Count,
 };
 
@@ -343,13 +348,49 @@ inline CondCode InverseCC(CondCode cc)
 		return CondCode::NE;
 	case CondCode::NE:
 		return CondCode::EQ;
+	case CondCode::LE:
+		return CondCode::GT;
 	case CondCode::LT:
 		return CondCode::GE;
 	case CondCode::GE:
 		return CondCode::LT;
+	case CondCode::GT:
+		return CondCode::LE;
+	case CondCode::LEU:
+		return CondCode::GTU;
 	case CondCode::LTU:
 		return CondCode::GEU;
 	case CondCode::GEU:
+		return CondCode::LTU;
+	case CondCode::GTU:
+		return CondCode::LEU;
+	default:
+		unreachable("");
+	}
+}
+
+inline CondCode SwapCC(CondCode cc)
+{
+	switch (cc) {
+	case CondCode::EQ:
+		return CondCode::EQ;
+	case CondCode::NE:
+		return CondCode::NE;
+	case CondCode::LE:
+		return CondCode::GE;
+	case CondCode::LT:
+		return CondCode::GT;
+	case CondCode::GE:
+		return CondCode::LE;
+	case CondCode::GT:
+		return CondCode::LT;
+	case CondCode::LEU:
+		return CondCode::GEU;
+	case CondCode::LTU:
+		return CondCode::GTU;
+	case CondCode::GEU:
+		return CondCode::LEU;
+	case CondCode::GTU:
 		return CondCode::LTU;
 	default:
 		unreachable("");

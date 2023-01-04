@@ -20,7 +20,8 @@ char const *const vtype_names[to_underlying(VType::Count)] = {
 
 char const *const condcode_names[to_underlying(CondCode::Count)] = {
 #define X(name, str) [to_underlying(CondCode::name)] = #str,
-    X(EQ, eq) X(NE, ne) X(LT, lt) X(GE, ge) X(LTU, ltu) X(GEU, geu)
+    X(EQ, eq) X(NE, ne) X(LE, le) X(LT, lt) X(GE, ge) X(GT, gt) X(LEU, leu) X(LTU, ltu) X(GEU, geu)
+	X(GTU, gtu)
 #undef X
 };
 

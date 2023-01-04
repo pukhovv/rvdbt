@@ -118,14 +118,22 @@ static inline asmjit::x86::CondCode make_cc(qir::CondCode cc)
 		return asmjit::x86::CondCode::kEqual;
 	case qir::CondCode::NE:
 		return asmjit::x86::CondCode::kNotEqual;
+	case qir::CondCode::LE:
+		return asmjit::x86::CondCode::kSignedLE;
 	case qir::CondCode::LT:
 		return asmjit::x86::CondCode::kSignedLT;
 	case qir::CondCode::GE:
 		return asmjit::x86::CondCode::kSignedGE;
+	case qir::CondCode::GT:
+		return asmjit::x86::CondCode::kSignedGT;
+	case qir::CondCode::LEU:
+		return asmjit::x86::CondCode::kUnsignedLE;
 	case qir::CondCode::LTU:
 		return asmjit::x86::CondCode::kUnsignedLT;
 	case qir::CondCode::GEU:
 		return asmjit::x86::CondCode::kUnsignedGE;
+	case qir::CondCode::GTU:
+		return asmjit::x86::CondCode::kUnsignedGT;
 	default:
 		unreachable("");
 	}
@@ -196,7 +204,7 @@ void QEmit::Emit_brcc(qir::InstBrcc *ins)
 	// constfolded
 	if (ins->i[0].IsConst()) {
 		std::swap(ins->i[0], ins->i[1]);
-		ins->cc = qir::InverseCC(ins->cc);
+		ins->cc = qir::SwapCC(ins->cc);
 	}
 	auto vs1 = ins->i[0];
 	auto vs2 = ins->i[1];
@@ -332,7 +340,7 @@ void QEmit::Emit_setcc(qir::InstSetcc *ins)
 	auto cc = ins->cc;
 	if (vs1->IsConst()) {
 		std::swap(vs1, vs2);
-		cc = qir::InverseCC(cc);
+		cc = qir::SwapCC(cc);
 	}
 	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(*vs1), make_operand(*vs2));
 	auto setcc = asmjit::x86::Inst::setccFromCond(make_cc(cc));
