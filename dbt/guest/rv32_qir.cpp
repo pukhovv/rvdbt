@@ -78,9 +78,11 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 	log_qir("Translate [%08x]", ip);
 
 	u32 upper_bound = -1;
+#ifndef CONFIG_DUMP_TRACE
 	if (auto *tb_bound = tcache::LookupUpperBound(ip)) {
 		upper_bound = tb_bound->ip;
 	}
+#endif
 
 	u32 num_insns = 0;
 	while (true) {
@@ -101,7 +103,7 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 	PrinterPass printer;
 	printer.run(&region);
 
-	return qcg::QCodegen::Generate(&region);
+	return qcg::QCodegen::Generate(&region, ip);
 }
 
 void RV32Translator::PreSideeff()

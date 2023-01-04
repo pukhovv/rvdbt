@@ -131,9 +131,14 @@ static inline asmjit::x86::CondCode make_cc(qir::CondCode cc)
 	}
 }
 
-void QEmit::Prologue()
+void QEmit::Prologue(u32 ip)
 {
-	j.int3();
+	// j.int3();
+#ifdef CONFIG_DUMP_TRACE
+	// j.mov(ctx->vreg_ip->GetSpill(), ctx->tb->ip);
+	j.mov(asmjit::x86::Mem(RSTATE, offsetof(CPUState, ip), 4), ip);
+	j.call(qjit::stub_trace);
+#endif
 }
 
 void QEmit::StateFill(qir::RegN p, qir::VType type, u16 offs)
@@ -166,7 +171,9 @@ void QEmit::LocSpill(qir::RegN p, qir::VType type, u16 offs)
 
 void QEmit::Emit_hcall(qir::InstHcall *ins)
 {
-	// args preallocated
+	// TODO: proper args
+	j.mov(asmjit::x86::rdi, RSTATE);
+	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i[0]));
 	j.call(ins->stub);
 }
 
@@ -246,7 +253,7 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 
 	j.bind(slowpath);
 
-	j.mov(asmjit::x86::gpq(asmjit::x86::Gp::kIdDi), STATE);
+	j.mov(asmjit::x86::gpq(asmjit::x86::Gp::kIdDi), RSTATE);
 	assert(ptgt.id() == asmjit::x86::Gp::kIdSi);
 	j.call(qjit::helper_brind);
 	j.jmp(asmjit::x86::rdx);

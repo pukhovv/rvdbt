@@ -4,7 +4,7 @@
 namespace dbt::qcg
 {
 
-TBlock *QCodegen::Generate(qir::Region *r)
+TBlock *QCodegen::Generate(qir::Region *r, u32 ip)
 {
 	log_qcg("Allocate regs");
 	QRegAllocPass::run(r);
@@ -13,13 +13,14 @@ TBlock *QCodegen::Generate(qir::Region *r)
 	log_qcg("Generate");
 	QEmit ce(r);
 	QCodegen cg(r, &ce);
-	cg.Run();
+	cg.Run(ip);
 
 	log_qcg("Emit code");
 	auto tb = ce.EmitTBlock();
+	tb->ip = ip;
 	ce.DumpTBlock(tb);
 
-	return tb; // manually register ip
+	return tb;
 }
 
 struct QCodegenVisitor : qir::InstVisitor<QCodegenVisitor, void> {
@@ -45,9 +46,9 @@ private:
 	QCodegen *cg{};
 };
 
-void QCodegen::Run()
+void QCodegen::Run(u32 ip)
 {
-	ce->Prologue();
+	ce->Prologue(ip);
 	QCodegenVisitor vis(this);
 
 	for (auto &bb : region->blist) {

@@ -13,7 +13,7 @@
 //#define CONFIG_USE_INTERP
 
 #ifndef NDEBUG
-//#define CONFIG_DUMP_TRACE
+#define CONFIG_DUMP_TRACE
 //#define CONFIG_DUMP_TRACE_VERBOSE
 #endif
 

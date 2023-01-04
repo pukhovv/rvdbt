@@ -58,7 +58,7 @@ struct QEmit {
 	TBlock *EmitTBlock();
 	static void DumpTBlock(TBlock *tb);
 
-	void Prologue();
+	void Prologue(u32 ip);
 	void StateSpill(qir::RegN p, qir::VType type, u16 offs);
 	void StateFill(qir::RegN p, qir::VType type, u16 offs);
 	void LocSpill(qir::RegN p, qir::VType type, u16 offs);
@@ -184,7 +184,7 @@ struct QRegAlloc {
 	// QEmit *qe{};
 	qir::Builder qb{nullptr};
 
-	RegMask fixed{0};
+	RegMask fixed{QEmit::GPR_FIXED};
 	u16 frame_cur{0};
 
 	u16 n_vregs{0};
@@ -197,12 +197,12 @@ struct QRegAllocPass {
 };
 
 struct QCodegen {
-	static TBlock *Generate(qir::Region *r);
+	static TBlock *Generate(qir::Region *r, u32 ip);
 
 private:
 	QCodegen(qir::Region *region_, QEmit *ce_) : region(region_), ce(ce_) {}
 
-	void Run();
+	void Run(u32 ip);
 
 	qir::Region *region;
 	QEmit *ce;
