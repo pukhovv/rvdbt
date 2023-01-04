@@ -606,65 +606,6 @@ inline Block::Link *Block::Link::Create(Region *rn_, Block *to)
 	return new (mem) Block::Link(to);
 }
 
-struct Builder {
-	explicit Builder(Block *bb_) : bb(bb_), it(bb->ilist.end()) {}
-	Builder(Block *bb_, IListIterator<Inst> it_) : bb(bb_), it(it_) {}
-
-	Block *GetBlock() const
-	{
-		return bb;
-	}
-
-	Block *CreateBlock() const
-	{
-		return bb->GetRegion()->CreateBlock();
-	}
-
-	RegN CreateVGPR(VType type) const
-	{
-		return bb->GetRegion()->GetVRegsInfo()->AddLocal(type);
-	}
-
-	template <typename T, typename... Args>
-	T *Create(Args &&...args)
-	{
-		auto *ins = bb->GetRegion()->Create<T>(std::forward<Args>(args)...);
-		bb->ilist.insert(it, *ins);
-		return ins;
-	}
-
-#define OP(name, cls)                                                                                        \
-	template <typename... Args>                                                                          \
-	cls *Create_##name(Args &&...args)                                                                   \
-	{                                                                                                    \
-		return Create<cls>(Op::_##name, std::forward<Args>(args)...);                                \
-	}
-	QIR_SUBOPS_LIST(OP)
-#undef OP
-
-#define OP(name, cls)                                                                                        \
-	template <typename... Args>                                                                          \
-	cls *Create_##name(Args &&...args)                                                                   \
-	{                                                                                                    \
-		return Create<cls>(std::forward<Args>(args)...);                                             \
-	}
-	QIR_CLSOPS_LIST(OP)
-#undef OP
-
-#define GROUP(cls, beg, end)                                                                                 \
-	template <typename... Args>                                                                          \
-	cls *Create##cls(Args &&...args)                                                                     \
-	{                                                                                                    \
-		return Create<cls>(std::forward<Args>(args)...);                                             \
-	}
-	QIR_GROUPS_LIST(GROUP)
-#undef GROUP
-
-private:
-	Block *bb;
-	IListIterator<Inst> it;
-};
-
 template <typename Derived, typename RT>
 struct InstVisitor {
 #define VIS_CLASS(cls) return static_cast<Derived *>(this)->visit##cls(static_cast<cls *>(ins))
@@ -695,7 +636,7 @@ struct InstVisitor {
 
 	void visitInst(Inst *ins) {}
 
-	void visit(Inst *ins)
+	RT visit(Inst *ins)
 	{
 		switch (ins->GetOpcode()) {
 #define OP(name, cls)                                                                                        \

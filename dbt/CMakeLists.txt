@@ -8,6 +8,7 @@ add_library(dbtstatic STATIC
 	ukernel.cpp
 
 	qjit/qir.cpp
+	qjit/qir_opt.cpp
 	qjit/qir_printer.cpp
 	qjit/qjit.cpp
 	qjit/qcg.cpp

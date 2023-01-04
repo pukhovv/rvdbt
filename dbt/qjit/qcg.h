@@ -2,6 +2,7 @@
 
 #include "dbt/qjit/qir.h"
 #include "dbt/qjit/qjit.h"
+#include "dbt/qjit/qir_builder.h"
 
 #include <vector>
 

@@ -142,6 +142,18 @@ struct IListIterator {
 		pos = pos->getPrev();
 		return *this;
 	}
+	IListIterator operator++(int)
+	{
+		auto old = *this;
+		++*this;
+		return old;
+	}
+	IListIterator operator--(int)
+	{
+		auto old = *this;
+		--*this;
+		return old;
+	}
 
 	auto getIListNode() const
 	{

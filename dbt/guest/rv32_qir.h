@@ -3,6 +3,7 @@
 #include "dbt/guest/rv32_cpu.h"
 #include "dbt/guest/rv32_insn.h"
 #include "dbt/qjit/qir.h"
+#include "dbt/qjit/qir_builder.h"
 #include "dbt/tcache/tcache.h"
 #include <array>
 
