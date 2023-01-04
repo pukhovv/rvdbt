@@ -312,7 +312,7 @@ void QEmit::Emit_vmstore(qir::InstVMStore *ins)
 
 	assert(ins->sgn == qir::VSign::U);
 	mem.setSize(VTypeToSize(ins->sz));
-	j.emit(asmjit::x86::Inst::kIdMov, pdata, mem);
+	j.emit(asmjit::x86::Inst::kIdMov, mem, pdata);
 }
 
 void QEmit::Emit_setcc(qir::InstSetcc *ins)
@@ -341,21 +341,17 @@ void QEmit::Emit_mov(qir::InstUnop *ins)
 template <asmjit::x86::Inst::Id Op>
 ALWAYS_INLINE void QEmit::EmitInstBinopCommutative(qir::InstBinop *ins)
 {
+	// constfolded
 	// canonicalize
 	if (ins->i[0].IsConst()) {
 		std::swap(ins->i[0], ins->i[1]);
 	}
 
-	// constfolded
 	auto &vrd = ins->o[0];
 	auto vs1 = ins->i[0];
 	auto vs2 = ins->i[1];
 	auto prd = make_gpr(vrd);
 
-	// canonicalize // TODO: do first and remove indir
-	if (vs1.IsConst()) {
-		std::swap(vs1, vs2);
-	}
 	// rd rx x
 	auto prs1 = make_gpr(vs1);
 
@@ -388,7 +384,7 @@ ALWAYS_INLINE void QEmit::EmitInstBinopNonCommutative(qir::InstBinop *ins)
 	auto vs1 = ins->i[0];
 	auto vs2 = ins->i[1];
 	auto prd = make_gpr(vrd);
-	auto ptmp = asmjit::x86::Gp(prd, TMP1C);
+	auto ptmp = asmjit::x86::Gp(prd, TMP1);
 
 	if (vs1.IsConst()) { // rd c rx
 		auto cs1 = make_imm(vs1);
@@ -457,16 +453,22 @@ void QEmit::Emit_xor(qir::InstBinop *ins)
 
 void QEmit::Emit_sra(qir::InstBinop *ins)
 {
+	auto vs2 = ins->i[1];
+	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
 	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdShr>(ins);
 }
 
 void QEmit::Emit_srl(qir::InstBinop *ins)
 {
+	auto vs2 = ins->i[1];
+	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
 	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdSar>(ins);
 }
 
 void QEmit::Emit_sll(qir::InstBinop *ins)
 {
+	auto vs2 = ins->i[1];
+	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
 	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdShl>(ins);
 }
 

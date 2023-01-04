@@ -72,6 +72,7 @@ enum class VSign : u8 {
 };
 
 using RegN = u16;
+static constexpr auto RegNBad = static_cast<RegN>(-1);
 
 struct VOperand {
 private:

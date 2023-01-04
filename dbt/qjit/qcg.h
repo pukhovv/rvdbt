@@ -1,8 +1,8 @@
 #pragma once
 
 #include "dbt/qjit/qir.h"
-#include "dbt/qjit/qjit.h"
 #include "dbt/qjit/qir_builder.h"
+#include "dbt/qjit/qjit.h"
 
 #include <vector>
 
@@ -36,6 +36,10 @@ struct RegMask {
 	constexpr inline RegMask operator~() const
 	{
 		return RegMask{~data};
+	}
+	constexpr inline auto GetData() const
+	{
+		return data;
 	}
 
 private:
@@ -72,8 +76,8 @@ struct QEmit {
 	DEF_FIX_REG(STATE, kIdR13);
 	DEF_FIX_REG(MEMBASE, kIdR12);
 	DEF_FIX_REG(SP, kIdSp);
-	DEF_FIX_REG(TMP1C, kIdCx);
-	static constexpr RegMask GPR_FIXED = (1 << STATE) | (1 << MEMBASE) | (1 << SP) | (1 << TMP1C);
+	DEF_FIX_REG(TMP1, kIdAx);
+	static constexpr RegMask GPR_FIXED = (1 << STATE) | (1 << MEMBASE) | (1 << SP) | (1 << TMP1);
 #undef DEF_FIX_REG
 
 public:
@@ -146,6 +150,7 @@ struct QRegAlloc {
 	qir::RegN AllocPReg(RegMask desire, RegMask avoid);
 	void EmitSpill(RTrack *v);
 	void EmitFill(RTrack *v);
+	void EmitMov(qir::VOperand pdst, qir::VOperand psrc);
 	void Spill(qir::RegN p);
 	void Spill(RTrack *v);
 	void SyncSpill(RTrack *v);
@@ -168,6 +173,8 @@ struct QRegAlloc {
 		AllocOp(dst.data(), dst.size(), src.data(), src.size(), unsafe);
 	}
 	void AllocOp(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n, bool unsafe = false);
+	void AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n,
+				RegMask require_set, qir::RegN *require, bool unsafe = false);
 	void CallOp(bool use_globals = true);
 
 	static constexpr u16 frame_size{31 * sizeof(u64)};
