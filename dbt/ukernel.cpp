@@ -1,7 +1,6 @@
 #include "dbt/ukernel.h"
-#include "dbt/core.h"
+#include "dbt/mmu.h"
 #include "dbt/execute.h"
-#include "dbt/guest/rv32_cpu.h"
 #include <alloca.h>
 #include <cstring>
 

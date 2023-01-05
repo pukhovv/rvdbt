@@ -1,5 +1,4 @@
 #include "dbt/arena.h"
-#include "dbt/core.h"
 
 void MemArena::Init(size_t size, int prot)
 {

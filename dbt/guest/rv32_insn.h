@@ -2,9 +2,7 @@
 
 #include "dbt/guest/rv32_ops.h"
 #include "dbt/util/bitfield.h"
-#include <limits>
 #include <ostream>
-#include <utility>
 
 namespace dbt::rv32::insn
 {

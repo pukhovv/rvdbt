@@ -2,8 +2,6 @@
 #include "dbt/guest/rv32_decode.h"
 #include "dbt/guest/rv32_runtime.h"
 #include <atomic>
-#include <cstdint>
-#include <type_traits>
 
 namespace dbt::rv32
 {

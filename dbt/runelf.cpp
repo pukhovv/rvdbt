@@ -1,4 +1,3 @@
-#include "dbt/core.h"
 #include "dbt/guest/rv32_cpu.h"
 #include "dbt/tcache/tcache.h"
 #include "dbt/ukernel.h"

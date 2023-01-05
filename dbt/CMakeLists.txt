@@ -4,11 +4,11 @@ add_library(dbtstatic STATIC
 	util/logger.cpp
 
 	arena.cpp
-	core.cpp
+	mmu.cpp
 	execute.cpp
 	ukernel.cpp
 
-	qjit/qir.cpp
+	qjit/qcompile.cpp
 	qjit/qir_opt.cpp
 	qjit/qir_printer.cpp
 	qjit/qjit_stubs.cpp

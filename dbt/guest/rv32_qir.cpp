@@ -5,8 +5,6 @@
 
 #include <sstream>
 
-#include "dbt/qjit/qcg.h" // TODO: remove from here! *active*
-
 namespace dbt::qir::rv32
 {
 
@@ -62,27 +60,10 @@ StateInfo const *const RV32Translator::state_info = GetStateInfo();
 
 RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()) {}
 
-// TODO: make like this: *active*
-//	translate -> qir frontend
-//		  -> qir passes
-//		  -> qir codegen
-//
-TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
+void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 {
-	MemArena arena(1024 * 64);
-	qir::Region region(&arena, state_info);
-
-	RV32Translator t(&region);
+	RV32Translator t(region);
 	t.insn_ip = ip;
-
-	log_qir("Translate [%08x]", ip);
-
-	u32 upper_bound = -1;
-#ifndef CONFIG_DUMP_TRACE
-	if (auto *tb_bound = tcache::LookupUpperBound(ip)) {
-		upper_bound = tb_bound->ip;
-	}
-#endif
 
 	u32 num_insns = 0;
 	while (true) {
@@ -91,19 +72,12 @@ TBlock *RV32Translator::Translate(CPUState *state, u32 ip)
 		if (t.control != Control::NEXT) {
 			break;
 		}
-		if (num_insns == TB_MAX_INSNS || t.insn_ip == upper_bound) {
+		if (num_insns == TB_MAX_INSNS || t.insn_ip == boundary_ip) {
 			t.control = Control::TB_OVF;
 			t.qb.Create_gbr(VOperand::MakeConst(VType::I32, t.insn_ip));
 			break;
 		}
 	}
-
-	log_qir("Translated", ip);
-
-	PrinterPass printer;
-	printer.run(&region);
-
-	return qcg::QCodegen::Generate(&region, ip);
 }
 
 void RV32Translator::PreSideeff()

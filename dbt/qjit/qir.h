@@ -84,9 +84,10 @@ private:
 	inline VOperand(uintptr_t value_) : value(value_) {}
 
 public:
-	// TODO: delete operators *active*
+	explicit inline VOperand() : value(f_kind::encode(uintptr_t(0), Kind::BAD)) {}
 
-	inline VOperand() : value(f_kind::encode(uintptr_t(0), Kind::BAD)) {}
+	DEFAULT_COPY(VOperand)
+	DEFAULT_MOVE(VOperand)
 
 	static inline VOperand MakeVGPR(VType type, RegN reg)
 	{
@@ -251,10 +252,8 @@ protected:
 	inline Inst(Op opcode_) : opcode(opcode_) {}
 
 private:
-	Inst(Inst const &) = delete;
-	Inst(Inst &&) = delete;
-	Inst &operator=(Inst const &) = delete;
-	Inst &operator=(Inst &&) = delete;
+	NO_COPY(Inst)
+	NO_MOVE(Inst)
 
 	friend struct Region;
 

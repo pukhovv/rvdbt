@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dbt/util/common.h"
 #include <iterator>
 
 namespace dbt
@@ -107,8 +108,8 @@ struct IListIterator {
 	using pointer = T *;
 	using reference = T &;
 
-	IListIterator(IListIterator const &) = default;
-	IListIterator &operator=(IListIterator const &) = default;
+	DEFAULT_COPY(IListIterator)
+	DEFAULT_MOVE(IListIterator)
 	~IListIterator() = default;
 
 	IListIterator(IListNode<T> &n) : pos(&n) {}
@@ -175,12 +176,9 @@ struct IList : IListBase {
 
 	IList() = default;
 	~IList() = default;
-	IList(const IList &) = delete;
-	IList &operator=(IList const &) = delete;
 
-	// TODO: *active*
-	IList(const IList &&) = delete;
-	IList &operator=(IList &&) = delete;
+	NO_COPY(IList)
+	NO_MOVE(IList)
 
 	bool empty() const
 	{

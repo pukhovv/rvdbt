@@ -1,5 +1,4 @@
-#include "dbt/guest/rv32_insn.h"
-#include "dbt/guest/rv32_runtime.h"
+#include "dbt/guest/rv32_cpu.h"
 
 #include <sstream>
 

@@ -1,7 +1,6 @@
 #include "dbt/execute.h"
-#include "dbt/core.h"
-#include "dbt/guest/rv32_qir.h"
 #include "dbt/guest/rv32_runtime.h"
+#include "dbt/qjit/qcompile.h"
 #include "dbt/qjit/qjit_stubs.h"
 
 namespace dbt
@@ -30,7 +29,7 @@ void Execute(CPUState *state)
 
 		TBlock *tb = tcache::Lookup(state->ip);
 		if (tb == nullptr) {
-			tb = qir::rv32::RV32Translator::Translate(state, state->ip);
+			tb = qir::Translate(state->ip);
 		}
 
 		if (branch_slot) {

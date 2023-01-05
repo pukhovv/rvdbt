@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dbt/core.h"
+#include "dbt/mmu.h"
 #include "dbt/guest/rv32_insn.h"
 
 #include <array>

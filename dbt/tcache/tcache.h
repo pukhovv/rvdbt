@@ -1,8 +1,8 @@
 #pragma once
 
 #include "dbt/arena.h"
-#include "dbt/core.h"
-#include "dbt/guest/rv32_cpu.h"
+#include "dbt/mmu.h"
+#include "dbt/util/logger.h"
 
 #include <array>
 #include <map>

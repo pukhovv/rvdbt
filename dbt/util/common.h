@@ -38,6 +38,22 @@ typedef int8_t i8;
 		__builtin_unreachable();                                                                     \
 	} while (0)
 
+#define NO_COPY(name)                                                                                        \
+	name(const name &) = delete;                                                                         \
+	name &operator=(const name &) = delete;
+
+#define NO_MOVE(name)                                                                                        \
+	name(name &&) = delete;                                                                              \
+	name &operator=(name &&) = delete;
+
+#define DEFAULT_COPY(name)                                                                                   \
+	name(const name &) = default;                                                                        \
+	name &operator=(const name &) = default;
+
+#define DEFAULT_MOVE(name)                                                                                   \
+	name(name &&) = default;                                                                             \
+	name &operator=(name &&) = default;
+
 template <typename T, typename A>
 inline T roundup(T x, A y)
 {

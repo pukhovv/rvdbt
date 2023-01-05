@@ -1,6 +1,5 @@
 #pragma once
 
-#include "dbt/qjit/qir.h"
 #include "dbt/qjit/qir_builder.h"
 #include "dbt/qjit/qjit_stubs.h"
 #include "dbt/tcache/tcache.h"
@@ -130,8 +129,8 @@ struct QRegAlloc {
 
 	struct RTrack {
 		RTrack() {}
-		RTrack(RTrack &) = delete;
-		RTrack(RTrack &&) = delete;
+		NO_COPY(RTrack)
+		NO_MOVE(RTrack)
 
 		static constexpr auto NO_SPILL = static_cast<u16>(-1);
 

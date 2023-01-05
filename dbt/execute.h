@@ -1,6 +1,5 @@
 #pragma once
 
-#include "dbt/core.h"
 #include "dbt/guest/rv32_cpu.h"
 
 namespace dbt
