@@ -1,7 +1,7 @@
 #include "dbt/execute.h"
 #include "dbt/guest/rv32_runtime.h"
 #include "dbt/qjit/qcompile.h"
-#include "dbt/qjit/qjit_stubs.h"
+#include "dbt/qjit/qcg/jitabi.h"
 
 namespace dbt
 {
@@ -29,7 +29,7 @@ void Execute(CPUState *state)
 
 		TBlock *tb = tcache::Lookup(state->ip);
 		if (tb == nullptr) {
-			tb = qir::Translate(state->ip);
+			tb = qir::CompileAt(state->ip);
 		}
 
 		if (branch_slot) {

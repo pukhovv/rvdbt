@@ -1,4 +1,4 @@
-#include "dbt/qjit/qcg.h"
+#include "dbt/qjit/qcg/qemit.h"
 
 namespace dbt::qcg
 {
@@ -90,7 +90,7 @@ static inline asmjit::x86::Mem make_slot(qir::VOperand opr)
 {
 	auto offs = opr.GetSlotOffs();
 	auto size = VTypeToSize(opr.GetType());
-	auto base = opr.IsLSlot() ? QEmit::RSP : QEmit::RSTATE;
+	auto base = opr.IsLSlot() ? QEmit::R_SP : QEmit::R_STATE;
 	return asmjit::x86::Mem(base, offs, size);
 }
 
@@ -138,35 +138,35 @@ void QEmit::Prologue(u32 ip)
 	// j.int3();
 #ifdef CONFIG_DUMP_TRACE
 	// j.mov(ctx->vreg_ip->GetSpill(), ctx->tb->ip);
-	j.mov(asmjit::x86::Mem(RSTATE, offsetof(CPUState, ip), 4), ip);
+	j.mov(asmjit::x86::Mem(R_STATE, offsetof(CPUState, ip), 4), ip);
 	j.call(jitabi::stub_trace);
 #endif
 }
 
 void QEmit::StateFill(qir::RegN p, qir::VType type, u16 offs)
 {
-	auto slot = asmjit::x86::ptr(RSTATE, offs);
+	auto slot = asmjit::x86::ptr(R_STATE, offs);
 	slot.setSize(VTypeToSize(type));
 	j.mov(make_gpr(p, type), slot);
 }
 
 void QEmit::StateSpill(qir::RegN p, qir::VType type, u16 offs)
 {
-	auto slot = asmjit::x86::ptr(RSTATE, offs);
+	auto slot = asmjit::x86::ptr(R_STATE, offs);
 	slot.setSize(VTypeToSize(type));
 	j.mov(slot, make_gpr(p, type));
 }
 
 void QEmit::LocFill(qir::RegN p, qir::VType type, u16 offs)
 {
-	auto slot = asmjit::x86::ptr(RSP, offs);
+	auto slot = asmjit::x86::ptr(R_SP, offs);
 	slot.setSize(VTypeToSize(type));
 	j.mov(make_gpr(p, type), slot);
 }
 
 void QEmit::LocSpill(qir::RegN p, qir::VType type, u16 offs)
 {
-	auto slot = asmjit::x86::ptr(RSP, offs);
+	auto slot = asmjit::x86::ptr(R_SP, offs);
 	slot.setSize(VTypeToSize(type));
 	j.mov(slot, make_gpr(p, type));
 }
@@ -174,7 +174,7 @@ void QEmit::LocSpill(qir::RegN p, qir::VType type, u16 offs)
 void QEmit::Emit_hcall(qir::InstHcall *ins)
 {
 	// TODO: proper args
-	j.mov(asmjit::x86::rdi, RSTATE);
+	j.mov(asmjit::x86::rdi, R_STATE);
 	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i[0]));
 	j.call(ins->stub);
 }
@@ -256,7 +256,7 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 
 	j.bind(slowpath);
 
-	j.mov(asmjit::x86::gpq(asmjit::x86::Gp::kIdDi), RSTATE);
+	j.mov(asmjit::x86::gpq(asmjit::x86::Gp::kIdDi), R_STATE);
 	assert(ptgt.id() == asmjit::x86::Gp::kIdSi);
 	j.call(jitabi::helper_brind);
 	j.jmp(asmjit::x86::rdx);
@@ -272,11 +272,10 @@ static inline asmjit::x86::Mem make_vmem(qir::VOperand vbase)
 			return asmjit::x86::ptr(vbase.GetConst());
 		}
 	} else {
-		auto pmembase = asmjit::x86::gpq(QEmit::MEMBASE);
 		if (likely(vbase.IsPGPR())) {
-			return asmjit::x86::ptr(pmembase, make_gpr(vbase));
+			return asmjit::x86::ptr(QEmit::R_MEMBASE, make_gpr(vbase));
 		} else {
-			return asmjit::x86::ptr(pmembase, vbase.GetConst());
+			return asmjit::x86::ptr(QEmit::R_MEMBASE, vbase.GetConst());
 		}
 	}
 }
@@ -399,7 +398,7 @@ ALWAYS_INLINE void QEmit::EmitInstBinopNonCommutative(qir::InstBinop *ins)
 	auto vs1 = ins->i[0];
 	auto vs2 = ins->i[1];
 	auto prd = make_gpr(vrd);
-	auto ptmp = asmjit::x86::Gp(prd, TMP1);
+	auto ptmp = asmjit::x86::Gp(prd, R_TMP1.id());
 
 	if (vs1.IsConst()) { // rd c rx
 		auto cs1 = make_imm(vs1);

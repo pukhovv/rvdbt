@@ -1,7 +1,86 @@
-#include "dbt/qjit/qcg.h"
+#include "dbt/qjit/qcg/qcg.h"
+#include "dbt/qjit/qcg/arch_traits.h"
 
 namespace dbt::qcg
 {
+
+struct QRegAlloc {
+	static constexpr auto N_PREGS = ArchTraits::GPR_NUM;
+	static constexpr auto PREGS_POOL = ArchTraits::GPR_POOL;
+	static constexpr auto MAX_VREGS = 128;
+
+	struct RTrack {
+		RTrack() {}
+		NO_COPY(RTrack)
+		NO_MOVE(RTrack)
+
+		static constexpr auto NO_SPILL = static_cast<u16>(-1);
+
+		qir::VType type{};
+		bool is_global{};
+		u16 spill_offs{NO_SPILL};
+
+	private:
+		friend QRegAlloc;
+
+		enum class Location : u8 {
+			DEAD,
+			MEM,
+			REG,
+		};
+
+		qir::RegN p{};
+		Location loc{Location::DEAD};
+		bool spill_synced{false}; // valid if loc is REG
+	};
+
+	QRegAlloc(qir::Region *region_);
+	void Run();
+
+	qir::RegN AllocPReg(RegMask desire, RegMask avoid);
+	void EmitSpill(RTrack *v);
+	void EmitFill(RTrack *v);
+	void EmitMov(qir::VOperand pdst, qir::VOperand psrc);
+	void Spill(qir::RegN p);
+	void Spill(RTrack *v);
+	void SyncSpill(RTrack *v);
+	template <bool kill>
+	void Release(RTrack *v);
+	void AllocFrameSlot(RTrack *v);
+	void Fill(RTrack *v, RegMask desire, RegMask avoid);
+
+	RTrack *AddTrack();
+	RTrack *AddTrackGlobal(qir::VType type, u16 state_offs);
+	RTrack *AddTrackLocal(qir::VType type);
+
+	void Prologue();
+	void BlockBoundary();
+	void RegionBoundary();
+
+	template <typename DstA, typename SrcA>
+	void AllocOp(DstA &&dst, SrcA &&src, bool unsafe = false)
+	{
+		AllocOp(dst.data(), dst.size(), src.data(), src.size(), unsafe);
+	}
+	void AllocOp(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n, bool unsafe = false);
+	void AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n,
+				RegMask require_set, qir::RegN *require, bool unsafe = false);
+	void CallOp(bool use_globals = true);
+
+	static constexpr u16 frame_size{qcg::stub_frame_size};
+
+	qir::Region *region{};
+	qir::VRegsInfo const *vregs_info{};
+	// QEmit *qe{};
+	qir::Builder qb{nullptr};
+
+	RegMask fixed{ArchTraits::GPR_FIXED};
+	u16 frame_cur{0};
+
+	u16 n_vregs{0};
+	std::array<RTrack, MAX_VREGS> vregs{};
+	std::array<RTrack *, N_PREGS> p2v{nullptr};
+};
 
 QRegAlloc::QRegAlloc(qir::Region *region_) : region(region_), vregs_info(region->GetVRegsInfo())
 {
@@ -313,7 +392,7 @@ void QRegAlloc::AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand 
 void QRegAlloc::CallOp(bool use_globals)
 {
 	for (u8 p = 0; p < N_PREGS; ++p) {
-		if (QEmit::GPR_CALL_CLOBBER.Test(p)) {
+		if (ArchTraits::GPR_CALL_CLOBBER.Test(p)) {
 			Spill(p);
 		}
 	}

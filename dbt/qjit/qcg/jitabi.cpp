@@ -1,4 +1,5 @@
-#include "dbt/qjit/qjit_stubs.h"
+#include "dbt/qjit/qcg/jitabi.h"
+#include "dbt/qjit/qcg/arch_traits.h"
 #include "dbt/tcache/tcache.h"
 
 namespace dbt::jitabi
@@ -15,13 +16,13 @@ HELPER_ASM ppoint::BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vm
 	      "pushq	%r15\n\t"
 	      "movq 	%rdi, %r13\n\t" // STATE
 	      "movq	%rsi, %r12\n\t" // MEMBASE
-	      "subq	$248, %rsp\n\t" // RegAlloc::frame_size
+	      "subq	$248, %rsp\n\t" // stub_frame_size
 	      "jmpq	*%rdx\n\t");	// tc_ptr
 }
 
 HELPER_ASM void trampoline_qjit_to_host()
 {
-	__asm("addq	$248, %rsp\n\t" // RegAlloc::frame_size
+	__asm("addq	$248, %rsp\n\t" // stub_frame_size
 	      "popq	%r15\n\t"
 	      "popq	%r14\n\t"
 	      "popq	%r13\n\t"
@@ -30,7 +31,10 @@ HELPER_ASM void trampoline_qjit_to_host()
 	      "popq	%rbp\n\t"
 	      "retq	\n\t");
 }
-static_assert(stub_frame_size == 248);
+static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
+static_assert(qcg::ArchTraits::MEMBASE == asmjit::x86::Gp::kIdR12);
+static_assert(qcg::ArchTraits::SP == asmjit::x86::Gp::kIdSp);
+static_assert(qcg::stub_frame_size == 248);
 
 HELPER_ASM void stub_link_branch()
 {
@@ -106,6 +110,7 @@ HELPER_ASM void stub_trace()
 	      "popq	%rax\n\t"
 	      "retq	\n\t");
 }
+static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
 
 HELPER void helper_dump_trace(CPUState *state)
 {

@@ -50,8 +50,6 @@ HELPER _RetPair helper_brind(CPUState *state, u32 gip);
 HELPER void helper_raise();
 HELPER void helper_dump_trace(CPUState *state);
 
-static constexpr u16 stub_frame_size = 248;
-
 namespace ppoint
 {
 

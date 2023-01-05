@@ -1,12 +1,12 @@
 #include "dbt/qjit/qcompile.h"
 #include "dbt/guest/rv32_qir.h"
-#include "dbt/qjit/qcg.h"
+#include "dbt/qjit/qcg/qcg.h"
 #include "dbt/qjit/qir_printer.h"
 
 namespace dbt::qir
 {
 
-TBlock *Translate(u32 ip)
+TBlock *CompileAt(u32 ip)
 {
 	MemArena arena(1024 * 64);
 	qir::Region region(&arena, IRTranslator::state_info);
@@ -25,7 +25,7 @@ TBlock *Translate(u32 ip)
 	PrinterPass printer;
 	printer.run(&region);
 
-	return qcg::QCodegen::Generate(&region, ip);
+	return qcg::Generate(&region, ip);
 }
 
 } // namespace dbt::qir

@@ -8,14 +8,15 @@ add_library(dbtstatic STATIC
 	execute.cpp
 	ukernel.cpp
 
+	tcache/tcache.cpp
+
 	qjit/qcompile.cpp
 	qjit/qir_opt.cpp
 	qjit/qir_printer.cpp
-	qjit/qjit_stubs.cpp
-	qjit/qcg.cpp
-	qjit/qemit.cpp
-	qjit/qra.cpp
-	tcache/tcache.cpp
+	qjit/qcg/jitabi.cpp
+	qjit/qcg/qcg.cpp
+	qjit/qcg/qemit.cpp
+	qjit/qcg/qra.cpp
 
 	guest/rv32_insn.cpp
 	guest/rv32_interp.cpp
