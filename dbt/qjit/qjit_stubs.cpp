@@ -1,5 +1,5 @@
-#include "dbt/execute.h"
 #include "dbt/qjit/qjit_stubs.h"
+#include "dbt/execute.h"
 #include "dbt/tcache/tcache.h"
 #include <cassert>
 #include <cstdint>

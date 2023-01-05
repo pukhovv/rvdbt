@@ -1,7 +1,7 @@
 #pragma once
 
-#include "dbt/util/bitfield.h"
 #include "dbt/guest/rv32_ops.h"
+#include "dbt/util/bitfield.h"
 #include <limits>
 #include <ostream>
 #include <utility>

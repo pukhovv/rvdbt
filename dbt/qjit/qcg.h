@@ -117,7 +117,7 @@ private:
 	asmjit::CodeHolder jcode{};
 	asmjit::x86::Assembler j{};
 	JitErrorHandler jerr{};
-	
+
 	std::vector<asmjit::Label> labels;
 
 	qir::Block *bb{};

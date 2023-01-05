@@ -22,3 +22,13 @@ FIND_PACKAGE(Boost 1.71 COMPONENTS program_options REQUIRED)
 INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR})
 
 add_subdirectory(dbt)
+
+file(GLOB_RECURSE CLANG_FORMAT_TARGETS *.h *.cpp)
+list(FILTER CLANG_FORMAT_TARGETS EXCLUDE REGEX ".*third_party.*$")
+
+add_custom_target(
+    clang-format
+    COMMAND /usr/bin/clang-format
+    -i
+    ${CLANG_FORMAT_TARGETS}
+)

@@ -3,5 +3,4 @@
 namespace dbt::qir
 {
 
-
 } // namespace dbt::qir
