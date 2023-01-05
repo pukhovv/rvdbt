@@ -468,21 +468,21 @@ void QEmit::Emit_xor(qir::InstBinop *ins)
 
 void QEmit::Emit_sra(qir::InstBinop *ins)
 {
-	auto vs2 = ins->i[1];
-	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
-	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdShr>(ins);
-}
-
-void QEmit::Emit_srl(qir::InstBinop *ins)
-{
-	auto vs2 = ins->i[1];
+	[[maybe_unused]] auto vs2 = ins->i[1];
 	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
 	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdSar>(ins);
 }
 
+void QEmit::Emit_srl(qir::InstBinop *ins)
+{
+	[[maybe_unused]] auto vs2 = ins->i[1];
+	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
+	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdShr>(ins);
+}
+
 void QEmit::Emit_sll(qir::InstBinop *ins)
 {
-	auto vs2 = ins->i[1];
+	[[maybe_unused]] auto vs2 = ins->i[1];
 	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
 	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdShl>(ins);
 }

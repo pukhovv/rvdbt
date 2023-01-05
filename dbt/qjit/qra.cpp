@@ -299,12 +299,9 @@ void QRegAlloc::AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand 
 			p2v[dst->p] = dst;
 			dst->loc = RTrack::Location::REG;
 		} else if (it_avoid.Test(dst->p)) {
-			auto opr_old = qir::VOperand::MakePGPR(dst->type, dst->p);
-			p2v[dst->p] = nullptr;
+			p2v[dst->p] = nullptr; // value is killed, no need to emit move
 			dst->p = AllocPReg(~it_avoid, it_avoid);
 			p2v[dst->p] = dst;
-			auto opr_new = qir::VOperand::MakePGPR(dst->type, dst->p);
-			EmitMov(opr_new, opr_old);
 		}
 		avoid.Set(dst->p);
 		dst->spill_synced = false;
@@ -415,7 +412,7 @@ public:
 	void visit_amd64_shifts(qir::InstBinop *ins)
 	{
 		// amd64
-		static constexpr RegMask require_set(asmjit::x86::Gp::kIdCx);
+		static constexpr auto require_set = RegMask(0).Set(asmjit::x86::Gp::kIdCx);
 		static const std::array<qir::RegN, 3> require = {qir::RegNBad, qir::RegNBad,
 								 asmjit::x86::Gp::kIdCx};
 		AllocOperandsConstrained(ins, require_set, require);

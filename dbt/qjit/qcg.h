@@ -17,9 +17,10 @@ struct RegMask {
 	{
 		return data & (1u << r);
 	}
-	constexpr inline void Set(qir::RegN r)
+	constexpr inline RegMask &Set(qir::RegN r)
 	{
 		data |= (1u << r);
+		return *this;
 	}
 	constexpr inline void Clear(qir::RegN r)
 	{
