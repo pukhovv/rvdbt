@@ -24,7 +24,7 @@ struct RV32Translator {
 private:
 	static StateInfo const *GetStateInfo();
 
-	explicit RV32Translator(qir::Region *region);
+	explicit RV32Translator(qir::Region *region, u32 ip);
 	void PreSideeff();
 	void TranslateInsn();
 
@@ -40,6 +40,7 @@ private:
 	qir::Builder qb;
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
 	u32 insn_ip{0};
+	u32 bb_ip{}; // for cflow
 };
 
 } // namespace dbt::qir::rv32

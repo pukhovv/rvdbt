@@ -51,7 +51,6 @@ private:
 
 namespace ArchTraits
 {
-// TODO: as list
 #define FIX_GPR_LIST(X)                                                                                      \
 	X(STATE, kIdR13)                                                                                     \
 	X(MEMBASE, kIdR12)                                                                                   \

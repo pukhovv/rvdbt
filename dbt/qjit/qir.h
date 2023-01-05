@@ -150,17 +150,18 @@ public:
 
 	inline bool IsV() const
 	{
-		return f_is_virtual::decode(value);
+		assert(IsGPR());
+		return FlagV();
 	}
 
 	inline bool IsPGPR() const
 	{
-		return IsGPR() && !IsV(); // TODO: split checks and add asserts *active*
+		return IsGPR() && !FlagV();
 	}
 
 	inline bool IsVGPR() const
 	{
-		return IsGPR() && IsV();
+		return IsGPR() && FlagV();
 	}
 
 	inline bool IsGSlot() const
@@ -203,6 +204,11 @@ private:
 		return static_cast<Kind>(f_kind::decode(value));
 	}
 
+	inline bool FlagV() const
+	{
+		return f_is_virtual::decode(value);
+	}
+
 	uintptr_t value{0};
 
 	using f_kind = bf_first<std::underlying_type_t<Kind>, enum_bits(Kind::Count)>;
@@ -218,7 +224,7 @@ private:
 };
 
 struct Inst : IListNode<Inst> {
-	enum Flags { // TODO: rethink, refactor, gen by ir defs *active*
+	enum Flags { // TODO: enum class
 		SIDEEFF = 1 << 0,
 		REXIT = 1 << 1,
 	};

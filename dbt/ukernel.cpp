@@ -1,6 +1,6 @@
 #include "dbt/ukernel.h"
-#include "dbt/mmu.h"
 #include "dbt/execute.h"
+#include "dbt/mmu.h"
 #include <alloca.h>
 #include <cstring>
 

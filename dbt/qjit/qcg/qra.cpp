@@ -1,5 +1,5 @@
-#include "dbt/qjit/qcg/qcg.h"
 #include "dbt/qjit/qcg/arch_traits.h"
+#include "dbt/qjit/qcg/qcg.h"
 
 namespace dbt::qcg
 {
@@ -225,7 +225,6 @@ void QRegAlloc::Fill(RTrack *v, RegMask desire, RegMask avoid)
 	}
 }
 
-// internal
 QRegAlloc::RTrack *QRegAlloc::AddTrack()
 {
 	if (n_vregs == vregs.size()) {
@@ -332,7 +331,7 @@ void QRegAlloc::AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand 
 	auto avoid = fixed | require_set;
 	u8 opr_idx;
 
-	// TODO: SpillOrReassign constrained pregs in prologue
+	// TODO: SpillOrReassign constrained pregs immediately
 
 	auto get_avoid = [&] {
 		RegMask opr_avoid = avoid;

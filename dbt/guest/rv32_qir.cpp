@@ -2,6 +2,7 @@
 #include "dbt/guest/rv32_decode.h"
 #include "dbt/guest/rv32_runtime.h"
 #include "dbt/qjit/qir_printer.h"
+#include "dbt/tcache/tcache.h" // only for cflow
 
 #include <sstream>
 
@@ -58,13 +59,14 @@ StateInfo const *RV32Translator::GetStateInfo()
 }
 StateInfo const *const RV32Translator::state_info = GetStateInfo();
 
-RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()) {}
+RV32Translator::RV32Translator(qir::Region *region_, u32 ip) : qb(region_->CreateBlock()), bb_ip(ip) {}
 
 void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 {
 	log_qir("RV32Translator: [%08x]", ip);
-	RV32Translator t(region);
+	RV32Translator t(region, ip);
 	t.insn_ip = ip;
+	tcache::OnTranslate(ip);
 
 	u32 num_insns = 0;
 	while (true) {
@@ -76,6 +78,7 @@ void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 		if (num_insns == TB_MAX_INSNS || t.insn_ip == boundary_ip) {
 			t.control = Control::TB_OVF;
 			t.qb.Create_gbr(VOperand::MakeConst(VType::I32, t.insn_ip));
+			tcache::OnTranslateBr(t.bb_ip, t.insn_ip);
 			break;
 		}
 	}
@@ -107,8 +110,10 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 	qb.Create_brcc(cc, gprop(i.rs1()), gprop(i.rs2()));
 	qb = Builder(bb_f);
 	qb.Create_gbr(vconst(insn_ip + 4));
+	tcache::OnTranslateBr(bb_ip, insn_ip + 4);
 	qb = Builder(bb_t);
 	qb.Create_gbr(vconst(insn_ip + i.imm()));
+	tcache::OnTranslateBr(bb_ip, insn_ip + i.imm());
 }
 
 inline void RV32Translator::TranslateSetcc(rv32::insn::R i, CondCode cc)
@@ -253,6 +258,7 @@ TRANSLATOR(jal)
 	}
 
 	qb.Create_gbr(vconst(insn_ip + i.imm()));
+	tcache::OnTranslateBr(bb_ip, insn_ip + i.imm());
 }
 TRANSLATOR(jalr)
 {
@@ -267,6 +273,7 @@ TRANSLATOR(jalr)
 		qb.Create_mov(vgpr(i.rd()), vconst(insn_ip + 4));
 	}
 	qb.Create_gbrind(tgt);
+	tcache::OnTranslateBrind(bb_ip);
 }
 TRANSLATOR_Brcc(beq, EQ);
 TRANSLATOR_Brcc(bne, NE);

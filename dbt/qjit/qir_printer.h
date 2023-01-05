@@ -7,6 +7,7 @@ namespace dbt::qir
 
 struct PrinterPass {
 	static std::string run(Region *r);
+
 private:
 	PrinterPass() = delete;
 };

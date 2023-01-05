@@ -1,7 +1,7 @@
 #pragma once
 
-#include "dbt/mmu.h"
 #include "dbt/guest/rv32_insn.h"
+#include "dbt/mmu.h"
 
 #include <array>
 

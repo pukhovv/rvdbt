@@ -340,15 +340,32 @@ void QEmit::Emit_setcc(qir::InstSetcc *ins)
 		std::swap(vs1, vs2);
 		cc = qir::SwapCC(cc);
 	}
+
+	bool dst_aliased = vs1->GetPGPR() == prd.id() || (vs2->IsPGPR() && vs2->GetPGPR() == prd.id());
+
+	if (!dst_aliased) {
+		j.xor_(prd, prd);
+	}
 	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(*vs1), make_operand(*vs2));
 	auto setcc = asmjit::x86::Inst::setccFromCond(make_cc(cc));
 	j.emit(setcc, prd.r8());
-	j.movzx(prd, prd.r8()); // TODO: xor if no alias *active*
+
+	if (dst_aliased) {
+		j.movzx(prd, prd.r8());
+	}
 }
 
 void QEmit::Emit_mov(qir::InstUnop *ins)
 {
-	j.emit(asmjit::x86::Inst::kIdMov, make_operand(ins->o[0]), make_operand(ins->i[0]));
+	auto vrd = ins->o[0];
+	auto vs1 = ins->i[0];
+	// TODO: slowed code by ~3%, try again after bb merging
+	if (unlikely(false && vs1.IsConst() && vs1.GetConst() == 0 && vrd.IsPGPR())) {
+		auto prd = make_gpr(vrd);
+		j.emit(asmjit::x86::Inst::kIdXor, prd, prd);
+		return;
+	}
+	j.emit(asmjit::x86::Inst::kIdMov, make_operand(vrd), make_operand(vs1));
 }
 
 template <asmjit::x86::Inst::Id Op>
