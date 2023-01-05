@@ -8,10 +8,10 @@
 #include <sys/types.h>
 #include <type_traits>
 
-namespace dbt::qjit
+namespace dbt::jitabi
 {
 
-HELPER_ASM BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr)
+HELPER_ASM ppoint::BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr)
 {
 	__asm("pushq	%rbp\n\t"
 	      "movq	%rsp, %rbp\n\t"
@@ -48,7 +48,7 @@ HELPER_ASM void stub_link_branch()
 
 HELPER _RetPair helper_link_branch(void *p_slot)
 {
-	auto *slot = (BranchSlot *)((uptr)p_slot - sizeof(BranchSlotPatch::Call64Abs));
+	auto *slot = (ppoint::BranchSlot *)((uptr)p_slot - sizeof(ppoint::Call64Abs));
 	auto found = tcache::Lookup(slot->gip);
 	if (likely(found)) {
 		slot->Link(found->tcode.ptr);
@@ -119,4 +119,4 @@ HELPER void helper_dump_trace(CPUState *state)
 	state->DumpTrace("entry");
 }
 
-} // namespace dbt::qjit
+} // namespace dbt::jitabi

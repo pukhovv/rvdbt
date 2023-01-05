@@ -19,7 +19,7 @@ void Execute(CPUState *state)
 {
 	sigsetjmp(dbt::trap_unwind_env, 0);
 
-	qjit::BranchSlot *branch_slot = nullptr;
+	jitabi::ppoint::BranchSlot *branch_slot = nullptr;
 
 	while (!HandleTrap(state)) {
 		assert(state->gpr[0] == 0);
@@ -39,7 +39,7 @@ void Execute(CPUState *state)
 			tcache::OnBrind(tb);
 		}
 
-		branch_slot = qjit::trampoline_host_to_qjit(state, mmu::base, tb->tcode.ptr);
+		branch_slot = jitabi::trampoline_host_to_qjit(state, mmu::base, tb->tcode.ptr);
 		if (unlikely(branch_slot)) {
 			state->ip = branch_slot->gip;
 		}

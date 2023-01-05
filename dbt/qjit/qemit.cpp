@@ -139,7 +139,7 @@ void QEmit::Prologue(u32 ip)
 #ifdef CONFIG_DUMP_TRACE
 	// j.mov(ctx->vreg_ip->GetSpill(), ctx->tb->ip);
 	j.mov(asmjit::x86::Mem(RSTATE, offsetof(CPUState, ip), 4), ip);
-	j.call(qjit::stub_trace);
+	j.call(jitabi::stub_trace);
 #endif
 }
 
@@ -215,8 +215,9 @@ void QEmit::Emit_brcc(qir::InstBrcc *ins)
 
 void QEmit::Emit_gbr(qir::InstGBr *ins)
 {
-	j.embedUInt8(0, sizeof(qjit::BranchSlot));
-	auto *slot = (qjit::BranchSlot *)(j.bufferPtr() - sizeof(qjit::BranchSlot));
+	static constexpr size_t patch_size = sizeof(jitabi::ppoint::BranchSlot);
+	j.embedUInt8(0, patch_size);
+	auto *slot = (jitabi::ppoint::BranchSlot *)(j.bufferPtr() - patch_size);
 	slot->gip = ins->tpc.GetConst();
 	slot->Reset();
 }
@@ -257,7 +258,7 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 
 	j.mov(asmjit::x86::gpq(asmjit::x86::Gp::kIdDi), RSTATE);
 	assert(ptgt.id() == asmjit::x86::Gp::kIdSi);
-	j.call(qjit::helper_brind);
+	j.call(jitabi::helper_brind);
 	j.jmp(asmjit::x86::rdx);
 }
 

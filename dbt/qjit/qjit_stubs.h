@@ -2,12 +2,14 @@
 
 #include "dbt/execute.h"
 
-namespace dbt::qjit
+namespace dbt::jitabi
 {
 
 #define HELPER extern "C" NOINLINE __attribute__((used))
 #define HELPER_ASM extern "C" NOINLINE __attribute__((used, naked))
 
+namespace ppoint
+{
 struct BranchSlot {
 	void Reset();
 	void Link(void *to);
@@ -15,9 +17,6 @@ struct BranchSlot {
 	u8 code[12];
 	u32 gip;
 } __attribute__((packed));
-
-namespace BranchSlotPatch
-{
 struct Call64Abs {
 	u64 op_mov_imm_rax : 16 = 0xb848;
 	u64 imm : 64;
@@ -35,14 +34,14 @@ struct Jump32Rel {
 	u64 imm : 32;
 } __attribute__((packed));
 static_assert(sizeof(Jump32Rel) <= sizeof(BranchSlot::code));
-}; // namespace BranchSlotPatch
+}; // namespace ppoint
 
 struct _RetPair {
 	void *v0;
 	void *v1;
 };
 
-HELPER_ASM BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr);
+HELPER_ASM ppoint::BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr);
 HELPER_ASM void trampoline_qjit_to_host();
 HELPER_ASM void stub_link_branch();
 HELPER_ASM void stub_trace();
@@ -53,22 +52,27 @@ HELPER void helper_dump_trace(CPUState *state);
 
 static constexpr u16 stub_frame_size = 248;
 
+namespace ppoint
+{
+
 inline void BranchSlot::Reset()
 {
-	auto *patch = new (&code) BranchSlotPatch::Call64Abs();
+	auto *patch = new (&code) Call64Abs();
 	patch->imm = (uptr)stub_link_branch;
 }
 
 inline void BranchSlot::Link(void *to)
 {
-	iptr rel = (iptr)to - ((iptr)code + sizeof(BranchSlotPatch::Jump32Rel));
+	iptr rel = (iptr)to - ((iptr)code + sizeof(Jump32Rel));
 	if ((i32)rel == rel) {
-		auto *patch = new (&code) BranchSlotPatch::Jump32Rel();
+		auto *patch = new (&code) Jump32Rel();
 		patch->imm = rel;
 	} else {
-		auto *patch = new (&code) BranchSlotPatch::Jump64Abs();
+		auto *patch = new (&code) Jump64Abs();
 		patch->imm = (uptr)to;
 	}
 }
 
-} // namespace dbt::qjit
+} // namespace ppoint
+
+} // namespace dbt::jitabi

@@ -186,7 +186,7 @@ struct QRegAlloc {
 				RegMask require_set, qir::RegN *require, bool unsafe = false);
 	void CallOp(bool use_globals = true);
 
-	static constexpr u16 frame_size{qjit::stub_frame_size};
+	static constexpr u16 frame_size{jitabi::stub_frame_size};
 
 	qir::Region *region{};
 	qir::VRegsInfo const *vregs_info{};
