@@ -1,29 +1,31 @@
 #pragma once
 
-#define QIR_DEF_LIST(SOP, COP, GROUP)                                                                        \
-	COP(hcall, InstHcall)                                                                                \
-	COP(br, InstBr)                                                                                      \
-	COP(brcc, InstBrcc)                                                                                  \
-	COP(gbr, InstGBr)                                                                                    \
-	COP(gbrind, InstGBrind)                                                                              \
-	COP(vmload, InstVMLoad)                                                                              \
-	COP(vmstore, InstVMStore)                                                                            \
-	COP(setcc, InstSetcc)                                                                                \
+#define QIR_DEF_APPLY_CLASS2BASE(name, cls, flags) CLASS(cls, name, name)
+
+#define QIR_DEF_LIST(LEAF, BASE, CLASS)                                                                      \
+	BASE(hcall, InstHcall, Flags::SIDEEFF)                                                               \
+	BASE(br, InstBr, 0)                                                                                  \
+	BASE(brcc, InstBrcc, 0)                                                                              \
+	BASE(gbr, InstGBr, Flags::REXIT)                                                                     \
+	BASE(gbrind, InstGBrind, Flags::REXIT)                                                               \
+	BASE(vmload, InstVMLoad, Flags::SIDEEFF)                                                             \
+	BASE(vmstore, InstVMStore, Flags::SIDEEFF)                                                           \
+	BASE(setcc, InstSetcc, 0)                                                                            \
 	/* unary */                                                                                          \
-	SOP(mov, InstUnop)                                                                                   \
-	GROUP(InstUnop, mov, mov)                                                                            \
+	LEAF(mov, InstUnop, 0)                                                                               \
+	CLASS(InstUnop, mov, mov)                                                                            \
 	/* binary */                                                                                         \
-	SOP(add, InstBinop)                                                                                  \
-	SOP(sub, InstBinop)                                                                                  \
-	SOP(and, InstBinop)                                                                                  \
-	SOP(or, InstBinop)                                                                                   \
-	SOP(xor, InstBinop)                                                                                  \
-	SOP(sra, InstBinop)                                                                                  \
-	SOP(srl, InstBinop)                                                                                  \
-	SOP(sll, InstBinop)                                                                                  \
-	GROUP(InstBinop, add, sll)
+	LEAF(add, InstBinop, 0)                                                                              \
+	LEAF(sub, InstBinop, 0)                                                                              \
+	LEAF(and, InstBinop, 0)                                                                              \
+	LEAF(or, InstBinop, 0)                                                                               \
+	LEAF(xor, InstBinop, 0)                                                                              \
+	LEAF(sra, InstBinop, 0)                                                                              \
+	LEAF(srl, InstBinop, 0)                                                                              \
+	LEAF(sll, InstBinop, 0)                                                                              \
+	CLASS(InstBinop, add, sll)
 
 #define QIR_OPS_LIST(OP) QIR_DEF_LIST(OP, OP, EMPTY_MACRO)
-#define QIR_SUBOPS_LIST(OP) QIR_DEF_LIST(OP, EMPTY_MACRO, EMPTY_MACRO)
-#define QIR_CLSOPS_LIST(OP) QIR_DEF_LIST(EMPTY_MACRO, OP, EMPTY_MACRO)
-#define QIR_GROUPS_LIST(GROUP) QIR_DEF_LIST(EMPTY_MACRO, EMPTY_MACRO, GROUP)
+#define QIR_LEAF_OPS_LIST(LEAF) QIR_DEF_LIST(LEAF, EMPTY_MACRO, EMPTY_MACRO)
+#define QIR_BASE_OPS_LIST(BASE) QIR_DEF_LIST(EMPTY_MACRO, BASE, EMPTY_MACRO)
+#define QIR_CLASS_LIST(CLASS) QIR_DEF_LIST(EMPTY_MACRO, QIR_DEF_APPLY_CLASS2BASE, CLASS)

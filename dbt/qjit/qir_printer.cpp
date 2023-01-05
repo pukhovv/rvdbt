@@ -5,7 +5,7 @@ namespace dbt::qir
 {
 
 char const *const op_names[to_underlying(Op::Count)] = {
-#define OP(name, cls) [to_underlying(Op::_##name)] = #name,
+#define OP(name, cls, flags) [to_underlying(Op::_##name)] = #name,
     QIR_OPS_LIST(OP)
 #undef OP
 };

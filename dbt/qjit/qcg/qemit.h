@@ -27,7 +27,7 @@ struct QEmit {
 	void LocSpill(qir::RegN p, qir::VType type, u16 offs);
 	void LocFill(qir::RegN p, qir::VType type, u16 offs);
 
-#define OP(name, cls) void Emit_##name(qir::cls *ins);
+#define OP(name, cls, flags) void Emit_##name(qir::cls *ins);
 	QIR_OPS_LIST(OP)
 #undef OP
 

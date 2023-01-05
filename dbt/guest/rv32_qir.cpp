@@ -82,6 +82,7 @@ void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 	log_qir("RV32Translator: finish scan");
 }
 
+// TODO: move to late qir pass?
 void RV32Translator::PreSideeff()
 {
 	auto offs = state_info->GetStateReg(GlobalRegId::IP)->state_offs;

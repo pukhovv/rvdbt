@@ -32,11 +32,11 @@ ALWAYS_INLINE D *cast(B *b)
 }
 
 enum class Op : u8 {
-#define OP(name, base) _##name,
-#define GROUP(cls, beg, end) cls##_begin = _##beg, cls##_end = _##end,
-	QIR_OPS_LIST(OP) QIR_GROUPS_LIST(GROUP)
+#define OP(name, base, flags) _##name,
+#define CLASS(cls, beg, end) cls##_begin = _##beg, cls##_end = _##end,
+	QIR_OPS_LIST(OP) QIR_CLASS_LIST(CLASS)
 #undef OP
-#undef GROUP
+#undef CLASS
 	    Count,
 };
 
@@ -238,12 +238,12 @@ struct Inst : IListNode<Inst> {
 		id = id_;
 	}
 
-	inline auto GetFlags() const
+	inline Flags GetFlags() const
 	{
 		return flags;
 	}
 
-	inline void SetFlags(u8 flags_)
+	inline void SetFlags(Flags flags_)
 	{
 		flags = flags_;
 	}
@@ -259,8 +259,22 @@ private:
 
 	u32 id{(u32)-1};
 	Op opcode;
-	u8 flags{0};
+	Flags flags{};
 };
+
+inline Inst::Flags GetOpFlags(Op op)
+{
+	using Flags = Inst::Flags;
+	switch (op) {
+#define OP(name, base, flags)                                                                                \
+	case Op::_##name:                                                                                    \
+		return Inst::Flags(flags);
+		QIR_OPS_LIST(OP)
+#undef OP
+	default:
+		unreachable("");
+	};
+}
 
 template <size_t N_OUT, size_t N_IN>
 struct InstWithOperands : Inst {
@@ -403,7 +417,6 @@ struct InstBrcc : InstWithOperands<0, 2> {
 struct InstGBr : Inst {
 	InstGBr(VOperand tpc_) : Inst(Op::_gbr), tpc(tpc_)
 	{
-		SetFlags(Flags::REXIT);
 		assert(tpc_.IsConst());
 	}
 
@@ -411,18 +424,12 @@ struct InstGBr : Inst {
 };
 
 struct InstGBrind : InstWithOperands<0, 1> {
-	InstGBrind(VOperand tpc_) : InstWithOperands(Op::_gbrind, {}, {tpc_})
-	{
-		SetFlags(Flags::REXIT);
-	}
+	InstGBrind(VOperand tpc_) : InstWithOperands(Op::_gbrind, {}, {tpc_}) {}
 };
 
 struct InstHcall : InstWithOperands<0, 1> {
 	// TODO: variable number of operands
-	InstHcall(void *stub_, VOperand arg_) : InstWithOperands(Op::_hcall, {}, {arg_}), stub(stub_)
-	{
-		SetFlags(Flags::SIDEEFF);
-	}
+	InstHcall(void *stub_, VOperand arg_) : InstWithOperands(Op::_hcall, {}, {arg_}), stub(stub_) {}
 
 	void *stub;
 };
@@ -431,7 +438,6 @@ struct InstVMLoad : InstWithOperands<1, 1> {
 	InstVMLoad(VType sz_, VSign sgn_, VOperand d, VOperand ptr)
 	    : InstWithOperands(Op::_vmload, {d}, {ptr}), sz(sz_), sgn(sgn_)
 	{
-		SetFlags(Flags::SIDEEFF);
 	}
 
 	VType sz;
@@ -442,7 +448,6 @@ struct InstVMStore : InstWithOperands<0, 2> {
 	InstVMStore(VType sz_, VSign sgn_, VOperand ptr, VOperand val)
 	    : InstWithOperands(Op::_vmstore, {}, {ptr, val}), sz(sz_), sgn(sgn_)
 	{
-		SetFlags(Flags::SIDEEFF);
 	}
 
 	VType sz;
@@ -596,7 +601,7 @@ struct Region {
 	}
 
 	template <typename T, typename... Args>
-	requires std::is_base_of_v<Inst, T> T *Create(Args &&...args)
+	requires std::is_base_of_v<Inst, T> T *_Create(Args &&...args)
 	{
 		auto res = CreateInArena<T>(std::forward<Args>(args)...);
 		res->SetId(inst_id_counter++);
@@ -646,7 +651,7 @@ template <typename Derived, typename RT>
 struct InstVisitor {
 #define VIS_CLASS(cls) return static_cast<Derived *>(this)->visit##cls(static_cast<cls *>(ins))
 
-#define OP(name, cls)                                                                                        \
+#define OP(name, cls, flags)                                                                                 \
 	RT visit_##name(cls *ins)                                                                            \
 	{                                                                                                    \
 		VIS_CLASS(cls);                                                                              \
@@ -654,28 +659,20 @@ struct InstVisitor {
 	QIR_OPS_LIST(OP)
 #undef OP
 
-#define OP(name, cls)                                                                                        \
+#define CLASS(cls, beg, end)                                                                                 \
 	RT visit##cls(cls *ins)                                                                              \
 	{                                                                                                    \
 		VIS_CLASS(Inst);                                                                             \
 	}
-	QIR_CLSOPS_LIST(OP)
-#undef OP
-
-#define GROUP(cls, beg, end)                                                                                 \
-	RT visit##cls(cls *ins)                                                                              \
-	{                                                                                                    \
-		VIS_CLASS(Inst);                                                                             \
-	}
-	QIR_GROUPS_LIST(GROUP)
-#undef GROUP
+	QIR_CLASS_LIST(CLASS)
+#undef CLASS
 
 	void visitInst(Inst *ins) {}
 
 	RT visit(Inst *ins)
 	{
 		switch (ins->GetOpcode()) {
-#define OP(name, cls)                                                                                        \
+#define OP(name, cls, flags)                                                                                 \
 	case Op::_##name:                                                                                    \
 		return static_cast<Derived *>(this)->visit_##name(static_cast<cls *>(ins));
 			QIR_OPS_LIST(OP)

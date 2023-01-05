@@ -32,42 +32,52 @@ struct Builder {
 		return bb->GetRegion()->GetVRegsInfo()->AddLocal(type);
 	}
 
+private:
+	using Flags = Inst::Flags;
+
+public:
+#define OP(name, cls, flags)                                                                                 \
+	template <typename... Args>                                                                          \
+	Inst *Create_##name(Args &&...args)                                                                  \
+	{                                                                                                    \
+		auto ins = Create<cls>(Op::_##name, std::forward<Args>(args)...);                            \
+		ins->SetFlags(Flags(flags));                                                                 \
+		return ins;                                                                                  \
+	}
+	QIR_LEAF_OPS_LIST(OP)
+#undef OP
+
+#define OP(name, cls, flags)                                                                                 \
+	template <typename... Args>                                                                          \
+	Inst *Create_##name(Args &&...args)                                                                  \
+	{                                                                                                    \
+		auto ins = Create<cls>(std::forward<Args>(args)...);                                         \
+		ins->SetFlags(Flags(flags));                                                                 \
+		return ins;                                                                                  \
+	}
+	QIR_BASE_OPS_LIST(OP)
+#undef OP
+
+#define CLASS(cls, beg, end)                                                                                 \
+	template <typename... Args>                                                                          \
+	Inst *Create##cls(Op op, Args &&...args)                                                             \
+	{                                                                                                    \
+		auto ins = Create<cls>(std::forward<Args>(args)...);                                         \
+		ins->SetFlags(GetOpFlags(op));                                                               \
+		return ins;                                                                                  \
+	}
+	QIR_CLASS_LIST(CLASS)
+#undef CLASS
+
+private:
 	template <typename T, typename... Args>
 	requires std::is_base_of_v<Inst, T> Inst *Create(Args &&...args)
 	{
-		auto *ins = bb->GetRegion()->Create<T>(std::forward<Args>(args)...);
+		auto *ins = bb->GetRegion()->_Create<T>(std::forward<Args>(args)...);
 		bb->ilist.insert(it, *ins);
 		return ApplyFolder(bb, ins);
 	}
 
-#define OP(name, cls)                                                                                        \
-	template <typename... Args>                                                                          \
-	Inst *Create_##name(Args &&...args)                                                                  \
-	{                                                                                                    \
-		return Create<cls>(Op::_##name, std::forward<Args>(args)...);                                \
-	}
-	QIR_SUBOPS_LIST(OP)
-#undef OP
-
-#define OP(name, cls)                                                                                        \
-	template <typename... Args>                                                                          \
-	Inst *Create_##name(Args &&...args)                                                                  \
-	{                                                                                                    \
-		return Create<cls>(std::forward<Args>(args)...);                                             \
-	}
-	QIR_CLSOPS_LIST(OP)
-#undef OP
-
-#define GROUP(cls, beg, end)                                                                                 \
-	template <typename... Args>                                                                          \
-	Inst *Create##cls(Args &&...args)                                                                    \
-	{                                                                                                    \
-		return Create<cls>(std::forward<Args>(args)...);                                             \
-	}
-	QIR_GROUPS_LIST(GROUP)
-#undef GROUP
-
-private:
 	Block *bb;
 	IListIterator<Inst> it;
 };
