@@ -181,8 +181,6 @@ public:
 	}
 };
 
-// static void BlockPrinter(Block *bb) {}
-
 void PrinterPass::run(Region *r)
 {
 	std::stringstream ss;
@@ -205,7 +203,7 @@ void PrinterPass::run(Region *r)
 		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
 			ss << "\n";
 			PrinterVisitor vis(r, ss);
-			vis.visit(&*iit); // TODO:
+			vis.visit(&*iit);
 		}
 	}
 

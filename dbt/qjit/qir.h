@@ -1,18 +1,14 @@
 #pragma once
 
 #include "dbt/arena.h"
-#include "dbt/bitfield.h"
-#include "dbt/common.h"
-#include "dbt/logger.h"
 #include "dbt/qjit/ilist.h"
 #include "dbt/qjit/qir_ops.h"
+#include "dbt/util/bitfield.h"
+#include "dbt/util/logger.h"
 
-#include <algorithm>
-#include <bit>
-#include <type_traits>
-#include <variant>
-#include <vector>
 #include <array>
+#include <bit>
+#include <vector>
 
 namespace dbt::qir
 {
@@ -88,7 +84,7 @@ private:
 	inline VOperand(uintptr_t value_) : value(value_) {}
 
 public:
-	// TODO: delete operators
+	// TODO: delete operators *active*
 
 	inline VOperand() : value(f_kind::encode(uintptr_t(0), Kind::BAD)) {}
 
@@ -158,7 +154,7 @@ public:
 
 	inline bool IsPGPR() const
 	{
-		return IsGPR() && !IsV(); // TODO: split checks and add asserts
+		return IsGPR() && !IsV(); // TODO: split checks and add asserts *active*
 	}
 
 	inline bool IsVGPR() const
@@ -221,7 +217,7 @@ private:
 };
 
 struct Inst : IListNode<Inst> {
-	enum Flags { // TODO: rethink, refactor, gen by ir defs
+	enum Flags { // TODO: rethink, refactor, gen by ir defs *active*
 		SIDEEFF = 1 << 0,
 		REXIT = 1 << 1,
 	};
@@ -326,7 +322,7 @@ struct InstBr : Inst {
 	Block *target;
 };
 
-// TODO: bits
+// TODO: compact and fast encoding
 enum class CondCode : u8 {
 	EQ,
 	NE,
@@ -405,7 +401,6 @@ struct InstBrcc : InstWithOperands<0, 2> {
 	CondCode cc;
 };
 
-// TODO: group with gbrind?
 struct InstGBr : Inst {
 	InstGBr(VOperand tpc_) : Inst(Op::_gbr), tpc(tpc_)
 	{

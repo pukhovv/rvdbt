@@ -31,7 +31,6 @@ void Execute(CPUState *state)
 		TBlock *tb = tcache::Lookup(state->ip);
 		if (tb == nullptr) {
 			tb = qir::rv32::RV32Translator::Translate(state, state->ip);
-			tcache::Insert(tb);
 		}
 
 		if (branch_slot) {

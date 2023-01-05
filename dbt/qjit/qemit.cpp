@@ -19,31 +19,25 @@ QEmit::QEmit(qir::Region *region)
 	}
 }
 
-// TODO: return tcode span
-TBlock *QEmit::EmitTBlock()
+TBlock::TCode QEmit::EmitTCode()
 {
-	auto tb = tcache::AllocateTBlock();
-	if (tb == nullptr) {
-		Panic();
-	}
-
 	jcode.flatten();
 	jcode.resolveUnresolvedLinks();
 
 	size_t jit_sz = jcode.codeSize();
-	tb->tcode.size = jit_sz;
-	tb->tcode.ptr = tcache::AllocateCode(jit_sz, 8);
-	if (tb->tcode.ptr == nullptr) {
+	TBlock::TCode tc{nullptr, jit_sz};
+	tc.ptr = tcache::AllocateCode(jit_sz, 8);
+	if (tc.ptr == nullptr) {
 		Panic();
 	}
 
-	jcode.relocateToBase((uintptr_t)tb->tcode.ptr);
+	jcode.relocateToBase((uintptr_t)tc.ptr);
 	if (jit_sz < jcode.codeSize()) {
 		Panic();
 	}
-	jcode.copyFlattenedData(tb->tcode.ptr, tb->tcode.size);
-	tb->tcode.size = jcode.codeSize();
-	return tb;
+	jcode.copyFlattenedData(tc.ptr, tc.size);
+	tc.size = jcode.codeSize();
+	return tc;
 }
 
 void QEmit::DumpTBlock(TBlock *tb)
@@ -350,7 +344,7 @@ void QEmit::Emit_setcc(qir::InstSetcc *ins)
 	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(*vs1), make_operand(*vs2));
 	auto setcc = asmjit::x86::Inst::setccFromCond(make_cc(cc));
 	j.emit(setcc, prd.r8());
-	j.movzx(prd, prd.r8()); // TODO: xor if no alias
+	j.movzx(prd, prd.r8()); // TODO: xor if no alias *active*
 }
 
 void QEmit::Emit_mov(qir::InstUnop *ins)

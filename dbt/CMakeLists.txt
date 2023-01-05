@@ -1,10 +1,11 @@
 add_subdirectory(third_party)
 
 add_library(dbtstatic STATIC
+	util/logger.cpp
+
 	arena.cpp
 	core.cpp
 	execute.cpp
-	logger.cpp
 	ukernel.cpp
 
 	qjit/qir.cpp

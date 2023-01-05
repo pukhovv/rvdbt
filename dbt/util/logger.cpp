@@ -1,4 +1,4 @@
-#include "dbt/logger.h"
+#include "dbt/util/logger.h"
 #include <array>
 #include <cassert>
 #include <cstdio>

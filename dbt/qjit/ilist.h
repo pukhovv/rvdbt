@@ -178,7 +178,7 @@ struct IList : IListBase {
 	IList(const IList &) = delete;
 	IList &operator=(IList const &) = delete;
 
-	// TODO:
+	// TODO: *active*
 	IList(const IList &&) = delete;
 	IList &operator=(IList &&) = delete;
 

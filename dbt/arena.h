@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dbt/common.h"
+#include "dbt/util/common.h"
 
 extern "C" {
 #include <sys/mman.h>

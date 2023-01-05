@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dbt/common.h"
+#include "dbt/util/common.h"
 
 template <typename T, size_t l, size_t h>
 struct bf_range {

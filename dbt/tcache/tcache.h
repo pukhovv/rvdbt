@@ -1,7 +1,6 @@
 #pragma once
 
 #include "dbt/arena.h"
-#include "dbt/common.h"
 #include "dbt/core.h"
 #include "dbt/guest/rv32_cpu.h"
 

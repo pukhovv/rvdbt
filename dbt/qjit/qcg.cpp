@@ -16,9 +16,14 @@ TBlock *QCodegen::Generate(qir::Region *r, u32 ip)
 	cg.Run(ip);
 
 	log_qcg("Emit code");
-	auto tb = ce.EmitTBlock();
+	auto tb = tcache::AllocateTBlock();
+	if (tb == nullptr) {
+		Panic();
+	}
 	tb->ip = ip;
+	tb->tcode = ce.EmitTCode();
 	ce.DumpTBlock(tb);
+	tcache::Insert(tb);
 
 	return tb;
 }

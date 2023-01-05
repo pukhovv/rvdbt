@@ -59,7 +59,7 @@ struct QEmit {
 		j.bind(labels[bb->GetId()]);
 	}
 
-	TBlock *EmitTBlock();
+	TBlock::TCode EmitTCode();
 	static void DumpTBlock(TBlock *tb);
 
 	void Prologue(u32 ip);
@@ -117,8 +117,8 @@ private:
 	asmjit::CodeHolder jcode{};
 	asmjit::x86::Assembler j{};
 	JitErrorHandler jerr{};
-
-	std::vector<asmjit::Label> labels; // TODO:
+	
+	std::vector<asmjit::Label> labels;
 
 	qir::Block *bb{};
 };

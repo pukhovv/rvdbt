@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dbt/common.h"
+#include "dbt/util/common.h"
 #include <map>
 #include <mutex>
 

@@ -45,10 +45,10 @@ struct _RetPair {
 HELPER_ASM BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr);
 HELPER_ASM void trampoline_qjit_to_host();
 HELPER_ASM void stub_link_branch();
+HELPER_ASM void stub_trace();
 HELPER _RetPair helper_link_branch(void *p_slot);
 HELPER _RetPair helper_brind(CPUState *state, u32 gip);
 HELPER void helper_raise();
-HELPER_ASM void stub_trace();
 HELPER void helper_dump_trace(CPUState *state);
 
 static constexpr u16 stub_frame_size = 248;

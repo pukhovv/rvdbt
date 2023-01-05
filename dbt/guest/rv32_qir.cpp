@@ -5,7 +5,7 @@
 
 #include <sstream>
 
-#include "dbt/qjit/qcg.h" // TODO: remove from here!
+#include "dbt/qjit/qcg.h" // TODO: remove from here! *active*
 
 namespace dbt::qir::rv32
 {
@@ -62,7 +62,7 @@ StateInfo const *const RV32Translator::state_info = GetStateInfo();
 
 RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()) {}
 
-// TODO: make like this:
+// TODO: make like this: *active*
 //	translate -> qir frontend
 //		  -> qir passes
 //		  -> qir codegen
