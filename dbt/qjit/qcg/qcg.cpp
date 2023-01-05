@@ -17,8 +17,7 @@ private:
 	friend struct QCodegenVisitor;
 };
 
-// *active*
-TBlock *Generate(qir::Region *r, u32 ip)
+TBlock::TCode Generate(qir::Region *r, u32 ip)
 {
 	log_qcg("Allocate regs");
 	QRegAllocPass::run(r);
@@ -30,16 +29,9 @@ TBlock *Generate(qir::Region *r, u32 ip)
 	cg.Run(ip);
 
 	log_qcg("Relocate to tcache");
-	auto tb = tcache::AllocateTBlock();
-	if (tb == nullptr) {
-		Panic();
-	}
-	tb->ip = ip;
-	tb->tcode = ce.EmitTCode();
-	ce.DumpTBlock(tb);
-	tcache::Insert(tb);
-
-	return tb;
+	auto tc = ce.EmitTCode();
+	QEmit::DumpTCode(tc);
+	return tc;
 }
 
 struct QCodegenVisitor : qir::InstVisitor<QCodegenVisitor, void> {

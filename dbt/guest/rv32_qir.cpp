@@ -62,6 +62,7 @@ RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()
 
 void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 {
+	log_qir("RV32Translator translate [%08x]", ip);
 	RV32Translator t(region);
 	t.insn_ip = ip;
 
@@ -78,6 +79,7 @@ void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 			break;
 		}
 	}
+	log_qir("RV32Translator translated");
 }
 
 void RV32Translator::PreSideeff()

@@ -40,12 +40,11 @@ TBlock::TCode QEmit::EmitTCode()
 	return tc;
 }
 
-void QEmit::DumpTBlock(TBlock *tb)
+void QEmit::DumpTCode(TBlock::TCode const &tcode)
 {
 	if (!log_qcg.enabled()) {
 		return;
 	}
-	auto &tcode = tb->tcode;
 	size_t sz = tcode.size;
 	auto p = (u8 *)tcode.ptr;
 

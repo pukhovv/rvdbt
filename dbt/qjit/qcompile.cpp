@@ -18,14 +18,23 @@ TBlock *CompileAt(u32 ip)
 	}
 #endif
 
-	log_qir("IRTranslator Translate [%08x]", ip);
 	IRTranslator::Translate(&region, ip, upper_bound);
-	log_qir("IRTranslator Translated", ip);
 
 	PrinterPass printer;
 	printer.run(&region);
 
-	return qcg::Generate(&region, ip);
+	auto tc = qcg::Generate(&region, ip);
+
+	// TODO: concurrent tcache
+	auto tb = tcache::AllocateTBlock();
+	if (tb == nullptr) {
+		Panic();
+	}
+	tb->ip = ip;
+	tb->tcode = tc;
+	tcache::Insert(tb);
+
+	return tb;
 }
 
 } // namespace dbt::qir

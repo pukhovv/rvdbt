@@ -1,8 +1,7 @@
 #include "dbt/util/logger.h"
 #include <array>
-#include <cassert>
+#include <cstdarg>
 #include <cstdio>
-#include <cstring>
 #include <vector>
 
 namespace dbt

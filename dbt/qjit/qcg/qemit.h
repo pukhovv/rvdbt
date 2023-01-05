@@ -18,7 +18,7 @@ struct QEmit {
 	}
 
 	TBlock::TCode EmitTCode();
-	static void DumpTBlock(TBlock *tb);
+	static void DumpTCode(TBlock::TCode const &tc);
 
 	void Prologue(u32 ip);
 	void StateSpill(qir::RegN p, qir::VType type, u16 offs);

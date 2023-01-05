@@ -183,6 +183,10 @@ public:
 
 void PrinterPass::run(Region *r)
 {
+	if (!log_qirprint.enabled()) {
+		return;
+	}
+
 	std::stringstream ss;
 
 	for (auto &bb : r->blist) {

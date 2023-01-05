@@ -7,6 +7,6 @@ namespace dbt::qcg
 {
 LOG_STREAM(qcg);
 
-TBlock *Generate(qir::Region *r, u32 ip);
+TBlock::TCode Generate(qir::Region *r, u32 ip);
 
 }; // namespace dbt::qcg
