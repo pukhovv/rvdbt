@@ -51,6 +51,8 @@ HELPER void helper_raise();
 HELPER_ASM void stub_trace();
 HELPER void helper_dump_trace(CPUState *state);
 
+static constexpr u16 stub_frame_size = 248;
+
 inline void BranchSlot::Reset()
 {
 	auto *patch = new (&code) BranchSlotPatch::Call64Abs();

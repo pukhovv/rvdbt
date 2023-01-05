@@ -313,7 +313,7 @@ void QRegAlloc::AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand 
 void QRegAlloc::CallOp(bool use_globals)
 {
 	for (u8 p = 0; p < N_PREGS; ++p) {
-		if (qjit::PREGS_CALL_CLOBBER.Test(p)) {
+		if (QEmit::GPR_CALL_CLOBBER.Test(p)) {
 			Spill(p);
 		}
 	}

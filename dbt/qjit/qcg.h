@@ -2,7 +2,10 @@
 
 #include "dbt/qjit/qir.h"
 #include "dbt/qjit/qir_builder.h"
-#include "dbt/qjit/qjit.h"
+#include "dbt/qjit/qjit_stubs.h"
+#include "dbt/tcache/tcache.h"
+
+#include "dbt/qjit/asmjit_deps.h"
 
 #include <vector>
 
@@ -183,7 +186,7 @@ struct QRegAlloc {
 				RegMask require_set, qir::RegN *require, bool unsafe = false);
 	void CallOp(bool use_globals = true);
 
-	static constexpr u16 frame_size{31 * sizeof(u64)};
+	static constexpr u16 frame_size{qjit::stub_frame_size};
 
 	qir::Region *region{};
 	qir::VRegsInfo const *vregs_info{};

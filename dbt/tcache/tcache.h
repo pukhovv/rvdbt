@@ -4,7 +4,6 @@
 #include "dbt/common.h"
 #include "dbt/core.h"
 #include "dbt/guest/rv32_cpu.h"
-#include "dbt/qjit/regalloc.h"
 
 #include <array>
 #include <map>

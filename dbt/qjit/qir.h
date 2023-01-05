@@ -6,13 +6,13 @@
 #include "dbt/logger.h"
 #include "dbt/qjit/ilist.h"
 #include "dbt/qjit/qir_ops.h"
-#include "dbt/qjit/regalloc.h"
 
 #include <algorithm>
 #include <bit>
 #include <type_traits>
 #include <variant>
 #include <vector>
+#include <array>
 
 namespace dbt::qir
 {
