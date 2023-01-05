@@ -267,6 +267,25 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 	j.jmp(asmjit::x86::rdx);
 }
 
+// set size manually
+static inline asmjit::x86::Mem make_vmem(qir::VOperand vbase)
+{
+	if constexpr (config::zero_membase) {
+		if (likely(vbase.IsPGPR())) {
+			return asmjit::x86::ptr(make_gpr(vbase));
+		} else {
+			return asmjit::x86::ptr(vbase.GetConst());
+		}
+	} else {
+		auto pmembase = asmjit::x86::gpq(QEmit::MEMBASE);
+		if (likely(vbase.IsPGPR())) {
+			return asmjit::x86::ptr(pmembase, make_gpr(vbase));
+		} else {
+			return asmjit::x86::ptr(pmembase, vbase.GetConst());
+		}
+	}
+}
+
 void QEmit::Emit_vmload(qir::InstVMLoad *ins)
 {
 	auto &vrd = ins->o[0];
@@ -274,14 +293,7 @@ void QEmit::Emit_vmload(qir::InstVMLoad *ins)
 	auto sgn = ins->sgn;
 
 	auto prd = make_gpr(vrd);
-	auto pmembase = asmjit::x86::gpq(MEMBASE);
-
-	asmjit::x86::Mem mem;
-	if (likely(!vbase.IsConst())) {
-		mem = asmjit::x86::ptr(pmembase, make_gpr(vbase));
-	} else {
-		mem = asmjit::x86::ptr(pmembase, vbase.GetConst());
-	}
+	auto mem = make_vmem(vbase);
 
 	assert(vrd.GetType() == qir::VType::I32);
 	switch (ins->sz) {
@@ -316,14 +328,7 @@ void QEmit::Emit_vmstore(qir::InstVMStore *ins)
 	auto &vdata = ins->i[1];
 
 	auto pdata = make_operand(vdata);
-	auto pmembase = asmjit::x86::gpq(MEMBASE);
-
-	asmjit::x86::Mem mem;
-	if (likely(!vbase.IsConst())) {
-		mem = asmjit::x86::ptr(pmembase, make_gpr(vbase));
-	} else {
-		mem = asmjit::x86::ptr(pmembase, vbase.GetConst());
-	}
+	auto mem = make_vmem(vbase);
 
 	assert(ins->sgn == qir::VSign::U);
 	mem.setSize(VTypeToSize(ins->sz));

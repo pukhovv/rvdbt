@@ -26,6 +26,11 @@ static constexpr bool use_interp = true;
 #else
 static constexpr bool use_interp = false;
 #endif
+#ifdef CONFIG_ZERO_MMU_BASE
+static constexpr bool zero_membase = true;
+#else
+static constexpr bool zero_membase = false;
+#endif
 #ifdef CONFIG_UNSAFE_TRAPS
 static constexpr bool unsafe_traps = true;
 #else

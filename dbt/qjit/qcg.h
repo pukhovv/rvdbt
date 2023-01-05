@@ -75,10 +75,15 @@ struct QEmit {
 	static constexpr auto R##name = asmjit::x86::gpq(name);
 
 	DEF_FIX_REG(STATE, kIdR13);
-	DEF_FIX_REG(MEMBASE, kIdR12);
 	DEF_FIX_REG(SP, kIdSp);
 	DEF_FIX_REG(TMP1, kIdAx);
-	static constexpr RegMask GPR_FIXED = (1 << STATE) | (1 << MEMBASE) | (1 << SP) | (1 << TMP1);
+	DEF_FIX_REG(MEMBASE, kIdR12);
+
+#ifdef CONFIG_ZERO_MMU_BASE
+	static constexpr RegMask GPR_FIXED = RegMask(0).Set(STATE).Set(SP).Set(TMP1);
+#else
+	static constexpr RegMask GPR_FIXED = RegMask(0).Set(STATE).Set(SP).Set(TMP1).Set(MEMBASE);
+#endif
 #undef DEF_FIX_REG
 
 public:
