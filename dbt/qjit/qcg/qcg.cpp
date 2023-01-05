@@ -21,7 +21,10 @@ TBlock::TCode Generate(qir::Region *r, u32 ip)
 {
 	log_qcg("Allocate regs");
 	QRegAllocPass::run(r);
-	qir::PrinterPass::run(r);
+	if (log_qcg.enabled()) {
+		auto str = qir::PrinterPass::run(r);
+		log_qcg.write(str.c_str());
+	}
 
 	log_qcg("Generate code");
 	QEmit ce(r);

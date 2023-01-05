@@ -28,6 +28,11 @@ struct MemArena {
 		return (T *)Allocate(sizeof(T) * num, alignof(T));
 	}
 
+	size_t GetUsedSize() const
+	{
+		return used;
+	}
+
 private:
 	u8 *pool{nullptr};
 	size_t pool_sz{0};

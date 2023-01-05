@@ -20,6 +20,8 @@ void tcache::Init()
 
 void tcache::Destroy()
 {
+	log_tcache("Destroy tcache, code_pool size: %zu", code_pool.GetUsedSize());
+
 	jmp_cache_generic.fill(nullptr);
 	jmp_cache_brind.fill(nullptr);
 	tcache_map.clear();
@@ -40,6 +42,15 @@ void tcache::Insert(TBlock *tb)
 {
 	tcache_map.insert({tb->ip, tb});
 	jmp_cache_generic[jmp_hash(tb->ip)] = tb;
+}
+
+TBlock *tcache::LookupUpperBound(u32 gip)
+{
+	auto it = tcache_map.upper_bound(gip);
+	if (it == tcache_map.end()) {
+		return nullptr;
+	}
+	return it->second;
 }
 
 TBlock *tcache::LookupFull(u32 gip)

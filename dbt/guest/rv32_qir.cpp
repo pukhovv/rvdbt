@@ -62,7 +62,7 @@ RV32Translator::RV32Translator(qir::Region *region_) : qb(region_->CreateBlock()
 
 void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 {
-	log_qir("RV32Translator translate [%08x]", ip);
+	log_qir("RV32Translator: [%08x]", ip);
 	RV32Translator t(region);
 	t.insn_ip = ip;
 
@@ -79,7 +79,7 @@ void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 			break;
 		}
 	}
-	log_qir("RV32Translator translated");
+	log_qir("RV32Translator: finish scan");
 }
 
 void RV32Translator::PreSideeff()
@@ -148,16 +148,23 @@ inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
 	qb.Create_hcall(stub, vconst(i.raw));
 }
 
+template <typename IType>
+static ALWAYS_INLINE void LogInsn(IType i, u32 ip)
+{
+	if (likely(!log_qir.enabled())) {
+		return;
+	}
+	std::stringstream ss;
+	ss << i;
+	const auto &res = ss.str();
+	log_qir("\t %08x: %-8s   %s", ip, IType::opcode_str, res.c_str());
+}
+
 #define TRANSLATOR(name)                                                                                     \
 	void RV32Translator::H_##name(void *insn)                                                            \
 	{                                                                                                    \
 		insn::Insn_##name i{*(u32 *)insn};                                                           \
-		if (log_qir.enabled()) {                                                                     \
-			std::stringstream ss;                                                                \
-			ss << i;                                                                             \
-			const auto &res = ss.str();                                                          \
-			log_qir("      %08x: %-8s    %s", insn_ip, #name, res.c_str());                      \
-		}                                                                                            \
+		LogInsn(i, insn_ip);                                                                         \
 		static constexpr auto flags = decltype(i)::flags;                                            \
 		if constexpr (flags & insn::Flags::Branch || flags & insn::Flags::Trap ||                    \
 			      (flags & insn::Flags::MayTrap && config::unsafe_traps)) {                      \

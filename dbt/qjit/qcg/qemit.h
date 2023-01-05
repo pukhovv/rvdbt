@@ -1,12 +1,13 @@
 #pragma once
 
-#include "dbt/qjit/qcg/qcg.h"
 #include "dbt/qjit/qcg/arch_traits.h"
+#include "dbt/qjit/qcg/qcg.h"
 
 #include <vector>
 
 namespace dbt::qcg
 {
+LOG_STREAM(qcg);
 
 struct QEmit {
 	QEmit(qir::Region *region);

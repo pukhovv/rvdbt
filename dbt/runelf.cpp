@@ -60,5 +60,9 @@ int main(int argc, char **argv)
 
 	dbt::tcache::Init();
 	uk.Execute(&state);
+#ifndef NDEBUG
+	dbt::tcache::Destroy();
+	dbt::mmu::Destroy();
+#endif
 	return 0;
 }

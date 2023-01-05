@@ -1,7 +1,7 @@
 #include "dbt/execute.h"
 #include "dbt/guest/rv32_runtime.h"
-#include "dbt/qjit/qcompile.h"
 #include "dbt/qjit/qcg/jitabi.h"
+#include "dbt/qjit/qcompile.h"
 
 namespace dbt
 {
@@ -20,7 +20,7 @@ void Execute(CPUState *state)
 
 	jitabi::ppoint::BranchSlot *branch_slot = nullptr;
 
-	while (!HandleTrap(state)) {
+	while (likely(!HandleTrap(state))) {
 		assert(state->gpr[0] == 0);
 		if constexpr (config::use_interp) {
 			Interpreter::Execute(state);

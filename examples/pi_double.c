@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// TODO: TLS LC_GLOBAL_LOCALE is not initialized to default value, investigate
 __attribute__((constructor)) void preinit_locale()
 {
 	uselocale(LC_GLOBAL_LOCALE);

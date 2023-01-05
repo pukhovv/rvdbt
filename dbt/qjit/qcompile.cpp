@@ -19,9 +19,10 @@ TBlock *CompileAt(u32 ip)
 #endif
 
 	IRTranslator::Translate(&region, ip, upper_bound);
-
-	PrinterPass printer;
-	printer.run(&region);
+	if (log_qir.enabled()) {
+		auto str = PrinterPass::run(&region);
+		log_qir.write(str.c_str());
+	}
 
 	auto tc = qcg::Generate(&region, ip);
 

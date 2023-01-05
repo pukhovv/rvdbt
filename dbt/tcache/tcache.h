@@ -9,6 +9,7 @@
 
 namespace dbt
 {
+LOG_STREAM(tcache);
 LOG_STREAM(cflow);
 
 struct alignas(8) TBlock {
@@ -48,14 +49,7 @@ struct tcache {
 		return tb;
 	}
 
-	static TBlock *LookupUpperBound(u32 ip)
-	{
-		auto it = tcache_map.upper_bound(ip);
-		if (it == tcache_map.end()) {
-			return nullptr;
-		}
-		return it->second;
-	}
+	static TBlock *LookupUpperBound(u32 gip);
 
 	static inline void OnTranslate(TBlock *tb)
 	{

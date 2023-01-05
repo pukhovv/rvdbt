@@ -4,8 +4,6 @@
 namespace dbt::qir
 {
 
-LOG_STREAM(qirprint)
-
 char const *const op_names[to_underlying(Op::Count)] = {
 #define OP(name, cls) [to_underlying(Op::_##name)] = #name,
     QIR_OPS_LIST(OP)
@@ -181,12 +179,8 @@ public:
 	}
 };
 
-void PrinterPass::run(Region *r)
+std::string PrinterPass::run(Region *r)
 {
-	if (!log_qirprint.enabled()) {
-		return;
-	}
-
 	std::stringstream ss;
 
 	for (auto &bb : r->blist) {
@@ -211,8 +205,7 @@ void PrinterPass::run(Region *r)
 		}
 	}
 
-	auto str = ss.str();
-	log_qirprint.write(str.c_str());
+	return ss.str();
 }
 
 } // namespace dbt::qir
