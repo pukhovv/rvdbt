@@ -17,14 +17,14 @@ struct RV32Translator {
 	RV32_OPCODE_LIST()
 #undef OP
 
-	static void Translate(qir::Region *region, u32 ip, u32 boundary_ip);
+	static void Translate(qir::Region *region, u32 ip, u32 boundary_ip, uptr vmem);
 
 	static StateInfo const *const state_info;
 
 private:
 	static StateInfo const *GetStateInfo();
 
-	explicit RV32Translator(qir::Region *region, u32 ip);
+	explicit RV32Translator(qir::Region *region, u32 ip, uptr vmem);
 	void PreSideeff();
 	void TranslateInsn();
 
@@ -39,8 +39,9 @@ private:
 
 	qir::Builder qb;
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
+	uptr vmem_base{}; // jit/aot
 	u32 insn_ip{0};
-	u32 bb_ip{}; // for cflow
+	u32 bb_ip{}; // for cflow_dump
 };
 
 } // namespace dbt::qir::rv32

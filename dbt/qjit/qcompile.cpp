@@ -16,9 +16,11 @@ TBlock *CompileAt(u32 ip)
 	if (auto *tb_bound = tcache::LookupUpperBound(ip)) {
 		upper_bound = tb_bound->ip;
 	}
+	// TODO: forced page boudary
+	// upper_bound = std::min(upper_bound, roundup(ip, mmu::PAGE_SIZE));
 #endif
 
-	IRTranslator::Translate(&region, ip, upper_bound);
+	IRTranslator::Translate(&region, ip, upper_bound, (uptr)mmu::base);
 	if (log_qir.enabled()) {
 		auto str = PrinterPass::run(&region);
 		log_qir.write(str.c_str());

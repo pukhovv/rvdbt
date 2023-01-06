@@ -35,7 +35,7 @@ void Execute(CPUState *state)
 		if (branch_slot) {
 			branch_slot->Link(tb->tcode.ptr);
 		} else {
-			tcache::OnBrind(tb);
+			tcache::CacheBrind(tb);
 		}
 
 		branch_slot = jitabi::trampoline_host_to_qjit(state, mmu::base, tb->tcode.ptr);

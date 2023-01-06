@@ -59,7 +59,7 @@ HELPER _RetPair helper_brind(CPUState *state, u32 gip)
 	state->ip = gip;
 	auto *found = tcache::Lookup(gip);
 	if (likely(found)) {
-		tcache::OnBrind(found);
+		tcache::CacheBrind(found);
 		return {nullptr, (void *)found->tcode.ptr};
 	}
 	return {nullptr, (void *)trampoline_qjit_to_host};

@@ -4,12 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// TODO: TLS LC_GLOBAL_LOCALE is not initialized to default value by ld, investigate
-__attribute__((constructor)) void preinit_locale()
-{
-	uselocale(LC_GLOBAL_LOCALE);
-}
-
 double find_pi(int prec)
 {
 	double sgn = (prec % 2) ? 1.0 : -1.0;

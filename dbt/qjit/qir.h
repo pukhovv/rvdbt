@@ -81,17 +81,17 @@ private:
 		Count,
 	};
 
-	inline VOperand(uintptr_t value_) : value(value_) {}
+	inline VOperand(uptr value_) : value(value_) {}
 
 public:
-	explicit inline VOperand() : value(f_kind::encode(uintptr_t(0), Kind::BAD)) {}
+	explicit inline VOperand() : value(f_kind::encode(uptr(0), Kind::BAD)) {}
 
 	DEFAULT_COPY(VOperand)
 	DEFAULT_MOVE(VOperand)
 
 	static inline VOperand MakeVGPR(VType type, RegN reg)
 	{
-		uintptr_t value = 0;
+		uptr value = 0;
 		value = f_kind::encode(value, Kind::GPR);
 		value = f_type::encode(value, type);
 		value = f_is_virtual::encode(value, true);
@@ -101,7 +101,7 @@ public:
 
 	static inline VOperand MakePGPR(VType type, RegN reg)
 	{
-		uintptr_t value = 0;
+		uptr value = 0;
 		value = f_kind::encode(value, Kind::GPR);
 		value = f_type::encode(value, type);
 		value = f_reg::encode(value, reg);
@@ -110,7 +110,7 @@ public:
 
 	static inline VOperand MakeConst(VType type, u32 cval)
 	{
-		uintptr_t value = 0;
+		uptr value = 0;
 		value = f_kind::encode(value, Kind::CONST);
 		value = f_type::encode(value, type);
 		value = f_const::encode(value, cval);
@@ -119,7 +119,7 @@ public:
 
 	static inline VOperand MakeSlot(bool is_glob, VType type, u16 offs)
 	{
-		uintptr_t value = 0;
+		uptr value = 0;
 		value = f_kind::encode(value, Kind::SLOT);
 		value = f_type::encode(value, type);
 		value = f_slot_offs::encode(value, offs);
@@ -209,14 +209,14 @@ private:
 		return f_is_virtual::decode(value);
 	}
 
-	uintptr_t value{0};
+	uptr value{0};
 
 	using f_kind = bf_first<std::underlying_type_t<Kind>, enum_bits(Kind::Count)>;
 	using f_type = f_kind::next<std::underlying_type_t<VType>, enum_bits(VType::Count)>;
 	using f_is_virtual = f_type::next<bool, 1>;
 	using last_ = f_is_virtual;
 
-	static constexpr auto data_bits = bit_size<uintptr_t> - last_::container_size;
+	static constexpr auto data_bits = bit_size<uptr> - last_::container_size;
 	using f_reg = last_::next<RegN, bit_size<RegN>>;
 	using f_const = last_::next<u32, 32>; // TODO: cpool
 	using f_slot_offs = last_::next<u16, 16>;

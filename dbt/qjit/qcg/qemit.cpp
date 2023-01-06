@@ -31,7 +31,7 @@ TBlock::TCode QEmit::EmitTCode()
 		Panic();
 	}
 
-	jcode.relocateToBase((uintptr_t)tc.ptr);
+	jcode.relocateToBase((uptr)tc.ptr);
 	if (jit_sz < jcode.codeSize()) {
 		Panic();
 	}
@@ -45,20 +45,9 @@ void QEmit::DumpTCode(TBlock::TCode const &tcode)
 	if (!log_qcg.enabled()) {
 		return;
 	}
-	size_t sz = tcode.size;
-	auto p = (u8 *)tcode.ptr;
 
-	std::array<char, 4096> buf;
-
-	if (sz * 2 + 1 > buf.size()) {
-		log_qcg("jitcode is too long for dump");
-		return;
-	}
-
-	for (size_t i = 0; i < sz; ++i) {
-		sprintf(&buf[2 * i], "%02x", p[i]);
-	}
-	log_qcg.write(buf.data());
+	auto str = MakeHexStr((u8 *)tcode.ptr, tcode.size);
+	log_qcg.write(str.c_str());
 }
 
 static inline asmjit::x86::Gp make_gpr(qir::RegN pr, qir::VType type)
@@ -174,7 +163,7 @@ void QEmit::Emit_hcall(qir::InstHcall *ins)
 {
 	// TODO: proper args
 	j.mov(asmjit::x86::rdi, R_STATE);
-	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i[0]));
+	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i[0])); // TODO: reloc
 	j.call(ins->stub);
 }
 
@@ -218,7 +207,7 @@ void QEmit::Emit_gbr(qir::InstGBr *ins)
 	j.embedUInt8(0, patch_size);
 	auto *slot = (jitabi::ppoint::BranchSlot *)(j.bufferPtr() - patch_size);
 	slot->gip = ins->tpc.GetConst();
-	slot->Reset();
+	slot->Reset(); // TODO: reloc
 }
 
 void QEmit::Emit_gbrind(qir::InstGBrind *ins)
@@ -235,7 +224,7 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 		// Inlined jmp_cache lookup
 		auto tmp0 = asmjit::x86::rdi;
 		auto tmp1 = asmjit::x86::rdx;
-		j.mov(tmp1.r64(), (uintptr_t)tcache::jmp_cache_brind.data());
+		j.mov(tmp1.r64(), (uptr)tcache::jmp_cache_brind.data()); // TODO: reloc
 
 		j.mov(tmp0.r32(), ptgt.r32());
 		j.shr(tmp0.r32(), 2);
@@ -257,7 +246,7 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 
 	j.mov(asmjit::x86::gpq(asmjit::x86::Gp::kIdDi), R_STATE);
 	assert(ptgt.id() == asmjit::x86::Gp::kIdSi);
-	j.call(jitabi::helper_brind);
+	j.call(jitabi::helper_brind); // TODO: reloc
 	j.jmp(asmjit::x86::rdx);
 }
 

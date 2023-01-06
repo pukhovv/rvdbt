@@ -5,6 +5,7 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <type_traits>
 
 #include "dbt/config.h"
@@ -112,7 +113,25 @@ constexpr size_t enum_bits(Enum e)
 template <typename T>
 static constexpr size_t bit_size = sizeof(T) * CHAR_BIT;
 
+inline constexpr size_t operator""_KB(unsigned long long n)
+{
+	return n << 10;
+}
+inline constexpr size_t operator""_MB(unsigned long long n)
+{
+	return n << 20;
+}
+inline constexpr size_t operator""_GB(unsigned long long n)
+{
+	return n << 30;
+}
+
 namespace dbt
 {
+
 void __attribute__((noreturn)) Panic(char const *msg = "");
+void __attribute__((noreturn)) Panic(std::string const &msg);
+
+std::string MakeHexStr(uint8_t const *data, size_t sz);
+
 } // namespace dbt

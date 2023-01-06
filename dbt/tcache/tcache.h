@@ -2,15 +2,16 @@
 
 #include "dbt/arena.h"
 #include "dbt/mmu.h"
+#include "dbt/tcache/cflow_dump.h"
 #include "dbt/util/logger.h"
 
 #include <array>
+#include <bitset>
 #include <map>
 
 namespace dbt
 {
 LOG_STREAM(tcache);
-LOG_STREAM(cflow);
 
 struct alignas(8) TBlock {
 	struct TCode {
@@ -51,36 +52,11 @@ struct tcache {
 
 	static TBlock *LookupUpperBound(u32 gip);
 
-	static inline void OnTranslate(u32 ip)
-	{
-		log_cflow("B%08x[fillcolor=cyan]", ip);
-	}
-
-	static inline void OnTranslateBr(u32 ip, u32 tgtip)
-	{
-		if (rounddown(ip, mmu::PAGE_SIZE) != rounddown(tgtip, mmu::PAGE_SIZE)) {
-			log_cflow("B%08x->B%08x[color=blue,penwidth=2]", ip, tgtip);
-		} else if (ip >= tgtip) {
-			log_cflow("B%08x->B%08x[color=red,penwidth=2,dir=back]", tgtip, ip);
-		} else {
-			log_cflow("B%08x->B%08x", ip, tgtip);
-		}
-	}
-
-	static inline void OnTranslateBrind(u32 ip)
-	{
-		log_cflow("B%08x_brind[fillcolor=purple,shape=point];"
-			  "B%08x->B%08x_brind[color=purple,penwidth=3]",
-			  ip, ip, ip);
-	}
-
-	static inline void OnBrind(TBlock *tb)
+	static inline void CacheBrind(TBlock *tb)
 	{
 		jmp_cache_brind[jmp_hash(tb->ip)] = tb;
-		if (log_cflow.enabled()) {
-			if (!tb->flags.is_brind_target) {
-				log_cflow("B%08x[fillcolor=orange]", tb->ip);
-			}
+		if (!unlikely(tb->flags.is_brind_target)) {
+			cflow_dump::RecordBrindEntry(tb->ip);
 		}
 		tb->flags.is_brind_target = true;
 	}
@@ -93,15 +69,16 @@ struct tcache {
 	static JMPCache jmp_cache_generic;
 	static JMPCache jmp_cache_brind;
 
-private:
-	tcache() = delete;
-
-	static TBlock *LookupFull(u32 ip);
-
 	static ALWAYS_INLINE u32 jmp_hash(u32 ip)
 	{
 		return (ip >> 2) & ((1ull << JMP_CACHE_BITS) - 1);
 	}
+
+private:
+	tcache() = delete;
+	friend struct profile_storage;
+
+	static TBlock *LookupFull(u32 ip);
 
 	using MapType = std::map<u32, TBlock *>;
 	static MapType tcache_map;
@@ -112,4 +89,5 @@ private:
 	static constexpr size_t CODE_POOL_SIZE = 128 * 1024 * 1024;
 	static MemArena code_pool;
 };
+
 } // namespace dbt

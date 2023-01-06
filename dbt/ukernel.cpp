@@ -1,6 +1,7 @@
 #include "dbt/ukernel.h"
 #include "dbt/execute.h"
 #include "dbt/mmu.h"
+#include "dbt/tcache/aot_cache.h"
 #include <alloca.h>
 #include <cstring>
 
@@ -10,6 +11,7 @@ extern "C" {
 #include <linux/limits.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/sysinfo.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <unistd.h>
@@ -81,7 +83,7 @@ void ukernel::SyscallLinux(CPUState *state)
 	u32 args[7] = {state->gpr[10], state->gpr[11], state->gpr[12], state->gpr[13],
 		       state->gpr[14], state->gpr[15], state->gpr[16]};
 	u32 syscallno = state->gpr[17];
-	u32 rc;
+	i32 rc;
 
 #define RCERRNO(rc)                                                                                          \
 	do {                                                                                                 \
@@ -92,9 +94,24 @@ void ukernel::SyscallLinux(CPUState *state)
 #define DEF_SYSCALL(no, name)                                                                                \
 	break;                                                                                               \
 	case no:                                                                                             \
-		log_ukernel("sys_%s (no=%d)", #name, syscallno);
+		log_ukernel("sys_%s (no=%d)\t ip=%08x", #name, syscallno, state->ip);
 
 	switch (syscallno) {
+		DEF_SYSCALL(56, openat)
+		{
+			rc = openat(args[0], (char const *)mmu::g2h(args[1]), args[2], args[3]);
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(57, close)
+		{
+			rc = close(args[0]);
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(63, read)
+		{
+			rc = read(args[0], mmu::g2h(args[1]), args[2]);
+			RCERRNO(rc);
+		}
 		DEF_SYSCALL(64, write)
 		{
 			rc = write((i32)args[0], mmu::g2h(args[1]), args[2]);
@@ -148,14 +165,69 @@ void ukernel::SyscallLinux(CPUState *state)
 			rc = getegid();
 			RCERRNO(rc);
 		}
+		DEF_SYSCALL(179, sysinfo)
+		{
+			struct rv32abi_sysinfo {
+				u32 uptime;
+				u32 loads[3];
+				u32 totalram;
+				u32 freeram;
+				u32 sharedram;
+				u32 bufferram;
+				u32 totalswap;
+				u32 freeswap;
+				u16 procs;
+				u16 pad;
+				u32 totalhigh;
+				u32 freehigh;
+				u32 mem_unit;
+				char _f[20 - 2 * sizeof(u32) - sizeof(u32)];
+			};
+			struct sysinfo hs;
+			rc = sysinfo(&hs);
+
+			if (rc > 0) {
+				auto *gs = (struct rv32abi_sysinfo *)mmu::g2h(args[0]);
+				gs->uptime = hs.uptime;
+				for (int i = 0; i < 3; ++i) {
+					gs->loads[i] = hs.loads[i];
+				}
+				gs->totalram = 1_GB;
+				gs->freeram = 500_MB;
+				gs->sharedram = gs->bufferram = gs->totalswap = gs->freeswap = 1_MB;
+				gs->procs = hs.procs;
+				gs->totalhigh = gs->freehigh = 1_MB;
+				gs->mem_unit = 1;
+			}
+
+			RCERRNO(rc);
+		}
 		DEF_SYSCALL(214, brk)
 		{
 			rc = do_sys_brk(args[0]);
 		}
+		DEF_SYSCALL(215, munmap)
+		{
+			// TODO: implement in mmu
+			log_ukernel("munmap addr: %x", mmu::g2h(args[0]));
+			rc = munmap(mmu::g2h(args[0]), args[1]);
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(222, mmap)
+		{
+			// TODO: file maps in mmu
+			void *ret = mmu::mmap(args[0], args[1], args[2], args[3], args[4], args[5]);
+			if (ret == MAP_FAILED) {
+				rc = -errno;
+				break;
+			}
+			rc = mmu::h2g(ret);
+			log_ukernel("mmap addr: %x", rc);
+		}
 		DEF_SYSCALL(226, mprotect)
 		{
-			// TODO: pass to mmu
-			rc = mprotect(mmu::base + args[0], args[1], args[2]);
+			// TODO: implement in mmu
+			rc = mprotect(mmu::g2h(args[0]), args[1], args[2]);
 			RCERRNO(rc);
 		}
 		DEF_SYSCALL(291, statx)
@@ -174,30 +246,47 @@ void ukernel::SyscallLinux(CPUState *state)
 			    statx((i32)args[0], pathbuf, args[2], args[3], (struct statx *)mmu::g2h(args[4]));
 			RCERRNO(rc);
 		}
+		DEF_SYSCALL(403, clock_gettime)
+		{
+			rc = clock_gettime(args[0], (timespec *)mmu::g2h(args[1]));
+			RCERRNO(rc);
+		}
 		break;
 	default:
 		log_ukernel("sys_ (no=%4d) is unknown", syscallno);
 		Panic("unknown syscall");
 	}
-	log_ukernel("sys ret: %d", rc);
+	log_ukernel("    ret: %d", rc);
 	state->gpr[10] = rc;
+}
+
+int ukernel::HandleSpecialPath(char const *path, char *resolved)
+{
+	if (!strcmp(path, "/proc/self/exe")) {
+		sprintf(resolved, "/proc/self/fd/%d", exe_fd);
+		log_ukernel("exe_fd: %s", resolved);
+		return 1;
+	}
+	return 0;
+}
+
+void ukernel::SetFSRoot(const char *fsroot_)
+{
+	char buf[PATH_MAX];
+	if (!realpath(fsroot_, buf)) {
+		Panic("failed to resolve fsroot");
+	}
+	fsroot = std::string(buf) + "/";
 }
 
 int ukernel::PathResolution(int dirfd, char const *path, char *resolved)
 {
-	char const *fake_root = "."; // TODO: set it proper somewhere
-	char rp_fake_root[PATH_MAX];
 	char rp_buf[PATH_MAX];
 
 	log_ukernel("start path resolution: %s", path);
 
-	if (!realpath(fake_root, rp_fake_root)) {
-		Panic("can't resolve dbtroot");
-	}
-	size_t rp_fake_root_len = strlen(rp_fake_root);
-
 	if (path[0] == '/') {
-		snprintf(rp_buf, sizeof(rp_buf), "%s/%s", rp_fake_root, path);
+		snprintf(rp_buf, sizeof(rp_buf), "%s/%s", fsroot.c_str(), path);
 	} else {
 		if (dirfd == AT_FDCWD) {
 			getcwd(rp_buf, sizeof(rp_buf));
@@ -212,19 +301,27 @@ int ukernel::PathResolution(int dirfd, char const *path, char *resolved)
 		size_t pref_sz = strlen(rp_buf);
 		strncpy(rp_buf + pref_sz, path, sizeof(rp_buf) - pref_sz);
 	}
+	if (strncmp(rp_buf, fsroot.c_str(), fsroot.length())) {
+		Panic("escaped fsroot");
+	}
+
+	if (HandleSpecialPath(rp_buf + fsroot.length() + 1, resolved) > 0) {
+		return 0;
+	}
 
 	// TODO: make it preceise, resolve "/.." and symlinks
 	if (!realpath(rp_buf, resolved)) {
 		log_ukernel("unresolved path %s", rp_buf);
 		return -1;
 	}
-	if (strncmp(resolved, rp_fake_root, rp_fake_root_len)) {
-		Panic("escaped dbtroot");
+	if (strncmp(resolved, fsroot.c_str(), fsroot.length())) {
+		Panic("escaped fsroot");
 	}
 
 	if (path[0] != '/') {
 		strcpy(resolved, path);
 	}
+
 	return 0;
 }
 
@@ -235,19 +332,21 @@ u32 ukernel::do_sys_brk(u32 newbrk)
 		return brk;
 	}
 	u32 brk_p = roundup(brk, mmu::PAGE_SIZE);
-	if (newbrk < brk_p) {
-		memset(mmu::g2h(newbrk), 0, newbrk - brk);
-		return newbrk;
+	if (newbrk <= brk_p) {
+		if (newbrk != brk_p) {
+			memset(mmu::g2h(newbrk), 0, newbrk - brk);
+		}
+		return brk = newbrk;
 	}
 	void *mem =
-	    mmu::MMap(brk_p, newbrk - brk_p, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_FIXED);
+	    mmu::mmap(brk_p, newbrk - brk_p, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_FIXED);
 	if (mmu::h2g(mem) != brk_p) {
 		log_ukernel("do_sys_brk: not enough mem");
 		munmap(mem, newbrk - brk_p);
 		return brk;
 	}
 	memset(mmu::g2h(brk), 0, brk_p - brk);
-	return newbrk;
+	return brk = newbrk;
 }
 
 // -march=rv32i -O2 -fpic -fpie -static
@@ -315,14 +414,14 @@ void ukernel::LoadElf(const char *path, ElfImage *elf)
 		if (phdr->p_filesz != 0) {
 			u32 len = roundup(phdr->p_filesz + vaddr_po, mmu::PAGE_SIZE);
 			// shared flags
-			mmu::MMap(vaddr_ps, len, prot, MAP_FIXED | MAP_PRIVATE, fd,
+			mmu::mmap(vaddr_ps, len, prot, MAP_FIXED | MAP_PRIVATE, fd,
 				  phdr->p_offset - vaddr_po);
 			if (phdr->p_memsz > phdr->p_filesz) {
 				auto bss_start = vaddr + phdr->p_filesz;
 				auto bss_end = vaddr_ps + phdr->p_memsz;
 				auto bss_start_nextp = roundup(bss_start, (u32)mmu::PAGE_SIZE);
 				auto bss_len = roundup(bss_end - bss_start, (u32)mmu::PAGE_SIZE);
-				mmu::MMap(bss_start_nextp, bss_len, prot, MAP_FIXED | MAP_PRIVATE | MAP_ANON);
+				mmu::mmap(bss_start_nextp, bss_len, prot, MAP_FIXED | MAP_PRIVATE | MAP_ANON);
 				u32 prev_sz = bss_start_nextp - bss_start;
 				if (prev_sz != 0) {
 					memset(mmu::g2h(bss_start), 0, prev_sz);
@@ -330,24 +429,25 @@ void ukernel::LoadElf(const char *path, ElfImage *elf)
 			}
 		} else if (phdr->p_memsz != 0) {
 			u32 len = roundup(phdr->p_memsz + vaddr_po, (u32)mmu::PAGE_SIZE);
-			mmu::MMap(vaddr_ps, len, prot, MAP_FIXED | MAP_PRIVATE | MAP_ANON);
+			mmu::mmap(vaddr_ps, len, prot, MAP_FIXED | MAP_PRIVATE | MAP_ANON);
 		}
 
 		elf->load_addr = std::min(elf->load_addr, vaddr - phdr->p_offset);
 		elf->brk = std::max(elf->brk, vaddr + phdr->p_memsz);
 	}
-	close(fd);
+	profile_storage::OpenProfile(fd);
+	exe_fd = fd; // close(fd);
 
 	brk = elf->brk; // TODO: move it out
 
-	static constexpr u32 stk_size = 32 * mmu::PAGE_SIZE;
+	static constexpr u32 stk_size = 8_MB; // switch to 32 * mmu::PAGE_SIZE if debugging
 #if 0
 	void *stk_ptr = mmu::MMap(0, stk_size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE);
 #else
-	[[maybe_unused]] void *stk_guard = mmu::MMap(mmu::ASPACE_SIZE - mmu::PAGE_SIZE, mmu::PAGE_SIZE, 0,
+	[[maybe_unused]] void *stk_guard = mmu::mmap(mmu::ASPACE_SIZE - mmu::PAGE_SIZE, mmu::PAGE_SIZE, 0,
 						     MAP_ANON | MAP_PRIVATE | MAP_FIXED);
 	// ASAN somehow breaks MMap lookup if it's not MAP_FIXED
-	void *stk_ptr = mmu::MMap(mmu::ASPACE_SIZE - mmu::PAGE_SIZE - stk_size, stk_size,
+	void *stk_ptr = mmu::mmap(mmu::ASPACE_SIZE - mmu::PAGE_SIZE - stk_size, stk_size,
 				  PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_FIXED);
 #endif
 	elf->stack_start = mmu::h2g(stk_ptr) + stk_size;
@@ -365,6 +465,7 @@ static inline u32 AllocAVectorStr(u32 stk, char const *str)
 	return AllocAVectorStr(stk, str, strlen(str) + 1);
 }
 
+// TODO: refactor
 void ukernel::InitAVectors(ElfImage *elf, int argv_n, char **argv)
 {
 	u32 stk = elf->stack_start;

@@ -268,7 +268,9 @@ void QRegAlloc::Prologue()
 void QRegAlloc::BlockBoundary()
 {
 	for (qir::RegN i = 0; i < n_vregs; ++i) {
-		Spill(&vregs[i]); // skip if fixed
+		if (vregs[i].is_global) { // TODO: locals escape BB
+			Spill(&vregs[i]); // skip if fixed
+		}
 	}
 }
 

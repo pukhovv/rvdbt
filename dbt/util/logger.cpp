@@ -6,13 +6,6 @@
 
 namespace dbt
 {
-
-void __attribute__((noreturn)) Panic(char const *msg)
-{
-	fprintf(stderr, "Panic: %s\n", msg);
-	abort();
-}
-
 inline int xvsnprintf(char *dst, size_t n, char const *fmt, va_list args)
 {
 	int rc = vsnprintf(dst, n, fmt, args);

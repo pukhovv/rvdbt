@@ -1,6 +1,7 @@
 add_subdirectory(third_party)
 
 add_library(dbtstatic STATIC
+	util/common.cpp
 	util/logger.cpp
 
 	arena.cpp
@@ -9,6 +10,7 @@ add_library(dbtstatic STATIC
 	ukernel.cpp
 
 	tcache/tcache.cpp
+	tcache/aot_cache.cpp
 
 	qjit/qcompile.cpp
 	qjit/qir_opt.cpp
@@ -25,7 +27,12 @@ add_library(dbtstatic STATIC
 target_include_directories(dbtstatic PUBLIC "${PROJECT_SOURCE_DIR}")
 
 target_include_directories(dbtstatic SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/third_party/asmjit/src")
+target_link_libraries(dbtstatic PUBLIC asmjit::asmjit ${Boost_LIBRARIES} m md)
 
-add_executable(runelf runelf.cpp)
-target_link_libraries(runelf PUBLIC dbtstatic asmjit::asmjit ${Boost_LIBRARIES})
-target_include_directories(runelf PUBLIC "${PROJECT_SOURCE_DIR}")
+add_executable(elfrun elfrun.cpp)
+target_include_directories(elfrun PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(elfrun PUBLIC dbtstatic)
+
+add_executable(elfaot elfaot.cpp)
+target_include_directories(elfaot PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(elfaot PUBLIC dbtstatic)

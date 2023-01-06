@@ -2,7 +2,7 @@
 #include "dbt/guest/rv32_decode.h"
 #include "dbt/guest/rv32_runtime.h"
 #include "dbt/qjit/qir_printer.h"
-#include "dbt/tcache/tcache.h" // only for cflow
+#include "dbt/tcache/cflow_dump.h"
 
 #include <sstream>
 
@@ -59,14 +59,17 @@ StateInfo const *RV32Translator::GetStateInfo()
 }
 StateInfo const *const RV32Translator::state_info = GetStateInfo();
 
-RV32Translator::RV32Translator(qir::Region *region_, u32 ip) : qb(region_->CreateBlock()), bb_ip(ip) {}
+RV32Translator::RV32Translator(qir::Region *region_, u32 ip, uptr vmem)
+    : qb(region_->CreateBlock()), vmem_base(vmem), bb_ip(ip)
+{
+}
 
-void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
+void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip, uptr vmem)
 {
 	log_qir("RV32Translator: [%08x]", ip);
-	RV32Translator t(region, ip);
+	RV32Translator t(region, ip, vmem);
 	t.insn_ip = ip;
-	tcache::OnTranslate(ip);
+	cflow_dump::RecordEntry(ip);
 
 	u32 num_insns = 0;
 	while (true) {
@@ -78,7 +81,7 @@ void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip)
 		if (num_insns == TB_MAX_INSNS || t.insn_ip == boundary_ip) {
 			t.control = Control::TB_OVF;
 			t.qb.Create_gbr(VOperand::MakeConst(VType::I32, t.insn_ip));
-			tcache::OnTranslateBr(t.bb_ip, t.insn_ip);
+			cflow_dump::RecordGBr(t.bb_ip, t.insn_ip);
 			break;
 		}
 	}
@@ -95,7 +98,7 @@ void RV32Translator::PreSideeff()
 
 void RV32Translator::TranslateInsn()
 {
-	auto *insn_ptr = (u32 *)mmu::g2h(insn_ip);
+	auto *insn_ptr = (u32 *)(vmem_base + insn_ip);
 
 	using decoder = insn::Decoder<RV32Translator>;
 	(this->*decoder::Decode(insn_ptr))(insn_ptr);
@@ -110,10 +113,10 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 	qb.Create_brcc(cc, gprop(i.rs1()), gprop(i.rs2()));
 	qb = Builder(bb_f);
 	qb.Create_gbr(vconst(insn_ip + 4));
-	tcache::OnTranslateBr(bb_ip, insn_ip + 4);
+	cflow_dump::RecordGBr(bb_ip, insn_ip + 4);
 	qb = Builder(bb_t);
 	qb.Create_gbr(vconst(insn_ip + i.imm()));
-	tcache::OnTranslateBr(bb_ip, insn_ip + i.imm());
+	cflow_dump::RecordGBr(bb_ip, insn_ip + i.imm());
 }
 
 inline void RV32Translator::TranslateSetcc(rv32::insn::R i, CondCode cc)
@@ -255,10 +258,12 @@ TRANSLATOR(jal)
 	// TODO: check alignment
 	if (i.rd()) {
 		qb.Create_mov(vgpr(i.rd()), vconst(insn_ip + 4));
+		cflow_dump::RecordGBrLink(bb_ip, insn_ip + i.imm(), insn_ip + 4);
+	} else {
+		cflow_dump::RecordGBr(bb_ip, insn_ip + i.imm());
 	}
 
 	qb.Create_gbr(vconst(insn_ip + i.imm()));
-	tcache::OnTranslateBr(bb_ip, insn_ip + i.imm());
 }
 TRANSLATOR(jalr)
 {
@@ -271,9 +276,12 @@ TRANSLATOR(jalr)
 
 	if (i.rd()) {
 		qb.Create_mov(vgpr(i.rd()), vconst(insn_ip + 4));
+		cflow_dump::RecordGBrind(bb_ip, insn_ip + 4);
+	} else {
+		cflow_dump::RecordGBrind(bb_ip);
 	}
+
 	qb.Create_gbrind(tgt);
-	tcache::OnTranslateBrind(bb_ip);
 }
 TRANSLATOR_Brcc(beq, EQ);
 TRANSLATOR_Brcc(bne, NE);

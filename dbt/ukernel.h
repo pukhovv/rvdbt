@@ -18,6 +18,8 @@ struct ukernel {
 		u32 brk;
 	};
 
+	void SetFSRoot(char const *fsroot_);
+
 	void LoadElf(char const *path, ElfImage *img);
 	void InitAVectors(ElfImage *elf, int argv_n, char **argv);
 	static void InitThread(CPUState *state, ElfImage *elf);
@@ -27,10 +29,13 @@ struct ukernel {
 	static void SyscallDemo(CPUState *state);
 	void SyscallLinux(CPUState *state);
 	int PathResolution(int dirfd, char const *path, char *resolved);
+	int HandleSpecialPath(char const *path, char *resolved);
 
 	u32 do_sys_brk(u32 newbrk);
 
 private:
+	std::string fsroot;
+	int exe_fd{-1};
 	u32 brk{};
 };
 
