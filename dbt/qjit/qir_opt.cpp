@@ -4,6 +4,10 @@
 namespace dbt::qir
 {
 
+/* TODO: Canonicalize imm ops to simplify constraints matching:
+ * 	1. Commutative binops
+ *	2. setcc & opcode inversion
+ */
 struct FolderVisitor : qir::InstVisitor<FolderVisitor, bool> {
 	using Base = qir::InstVisitor<FolderVisitor, void>;
 

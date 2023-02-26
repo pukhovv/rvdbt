@@ -10,6 +10,11 @@
 #include <bit>
 #include <vector>
 
+namespace dbt::qcg
+{
+struct RAOpCt;
+};
+
 namespace dbt::qir
 {
 LOG_STREAM(qir);
@@ -282,6 +287,15 @@ inline Inst::Flags GetOpFlags(Op op)
 	};
 }
 
+struct InstNoOperands : Inst {
+protected:
+	InstNoOperands(Op opcode_) : Inst(opcode_) {}
+
+public:
+	static constexpr u8 n_out = 0;
+	static constexpr u8 n_in = 0;
+};
+
 template <size_t N_OUT, size_t N_IN>
 struct InstWithOperands : Inst {
 protected:
@@ -291,6 +305,9 @@ protected:
 	}
 
 public:
+	static constexpr u8 n_out = N_OUT;
+	static constexpr u8 n_in = N_IN;
+
 	std::array<VOperand, N_OUT> o{};
 	std::array<VOperand, N_IN> i{};
 };
@@ -335,8 +352,8 @@ struct InstBinop : InstWithOperands<1, 2> {
 
 struct Block;
 
-struct InstBr : Inst {
-	InstBr(Block *target_) : Inst(Op::_br), target(target_) {}
+struct InstBr : InstNoOperands {
+	InstBr(Block *target_) : InstNoOperands(Op::_br), target(target_) {}
 
 	Block *target;
 };
@@ -420,8 +437,8 @@ struct InstBrcc : InstWithOperands<0, 2> {
 	CondCode cc;
 };
 
-struct InstGBr : Inst {
-	InstGBr(VOperand tpc_) : Inst(Op::_gbr), tpc(tpc_)
+struct InstGBr : InstNoOperands {
+	InstGBr(VOperand tpc_) : InstNoOperands(Op::_gbr), tpc(tpc_)
 	{
 		assert(tpc_.IsConst());
 	}
@@ -468,6 +485,25 @@ struct InstSetcc : InstWithOperands<1, 2> {
 
 	CondCode cc;
 };
+
+struct OpInfo {
+	OpInfo() = delete;
+	constexpr OpInfo(char const *name_, u8 n_out_, u8 n_in_) : name(name_), n_out(n_out_), n_in(n_in_) {}
+
+	char const *name;
+	const u8 n_out;
+	const u8 n_in;
+
+	qcg::RAOpCt const *ra_ct{};
+	u8 const *ra_order{};
+};
+
+extern OpInfo op_info[to_underlying(qir::Op::Count)];
+
+ALWAYS_INLINE OpInfo const &GetOpInfo(qir::Op op)
+{
+	return op_info[to_underlying(op)];
+}
 
 struct Block;
 struct Region;

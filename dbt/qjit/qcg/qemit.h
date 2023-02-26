@@ -7,8 +7,6 @@
 
 namespace dbt::qcg
 {
-LOG_STREAM(qcg);
-
 struct QEmit {
 	QEmit(qir::Region *region);
 
@@ -31,14 +29,14 @@ struct QEmit {
 	QIR_OPS_LIST(OP)
 #undef OP
 
-#define DEF_GPR(name, id) static constexpr auto R_##name = asmjit::x86::gpq(ArchTraits::name);
-	FIX_GPR_LIST(DEF_GPR)
-#undef DEF_GPR
+	static constexpr auto R_STATE = asmjit::x86::gpq(ArchTraits::STATE);
+	static constexpr auto R_MEMBASE = asmjit::x86::gpq(ArchTraits::MEMBASE);
+	static constexpr auto R_SP = asmjit::x86::gpq(ArchTraits::SP);
+	static constexpr auto R_TMP1 = asmjit::x86::gpq(ArchTraits::TMP1);
+
 private:
 	template <asmjit::x86::Inst::Id Op>
-	ALWAYS_INLINE void EmitInstBinopCommutative(qir::InstBinop *ins);
-	template <asmjit::x86::Inst::Id Op>
-	ALWAYS_INLINE void EmitInstBinopNonCommutative(qir::InstBinop *ins);
+	ALWAYS_INLINE void EmitInstBinop(qir::InstBinop *ins);
 
 	struct JitErrorHandler : asmjit::ErrorHandler {
 		virtual void handleError(asmjit::Error err, const char *message,

@@ -126,6 +126,24 @@ inline constexpr size_t operator""_GB(unsigned long long n)
 	return n << 30;
 }
 
+#define DEFINE_ENUM_CLASS_FLAGOPS(cls)                                                                       \
+	constexpr inline cls operator|(cls lhs, cls rhs)                                                     \
+	{                                                                                                    \
+		return static_cast<cls>(to_underlying(lhs) | to_underlying(rhs));                            \
+	}                                                                                                    \
+	constexpr inline cls operator&(cls lhs, cls rhs)                                                     \
+	{                                                                                                    \
+		return static_cast<cls>(to_underlying(lhs) & to_underlying(rhs));                            \
+	}                                                                                                    \
+	constexpr inline cls operator^(cls lhs, cls rhs)                                                     \
+	{                                                                                                    \
+		return static_cast<cls>(to_underlying(lhs) ^ to_underlying(rhs));                            \
+	}                                                                                                    \
+	constexpr inline cls operator~(cls val)                                                              \
+	{                                                                                                    \
+		return static_cast<cls>(~to_underlying(val));                                                \
+	}
+
 namespace dbt
 {
 

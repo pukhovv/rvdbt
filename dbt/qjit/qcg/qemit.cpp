@@ -320,21 +320,16 @@ void QEmit::Emit_vmstore(qir::InstVMStore *ins)
 void QEmit::Emit_setcc(qir::InstSetcc *ins)
 {
 	auto prd = make_gpr(ins->o[0]);
-
-	// constfolded
 	auto vs1 = &ins->i[0];
 	auto vs2 = &ins->i[1];
 	auto cc = ins->cc;
-	if (vs1->IsConst()) {
-		std::swap(vs1, vs2);
-		cc = qir::SwapCC(cc);
-	}
 
 	bool dst_aliased = vs1->GetPGPR() == prd.id() || (vs2->IsPGPR() && vs2->GetPGPR() == prd.id());
 
 	if (!dst_aliased) {
 		j.xor_(prd, prd);
 	}
+
 	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(*vs1), make_operand(*vs2));
 	auto setcc = asmjit::x86::Inst::setccFromCond(make_cc(cc));
 	j.emit(setcc, prd.r8());
@@ -358,137 +353,60 @@ void QEmit::Emit_mov(qir::InstUnop *ins)
 }
 
 template <asmjit::x86::Inst::Id Op>
-ALWAYS_INLINE void QEmit::EmitInstBinopCommutative(qir::InstBinop *ins)
+ALWAYS_INLINE void QEmit::EmitInstBinop(qir::InstBinop *ins)
 {
-	// constfolded
-	// canonicalize
-	if (ins->i[0].IsConst()) {
-		std::swap(ins->i[0], ins->i[1]);
-	}
-
 	auto &vrd = ins->o[0];
-	auto vs1 = ins->i[0];
+	[[maybe_unused]] auto vs1 = ins->i[0];
 	auto vs2 = ins->i[1];
-	auto prd = make_gpr(vrd);
 
-	// rd rx x
-	auto prs1 = make_gpr(vs1);
-
-	if (vrd.GetPGPR() == vs1.GetPGPR()) { // rd rd x
-		j.emit(Op, prd, make_operand(vs2));
-		return;
-	}
-	// rd r1 x
-	if (vs2.IsConst()) { // rd r1 c
-		j.emit(asmjit::x86::Inst::kIdMov, prd, prs1);
-		j.emit(Op, prd, make_imm(vs2));
-		return;
-	}
-	// rd r1 rx
-	auto prs2 = make_gpr(vs2);
-	if (vrd.GetPGPR() == vs2.GetPGPR()) { // rd r1 rd
-		j.emit(Op, prd, prs1);
-		return;
-	}
-	// rd r1 r2
-	j.emit(asmjit::x86::Inst::kIdMov, prd, prs1);
-	j.emit(Op, prd, prs2);
-}
-
-template <asmjit::x86::Inst::Id Op>
-ALWAYS_INLINE void QEmit::EmitInstBinopNonCommutative(qir::InstBinop *ins)
-{
-	// constfolded
-	auto &vrd = ins->o[0];
-	auto vs1 = ins->i[0];
-	auto vs2 = ins->i[1];
-	auto prd = make_gpr(vrd);
-	auto ptmp = asmjit::x86::Gp(prd, R_TMP1.id());
-
-	if (vs1.IsConst()) { // rd c rx
-		auto cs1 = make_imm(vs1);
-		auto prs2 = make_gpr(vs2);
-		if (vrd.GetPGPR() == vs2.GetPGPR()) { // rd c rd
-			j.mov(ptmp, cs1);
-			j.emit(Op, ptmp, prd);
-			j.mov(prd, ptmp);
-			return;
-		}
-		j.mov(prd, cs1);
-		j.emit(Op, prd, prs2);
-		return;
-	}
-	// rd rx x
-	auto prs1 = make_gpr(vs1);
-
-	// rd rx x
-	if (vrd.GetPGPR() == vs1.GetPGPR()) { // rd rd x
-		j.emit(Op, prd, make_operand(vs2));
-		return;
-	}
-	// rd r1 x
-	if (vs2.IsConst()) { // rd r1 c
-		j.emit(asmjit::x86::Inst::kIdMov, prd, prs1);
-		j.emit(Op, prd, make_imm(vs2));
-		return;
-	}
-	// rd r1 rx
-	auto prs2 = make_gpr(vs2);
-	if (vrd.GetPGPR() == vs2.GetPGPR()) { // rd r1 rd
-		j.mov(ptmp, prs1);	      // TODO: liveness: may kill if r1 is dead
-		j.emit(Op, ptmp, prd);
-		j.mov(prd, ptmp);
-		return;
-	}
-	// rd r1 r2
-	j.emit(asmjit::x86::Inst::kIdMov, prd, prs1);
-	j.emit(Op, prd, prs2);
+	assert(vrd.GetPGPR() == vs1.GetPGPR());
+	j.emit(Op, make_gpr(vrd), make_operand(vs2));
 }
 
 void QEmit::Emit_add(qir::InstBinop *ins)
 {
-	EmitInstBinopCommutative<asmjit::x86::Inst::kIdAdd>(ins);
+	EmitInstBinop<asmjit::x86::Inst::kIdAdd>(ins);
 }
 
 void QEmit::Emit_sub(qir::InstBinop *ins)
 {
-	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdSub>(ins);
+	EmitInstBinop<asmjit::x86::Inst::kIdSub>(ins);
 }
 
 void QEmit::Emit_and(qir::InstBinop *ins)
 {
-	EmitInstBinopCommutative<asmjit::x86::Inst::kIdAnd>(ins);
+	EmitInstBinop<asmjit::x86::Inst::kIdAnd>(ins);
 }
 
 void QEmit::Emit_or(qir::InstBinop *ins)
 {
-	EmitInstBinopCommutative<asmjit::x86::Inst::kIdOr>(ins);
+	EmitInstBinop<asmjit::x86::Inst::kIdOr>(ins);
 }
 
 void QEmit::Emit_xor(qir::InstBinop *ins)
 {
-	EmitInstBinopCommutative<asmjit::x86::Inst::kIdXor>(ins);
+	EmitInstBinop<asmjit::x86::Inst::kIdXor>(ins);
 }
 
 void QEmit::Emit_sra(qir::InstBinop *ins)
 {
 	[[maybe_unused]] auto vs2 = ins->i[1];
 	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
-	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdSar>(ins);
+	EmitInstBinop<asmjit::x86::Inst::kIdSar>(ins);
 }
 
 void QEmit::Emit_srl(qir::InstBinop *ins)
 {
 	[[maybe_unused]] auto vs2 = ins->i[1];
 	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
-	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdShr>(ins);
+	EmitInstBinop<asmjit::x86::Inst::kIdShr>(ins);
 }
 
 void QEmit::Emit_sll(qir::InstBinop *ins)
 {
 	[[maybe_unused]] auto vs2 = ins->i[1];
 	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
-	EmitInstBinopNonCommutative<asmjit::x86::Inst::kIdShl>(ins);
+	EmitInstBinop<asmjit::x86::Inst::kIdShl>(ins);
 }
 
 } // namespace dbt::qcg

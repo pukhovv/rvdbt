@@ -19,6 +19,15 @@ private:
 
 TBlock::TCode Generate(qir::Region *r, u32 ip)
 {
+	ArchTraits::init();
+
+	log_qcg("Select instructions");
+	QSelPass::run(r);
+	if (log_qcg.enabled()) {
+		auto str = qir::PrinterPass::run(r);
+		log_qcg.write(str.c_str());
+	}
+
 	log_qcg("Allocate regs");
 	QRegAllocPass::run(r);
 	if (log_qcg.enabled()) {

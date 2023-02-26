@@ -378,7 +378,8 @@ void QRegAlloc::AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand 
 			dst->p = AllocPReg(~it_avoid, it_avoid);
 			p2v[dst->p] = dst;
 			dst->loc = RTrack::Location::REG;
-		} else if (it_avoid.Test(dst->p)) {
+			// } else if (it_avoid.Test(dst->p)) {
+		} else if (qir::RegN rreg = require[opr_idx]; rreg != qir::RegNBad && rreg != dst->p) {
 			p2v[dst->p] = nullptr; // value is killed, no need to emit move
 			dst->p = AllocPReg(~it_avoid, it_avoid);
 			p2v[dst->p] = dst;

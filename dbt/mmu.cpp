@@ -25,14 +25,14 @@ u8 *mmu::base{nullptr};
 
 void mmu::Init()
 {
-#ifndef CONFIG_ZERO_MMU_BASE
-	// Allocate and immediately deallocate region, result is g2h(0)
-	base = (u8 *)::mmap(NULL, ASPACE_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (base == MAP_FAILED || munmap(base + MIN_MMAP_ADDR, ASPACE_SIZE - MIN_MMAP_ADDR)) {
-		Panic("mmu::Init failed");
+	if constexpr (!config::zero_membase) {
+		// Allocate and immediately deallocate region, result is g2h(0)
+		base = (u8 *)::mmap(NULL, ASPACE_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+		if (base == MAP_FAILED || munmap(base + MIN_MMAP_ADDR, ASPACE_SIZE - MIN_MMAP_ADDR)) {
+			Panic("mmu::Init failed");
+		}
+		log_mmu("mmu::base initialized at %p", base);
 	}
-	log_mmu("mmu::base initialized at %p", base);
-#endif
 }
 
 void mmu::Destroy()

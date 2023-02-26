@@ -13,12 +13,15 @@ add_library(dbtstatic STATIC
 	tcache/aot_cache.cpp
 
 	qjit/qcompile.cpp
+	qjit/qir.cpp
 	qjit/qir_opt.cpp
 	qjit/qir_printer.cpp
+	qjit/qcg/arch_traits.cpp
 	qjit/qcg/jitabi.cpp
 	qjit/qcg/qcg.cpp
 	qjit/qcg/qemit.cpp
 	qjit/qcg/qra.cpp
+	qjit/qcg/qsel.cpp
 
 	guest/rv32_insn.cpp
 	guest/rv32_interp.cpp
