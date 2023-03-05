@@ -163,7 +163,7 @@ void QEmit::Emit_hcall(qir::InstHcall *ins)
 {
 	// TODO: proper args
 	j.mov(asmjit::x86::rdi, R_STATE);
-	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i[0])); // TODO: reloc
+	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i(0))); // TODO: reloc
 	j.call(ins->stub);
 }
 
@@ -183,16 +183,17 @@ void QEmit::Emit_brcc(qir::InstBrcc *ins)
 	auto &bb_f = **++sit;
 	auto &bb_ff = *++bb->getIter();
 
+	auto &vs0 = ins->i(0);
+	auto &vs1 = ins->i(1);
+
 	// constfolded
-	if (ins->i[0].IsConst()) {
-		std::swap(ins->i[0], ins->i[1]);
+	if (vs0.IsConst()) {
+		std::swap(vs0, vs1);
 		ins->cc = qir::SwapCC(ins->cc);
 	}
-	auto vs1 = ins->i[0];
-	auto vs2 = ins->i[1];
 	auto cc = ins->cc;
 
-	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(vs1), make_operand(vs2));
+	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(vs0), make_operand(vs1));
 	auto jcc = asmjit::x86::Inst::jccFromCond(make_cc(cc));
 	j.emit(jcc, labels[bb_t.GetId()]);
 
@@ -212,7 +213,7 @@ void QEmit::Emit_gbr(qir::InstGBr *ins)
 
 void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 {
-	auto ptgt = make_gpr(ins->i[0]);
+	auto ptgt = make_gpr(ins->i(0));
 	{ // TODO: force si alloc
 		auto tmp_ptgt = asmjit::x86::gpd(asmjit::x86::Gp::kIdSi);
 		j.mov(tmp_ptgt, ptgt);
@@ -270,8 +271,8 @@ static inline asmjit::x86::Mem make_vmem(qir::VOperand vbase)
 
 void QEmit::Emit_vmload(qir::InstVMLoad *ins)
 {
-	auto &vrd = ins->o[0];
-	auto &vbase = ins->i[0];
+	auto &vrd = ins->o(0);
+	auto &vbase = ins->i(0);
 	auto sgn = ins->sgn;
 
 	auto prd = make_gpr(vrd);
@@ -306,8 +307,8 @@ void QEmit::Emit_vmload(qir::InstVMLoad *ins)
 
 void QEmit::Emit_vmstore(qir::InstVMStore *ins)
 {
-	auto &vbase = ins->i[0];
-	auto &vdata = ins->i[1];
+	auto &vbase = ins->i(0);
+	auto &vdata = ins->i(1);
 
 	auto pdata = make_operand(vdata);
 	auto mem = make_vmem(vbase);
@@ -319,18 +320,18 @@ void QEmit::Emit_vmstore(qir::InstVMStore *ins)
 
 void QEmit::Emit_setcc(qir::InstSetcc *ins)
 {
-	auto prd = make_gpr(ins->o[0]);
-	auto vs1 = &ins->i[0];
-	auto vs2 = &ins->i[1];
+	auto prd = make_gpr(ins->o(0));
+	auto vs0 = ins->i(0);
+	auto vs1 = ins->i(1);
 	auto cc = ins->cc;
 
-	bool dst_aliased = vs1->GetPGPR() == prd.id() || (vs2->IsPGPR() && vs2->GetPGPR() == prd.id());
+	bool dst_aliased = vs0.GetPGPR() == prd.id() || (vs1.IsPGPR() && vs1.GetPGPR() == prd.id());
 
 	if (!dst_aliased) {
 		j.xor_(prd, prd);
 	}
 
-	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(*vs1), make_operand(*vs2));
+	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(vs0), make_operand(vs1));
 	auto setcc = asmjit::x86::Inst::setccFromCond(make_cc(cc));
 	j.emit(setcc, prd.r8());
 
@@ -341,26 +342,26 @@ void QEmit::Emit_setcc(qir::InstSetcc *ins)
 
 void QEmit::Emit_mov(qir::InstUnop *ins)
 {
-	auto vrd = ins->o[0];
-	auto vs1 = ins->i[0];
+	auto vrd = ins->o(0);
+	auto vs0 = ins->i(0);
 	// TODO: slowed code by ~3%, try again after bb merging
-	if (unlikely(false && vs1.IsConst() && vs1.GetConst() == 0 && vrd.IsPGPR())) {
+	if (unlikely(false && vs0.IsConst() && vs0.GetConst() == 0 && vrd.IsPGPR())) {
 		auto prd = make_gpr(vrd);
 		j.emit(asmjit::x86::Inst::kIdXor, prd, prd);
 		return;
 	}
-	j.emit(asmjit::x86::Inst::kIdMov, make_operand(vrd), make_operand(vs1));
+	j.emit(asmjit::x86::Inst::kIdMov, make_operand(vrd), make_operand(vs0));
 }
 
 template <asmjit::x86::Inst::Id Op>
 ALWAYS_INLINE void QEmit::EmitInstBinop(qir::InstBinop *ins)
 {
-	auto &vrd = ins->o[0];
-	[[maybe_unused]] auto vs1 = ins->i[0];
-	auto vs2 = ins->i[1];
+	auto &vrd = ins->o(0);
+	[[maybe_unused]] auto vs0 = ins->i(0);
+	auto vs1 = ins->i(1);
 
-	assert(vrd.GetPGPR() == vs1.GetPGPR());
-	j.emit(Op, make_gpr(vrd), make_operand(vs2));
+	assert(vrd.GetPGPR() == vs0.GetPGPR());
+	j.emit(Op, make_gpr(vrd), make_operand(vs1));
 }
 
 void QEmit::Emit_add(qir::InstBinop *ins)
@@ -390,22 +391,22 @@ void QEmit::Emit_xor(qir::InstBinop *ins)
 
 void QEmit::Emit_sra(qir::InstBinop *ins)
 {
-	[[maybe_unused]] auto vs2 = ins->i[1];
-	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
+	[[maybe_unused]] auto vs1 = ins->i(1);
+	assert(vs1.IsConst() || vs1.GetPGPR() == asmjit::x86::Gp::kIdCx);
 	EmitInstBinop<asmjit::x86::Inst::kIdSar>(ins);
 }
 
 void QEmit::Emit_srl(qir::InstBinop *ins)
 {
-	[[maybe_unused]] auto vs2 = ins->i[1];
-	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
+	[[maybe_unused]] auto vs1 = ins->i(1);
+	assert(vs1.IsConst() || vs1.GetPGPR() == asmjit::x86::Gp::kIdCx);
 	EmitInstBinop<asmjit::x86::Inst::kIdShr>(ins);
 }
 
 void QEmit::Emit_sll(qir::InstBinop *ins)
 {
-	[[maybe_unused]] auto vs2 = ins->i[1];
-	assert(vs2.IsConst() || vs2.GetPGPR() == asmjit::x86::Gp::kIdCx);
+	[[maybe_unused]] auto vs1 = ins->i(1);
+	assert(vs1.IsConst() || vs1.GetPGPR() == asmjit::x86::Gp::kIdCx);
 	EmitInstBinop<asmjit::x86::Inst::kIdShl>(ins);
 }
 

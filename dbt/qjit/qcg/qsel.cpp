@@ -9,21 +9,18 @@ struct QSel {
 
 	void Run();
 
-	template <typename DstA, typename SrcA>
-	void SelectOperands(qir::Inst *ins, DstA &&dst, SrcA &&src)
-	{
-		SelectOperands(ins, dst.data(), dst.size(), src.data(), src.size());
-	}
-	void SelectOperands(qir::Inst *ins, qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n);
+	void SelectOperands(qir::Inst *ins, qir::VOperandSpan dstl, qir::VOperandSpan srcl);
 
 	qir::Region *region{};
 	qir::Builder qb{nullptr};
 };
 
-void QSel::SelectOperands(qir::Inst *ins, qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n)
+void QSel::SelectOperands(qir::Inst *ins, qir::VOperandSpan dstl, qir::VOperandSpan srcl)
 {
 	auto *op_ct = GetOpInfo(ins->GetOpcode()).ra_ct;
 	assert(op_ct);
+	auto src_n = srcl.size();
+	auto dst_n = dstl.size();
 	// satisfy aliases
 	for (u8 i = 0; i < src_n; ++i) {
 		auto &ct = op_ct[dst_n + i];
@@ -82,7 +79,7 @@ struct QSelVisitor : qir::InstVisitor<QSelVisitor, void> {
 	template <size_t N_OUT, size_t N_IN>
 	void SelectOperands(qir::InstWithOperands<N_OUT, N_IN> *ins)
 	{
-		sel->SelectOperands(ins, ins->o, ins->i);
+		sel->SelectOperands(ins, ins->outputs(), ins->inputs());
 	}
 
 public:

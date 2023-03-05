@@ -31,18 +31,20 @@ struct FolderVisitor : qir::InstVisitor<FolderVisitor, bool> {
 
 	bool visit_add(InstBinop *ins)
 	{
-		auto &i = ins->i;
-		if (i[0].IsConst()) {
-			if (i[1].IsConst()) {
-				u32 val = i[0].GetConst() + i[1].GetConst();
+		auto &vs0 = ins->i(0);
+		auto &vs1 = ins->i(1);
+		auto &vd = ins->o(0);
+		if (vs0.IsConst()) {
+			if (vs1.IsConst()) {
+				u32 val = vs0.GetConst() + vs1.GetConst();
 				auto opr = VOperand::MakeConst(VType::I32, val);
-				qb.Create_mov(ins->o[0], opr);
+				qb.Create_mov(vd, opr);
 				return true;
 			}
-			std::swap(ins->i[0], ins->i[1]);
+			std::swap(vs0, vs1);
 		}
-		if (i[1].IsConst() && i[1].GetConst() == 0) {
-			qb.Create_mov(ins->o[0], ins->i[0]);
+		if (vs1.IsConst() && vs1.GetConst() == 0) {
+			qb.Create_mov(vd, vs0);
 			return true;
 		}
 		return false;

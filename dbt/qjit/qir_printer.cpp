@@ -95,10 +95,13 @@ private:
 	template <size_t N_OUT, size_t N_IN>
 	void printOperands(InstWithOperands<N_OUT, N_IN> *ins)
 	{
-		for (auto &o : ins->o)
-			print(o);
-		for (auto &i : ins->i)
-			print(i);
+		// TODO: iterators
+		auto out = ins->outputs();
+		for (u8 idx = 0; idx < out.size(); ++idx)
+			print(out[idx]);
+		auto in = ins->outputs();
+		for (u8 idx = 0; idx < in.size(); ++idx)
+			print(in[idx]);
 	}
 
 	Region *region;

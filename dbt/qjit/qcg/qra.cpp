@@ -57,21 +57,15 @@ struct QRegAlloc {
 	void BlockBoundary();
 	void RegionBoundary();
 
-	template <typename DstA, typename SrcA>
-	void AllocOp(DstA &&dst, SrcA &&src, bool unsafe = false)
-	{
-		AllocOp(dst.data(), dst.size(), src.data(), src.size(), unsafe);
-	}
-	void AllocOp(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n, bool unsafe = false);
-	void AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n,
-				RegMask require_set, qir::RegN *require, bool unsafe = false);
+	void AllocOp(qir::VOperandSpan dstl, qir::VOperandSpan srcl, bool unsafe = false);
+	void AllocOpConstrained(qir::VOperandSpan dstl, qir::VOperandSpan srcl, RegMask require_set,
+				qir::RegN *require, bool unsafe = false);
 	void CallOp(bool use_globals = true);
 
 	static constexpr u16 frame_size{qcg::stub_frame_size};
 
 	qir::Region *region{};
 	qir::VRegsInfo const *vregs_info{};
-	// QEmit *qe{};
 	qir::Builder qb{nullptr};
 
 	RegMask fixed{ArchTraits::GPR_FIXED};
@@ -286,11 +280,11 @@ void QRegAlloc::RegionBoundary()
 	}
 }
 
-void QRegAlloc::AllocOp(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n, bool unsafe)
+void QRegAlloc::AllocOp(qir::VOperandSpan dstl, qir::VOperandSpan srcl, bool unsafe)
 {
 	auto avoid = fixed;
 
-	for (u8 i = 0; i < src_n; ++i) {
+	for (u8 i = 0; i < srcl.size(); ++i) {
 		auto opr = &srcl[i];
 		if (!opr->IsVGPR()) {
 			continue;
@@ -310,7 +304,7 @@ void QRegAlloc::AllocOp(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 s
 		}
 	}
 
-	for (u8 i = 0; i < dst_n; ++i) {
+	for (u8 i = 0; i < dstl.size(); ++i) {
 		auto opr = &dstl[i];
 		if (!opr->IsVGPR()) {
 			continue;
@@ -327,8 +321,8 @@ void QRegAlloc::AllocOp(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 s
 	}
 }
 
-void QRegAlloc::AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand *srcl, u8 src_n,
-				   RegMask require_set, qir::RegN *require, bool unsafe)
+void QRegAlloc::AllocOpConstrained(qir::VOperandSpan dstl, qir::VOperandSpan srcl, RegMask require_set,
+				   qir::RegN *require, bool unsafe)
 {
 	auto avoid = fixed | require_set;
 	u8 opr_idx;
@@ -344,8 +338,8 @@ void QRegAlloc::AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand 
 		return opr_avoid;
 	};
 
-	opr_idx = dst_n;
-	for (u8 i = 0; i < src_n; ++i, ++opr_idx) {
+	opr_idx = dstl.size();
+	for (u8 i = 0; i < srcl.size(); ++i, ++opr_idx) {
 		auto opr = &srcl[i];
 		if (!opr->IsVGPR()) {
 			continue;
@@ -367,7 +361,7 @@ void QRegAlloc::AllocOpConstrained(qir::VOperand *dstl, u8 dst_n, qir::VOperand 
 	}
 
 	opr_idx = 0;
-	for (u8 i = 0; i < dst_n; ++i, ++opr_idx) {
+	for (u8 i = 0; i < dstl.size(); ++i, ++opr_idx) {
 		auto opr = &dstl[i];
 		if (!opr->IsVGPR()) {
 			continue;
@@ -416,7 +410,7 @@ struct QRegAllocVisitor : qir::InstVisitor<QRegAllocVisitor, void> {
 	void AllocOperands(qir::InstWithOperands<N_OUT, N_IN> *ins)
 	{
 		bool sideeff = ins->GetFlags() & qir::Inst::Flags::SIDEEFF;
-		ra->AllocOp(ins->o, ins->i, sideeff);
+		ra->AllocOp(ins->outputs(), ins->inputs(), sideeff);
 	}
 
 	template <size_t N_OUT, size_t N_IN>
@@ -424,8 +418,7 @@ struct QRegAllocVisitor : qir::InstVisitor<QRegAllocVisitor, void> {
 				      std::array<qir::RegN, N_OUT + N_IN> require)
 	{
 		bool sideeff = ins->GetFlags() & qir::Inst::Flags::SIDEEFF;
-		ra->AllocOpConstrained(ins->o.data(), ins->o.size(), ins->i.data(), ins->i.size(),
-				       require_set, require.data(), sideeff);
+		ra->AllocOpConstrained(ins->outputs(), ins->inputs(), require_set, require.data(), sideeff);
 	}
 
 public:

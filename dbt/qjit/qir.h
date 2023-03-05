@@ -45,6 +45,25 @@ enum class Op : u8 {
 	    Count,
 };
 
+struct OpInfo {
+	OpInfo() = delete;
+	constexpr OpInfo(char const *name_, u8 n_out_, u8 n_in_) : name(name_), n_out(n_out_), n_in(n_in_) {}
+
+	char const *name;
+	const u8 n_out;
+	const u8 n_in;
+
+	qcg::RAOpCt const *ra_ct{};
+	u8 const *ra_order{};
+};
+
+extern OpInfo op_info[to_underlying(qir::Op::Count)];
+
+ALWAYS_INLINE OpInfo const &GetOpInfo(qir::Op op)
+{
+	return op_info[to_underlying(op)];
+}
+
 enum class VType : u8 {
 	UNDEF,
 	I8,
@@ -228,7 +247,59 @@ private:
 	using f_slot_is_global = f_slot_offs::next<bool, 1>;
 };
 
-struct Inst : IListNode<Inst> {
+struct VOperandSpan {
+	VOperandSpan(VOperand *head_, u8 size_) : head(head_), len(size_) {}
+
+	inline VOperand &operator[](u8 idx)
+	{
+		assert(idx < len);
+		return head[-idx];
+	}
+
+	inline u8 size() const
+	{
+		return len;
+	}
+
+private:
+	VOperand *head;
+	u8 len;
+};
+
+template <typename Derived>
+struct InstOperandAccessMixin {
+	inline VOperand &o(u8 idx)
+	{
+		assert(idx < d()->OutputCount());
+		return d()->GetOperand(idx);
+	}
+
+	inline VOperand &i(u8 idx)
+	{
+		assert(idx < d()->InputCount());
+		return d()->GetOperand(idx + d()->OutputCount());
+	}
+
+	inline VOperandSpan outputs()
+	{
+		return VOperandSpan(&d()->GetOperand(0), d()->OutputCount());
+	}
+
+	inline VOperandSpan inputs()
+	{
+		return VOperandSpan(&d()->GetOperand(d()->OutputCount()), d()->InputCount());
+	}
+
+private:
+	inline Derived *d()
+	{
+		return static_cast<Derived *>(this);
+	}
+};
+
+struct alignas(alignof(VOperand)) Inst : IListNode<Inst>, InstOperandAccessMixin<Inst> {
+	friend struct InstOperandAccessMixin<Inst>;
+
 	enum Flags { // TODO: enum class
 		SIDEEFF = 1 << 0,
 		REXIT = 1 << 1,
@@ -259,8 +330,23 @@ struct Inst : IListNode<Inst> {
 		flags = flags_;
 	}
 
+	inline auto OutputCount() const
+	{
+		return GetOpInfo(GetOpcode()).n_out;
+	}
+
+	inline auto InputCount() const
+	{
+		return GetOpInfo(GetOpcode()).n_in;
+	}
+
 protected:
 	inline Inst(Op opcode_) : opcode(opcode_) {}
+
+	inline VOperand &GetOperand(u8 idx)
+	{
+		return reinterpret_cast<VOperand *>(this)[-1 - idx];
+	}
 
 private:
 	NO_COPY(Inst)
@@ -292,24 +378,53 @@ protected:
 	InstNoOperands(Op opcode_) : Inst(opcode_) {}
 
 public:
+	constexpr static inline auto OutputCount()
+	{
+		return 0;
+	}
+
+	constexpr static inline auto InputCount()
+	{
+		return 0;
+	}
+
 	static constexpr u8 n_out = 0;
 	static constexpr u8 n_in = 0;
 };
 
 template <size_t N_OUT, size_t N_IN>
-struct InstWithOperands : Inst {
+struct InstWithOperands : Inst, InstOperandAccessMixin<InstWithOperands<N_OUT, N_IN>> {
+	friend struct InstOperandAccessMixin<InstWithOperands<N_OUT, N_IN>>;
+
 protected:
 	InstWithOperands(Op opcode_, std::array<VOperand, N_OUT> &&o_, std::array<VOperand, N_IN> &&i_)
-	    : Inst(opcode_), o{o_}, i{i_}
+	    : Inst(opcode_)
 	{
+		// TODO: iterators
+		for (u8 k = 0; k < N_OUT; ++k)
+			GetOperand(k) = o_[k];
+		for (u8 k = 0; k < N_IN; ++k)
+			GetOperand(N_OUT + k) = i_[k];
 	}
 
 public:
+	constexpr static inline auto OutputCount()
+	{
+		return N_OUT;
+	}
+
+	constexpr static inline auto InputCount()
+	{
+		return N_IN;
+	}
+
+	using InstOperandAccessMixin::i;
+	using InstOperandAccessMixin::inputs;
+	using InstOperandAccessMixin::o;
+	using InstOperandAccessMixin::outputs;
+
 	static constexpr u8 n_out = N_OUT;
 	static constexpr u8 n_in = N_IN;
-
-	std::array<VOperand, N_OUT> o{};
-	std::array<VOperand, N_IN> i{};
 };
 
 /* Common classes */
@@ -486,25 +601,6 @@ struct InstSetcc : InstWithOperands<1, 2> {
 	CondCode cc;
 };
 
-struct OpInfo {
-	OpInfo() = delete;
-	constexpr OpInfo(char const *name_, u8 n_out_, u8 n_in_) : name(name_), n_out(n_out_), n_in(n_in_) {}
-
-	char const *name;
-	const u8 n_out;
-	const u8 n_in;
-
-	qcg::RAOpCt const *ra_ct{};
-	u8 const *ra_order{};
-};
-
-extern OpInfo op_info[to_underlying(qir::Op::Count)];
-
-ALWAYS_INLINE OpInfo const &GetOpInfo(qir::Op op)
-{
-	return op_info[to_underlying(op)];
-}
-
 struct Block;
 struct Region;
 
@@ -645,7 +741,12 @@ struct Region {
 	template <typename T, typename... Args>
 	requires std::is_base_of_v<Inst, T> T *_Create(Args &&...args)
 	{
-		auto res = CreateInArena<T>(std::forward<Args>(args)...);
+		// TODO: move to node itself
+		size_t n_ops = T::OutputCount() + T::InputCount();
+		size_t ops_size = sizeof(VOperand) * n_ops;
+		auto *mem = arena->Allocate(ops_size + sizeof(T), alignof(VOperand));
+		assert(mem);
+		auto res = new ((u8 *)mem + ops_size) T(std::forward<Args>(args)...);
 		res->SetId(inst_id_counter++);
 		return res;
 	}
