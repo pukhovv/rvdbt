@@ -97,7 +97,10 @@ class Benchmark:
             res = self.verify(exec, exec_ref)
             res = (res, "ok")[res is None]
         res += ":" + str(exec.rc)
-        return [res, exec.time]
+        report = [res, exec.time]
+        if exec_ref is not None:
+            report += [f"{exec_ref.time / exec.time:.3f}"]
+        return report
 
 
 # mibench.automotive

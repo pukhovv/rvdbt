@@ -57,9 +57,7 @@ struct QRegAlloc {
 	void BlockBoundary();
 	void RegionBoundary();
 
-	void AllocOp(qir::VOperandSpan dstl, qir::VOperandSpan srcl, bool unsafe = false);
-	void AllocOpConstrained(qir::VOperandSpan dstl, qir::VOperandSpan srcl, RegMask require_set,
-				qir::RegN *require, bool unsafe = false);
+	void AllocOp(qir::Inst *ins);
 	void CallOp(bool use_globals = true);
 
 	static constexpr u16 frame_size{qcg::stub_frame_size};
@@ -201,19 +199,8 @@ void QRegAlloc::Fill(RTrack *v, RegMask desire, RegMask avoid)
 		v->spill_synced = true;
 		EmitFill(v);
 		return;
-	case RTrack::Location::REG: {
-		if (likely(!avoid.Test(v->p))) {
-			return;
-		}
-		// special handling for constrained alloc
-		auto opr_old = qir::VOperand::MakePGPR(v->type, v->p);
-		p2v[v->p] = nullptr;
-		v->p = AllocPReg(desire, avoid);
-		p2v[v->p] = v;
-		auto opr_new = qir::VOperand::MakePGPR(v->type, v->p);
-		EmitMov(opr_new, opr_old);
+	case RTrack::Location::REG:
 		return;
-	}
 	default:
 		Panic();
 	}
@@ -280,22 +267,46 @@ void QRegAlloc::RegionBoundary()
 	}
 }
 
-void QRegAlloc::AllocOp(qir::VOperandSpan dstl, qir::VOperandSpan srcl, bool unsafe)
+void QRegAlloc::AllocOp(qir::Inst *ins)
 {
+	auto srcl = ins->inputs();
+	auto dstl = ins->outputs();
+	auto dst_n = dstl.size();
+
+	auto &op_info = GetOpInfo(ins->GetOpcode());
+	auto *op_ct = op_info.ra_ct;
+	auto *op_order = op_info.ra_order;
+	assert(op_ct);
+
 	auto avoid = fixed;
 
-	for (u8 i = 0; i < srcl.size(); ++i) {
+	for (u8 i_ao = 0; i_ao < srcl.size(); ++i_ao) {
+		u8 i = op_order[dst_n + i_ao];
+		auto ct = op_ct[dst_n + i];
+
 		auto opr = &srcl[i];
 		if (!opr->IsVGPR()) {
 			continue;
 		}
 		auto src = &vregs[opr->GetVGPR()];
-		Fill(src, PREGS_POOL, avoid);
-		avoid.Set(src->p); // TODO: liveness: do not add if last use
-		*opr = qir::VOperand::MakePGPR(opr->GetType(), src->p);
+		Fill(src, ct.cr, avoid);
+		auto p = src->p;
+		if (!ct.cr.Test(p)) {
+			p = AllocPReg(ct.cr, avoid);
+			qb.Create_mov(qir::VOperand::MakePGPR(src->type, p),
+				      qir::VOperand::MakePGPR(src->type, src->p));
+			if constexpr (false) { // TODO: different dep. distance, check perf
+				p2v[src->p] = nullptr;
+				p2v[p] = src;
+				src->p = p;
+			}
+		}
+
+		avoid.Set(p);
+		*opr = qir::VOperand::MakePGPR(opr->GetType(), p);
 	}
 
-	if (unsafe) {
+	if (ins->GetFlags() & qir::Inst::Flags::SIDEEFF) {
 		for (int i = 0; i < n_vregs; ++i) {
 			auto *v = &vregs[i];
 			if (v->is_global) {
@@ -304,82 +315,43 @@ void QRegAlloc::AllocOp(qir::VOperandSpan dstl, qir::VOperandSpan srcl, bool uns
 		}
 	}
 
-	for (u8 i = 0; i < dstl.size(); ++i) {
+	for (u8 i_ao = 0; i_ao < dstl.size(); ++i_ao) {
+		u8 i = op_order[i_ao];
+		auto ct = op_ct[i];
+
 		auto opr = &dstl[i];
 		if (!opr->IsVGPR()) {
 			continue;
 		}
 		auto dst = &vregs[opr->GetVGPR()];
-		if (dst->loc != RTrack::Location::REG) {
-			dst->p = AllocPReg(PREGS_POOL, avoid);
-			p2v[dst->p] = dst;
-			dst->loc = RTrack::Location::REG;
-		}
-		avoid.Set(dst->p);
-		dst->spill_synced = false;
-		*opr = qir::VOperand::MakePGPR(opr->GetType(), dst->p);
-	}
-}
 
-void QRegAlloc::AllocOpConstrained(qir::VOperandSpan dstl, qir::VOperandSpan srcl, RegMask require_set,
-				   qir::RegN *require, bool unsafe)
-{
-	auto avoid = fixed | require_set;
-	u8 opr_idx;
-
-	// TODO: SpillOrReassign constrained pregs immediately
-
-	auto get_avoid = [&] {
-		RegMask opr_avoid = avoid;
-		if (qir::RegN rreg = require[opr_idx]; rreg != qir::RegNBad) {
-			opr_avoid = ~RegMask(0);
-			opr_avoid.Clear(rreg);
-		}
-		return opr_avoid;
-	};
-
-	opr_idx = dstl.size();
-	for (u8 i = 0; i < srcl.size(); ++i, ++opr_idx) {
-		auto opr = &srcl[i];
-		if (!opr->IsVGPR()) {
-			continue;
-		}
-		auto src = &vregs[opr->GetVGPR()];
-		auto it_avoid = get_avoid();
-		Fill(src, ~it_avoid, it_avoid);
-		avoid.Set(src->p); // TODO: liveness: do not add if last use
-		*opr = qir::VOperand::MakePGPR(opr->GetType(), src->p);
-	}
-
-	if (unsafe) {
-		for (int i = 0; i < n_vregs; ++i) {
-			auto *v = &vregs[i];
-			if (v->is_global) {
-				SyncSpill(v);
+		// TODO(tuning): forcefull renaming, check perf
+		if constexpr (true) {
+			if (ct.has_alias) {
+				// QSel guarantees there will be the same VReg, so dst already matches ct
+			} else {
+				auto p = AllocPReg(ct.cr, avoid);
+				if (dst->loc == RTrack::Location::REG) {
+					p2v[dst->p] = nullptr;
+				}
+				dst->loc = RTrack::Location::REG;
+				p2v[p] = dst;
+				dst->p = p;
+			}
+		} else {
+			if (dst->loc != RTrack::Location::REG) {
+				dst->p = AllocPReg(ct.cr, avoid);
+				p2v[dst->p] = dst;
+				dst->loc = RTrack::Location::REG;
+			} else if (!ct.cr.Test(dst->p)) {
+				auto p = AllocPReg(ct.cr, avoid);
+				p2v[dst->p] = nullptr;
+				p2v[p] = dst;
+				dst->p = p;
 			}
 		}
-	}
-
-	opr_idx = 0;
-	for (u8 i = 0; i < dstl.size(); ++i, ++opr_idx) {
-		auto opr = &dstl[i];
-		if (!opr->IsVGPR()) {
-			continue;
-		}
-		auto dst = &vregs[opr->GetVGPR()];
-		auto it_avoid = get_avoid();
-		if (dst->loc != RTrack::Location::REG) {
-			dst->p = AllocPReg(~it_avoid, it_avoid);
-			p2v[dst->p] = dst;
-			dst->loc = RTrack::Location::REG;
-			// } else if (it_avoid.Test(dst->p)) {
-		} else if (qir::RegN rreg = require[opr_idx]; rreg != qir::RegNBad && rreg != dst->p) {
-			p2v[dst->p] = nullptr; // value is killed, no need to emit move
-			dst->p = AllocPReg(~it_avoid, it_avoid);
-			p2v[dst->p] = dst;
-		}
-		avoid.Set(dst->p);
 		dst->spill_synced = false;
+		avoid.Set(dst->p);
 		*opr = qir::VOperand::MakePGPR(opr->GetType(), dst->p);
 	}
 }
@@ -406,21 +378,6 @@ void QRegAlloc::CallOp(bool use_globals)
 struct QRegAllocVisitor : qir::InstVisitor<QRegAllocVisitor, void> {
 	using Base = qir::InstVisitor<QRegAllocVisitor, void>;
 
-	template <size_t N_OUT, size_t N_IN>
-	void AllocOperands(qir::InstWithOperands<N_OUT, N_IN> *ins)
-	{
-		bool sideeff = ins->GetFlags() & qir::Inst::Flags::SIDEEFF;
-		ra->AllocOp(ins->outputs(), ins->inputs(), sideeff);
-	}
-
-	template <size_t N_OUT, size_t N_IN>
-	void AllocOperandsConstrained(qir::InstWithOperands<N_OUT, N_IN> *ins, RegMask require_set,
-				      std::array<qir::RegN, N_OUT + N_IN> require)
-	{
-		bool sideeff = ins->GetFlags() & qir::Inst::Flags::SIDEEFF;
-		ra->AllocOpConstrained(ins->outputs(), ins->inputs(), require_set, require.data(), sideeff);
-	}
-
 public:
 	QRegAllocVisitor(QRegAlloc *ra_) : ra(ra_) {}
 
@@ -431,17 +388,17 @@ public:
 
 	void visitInstUnop(qir::InstUnop *ins)
 	{
-		AllocOperands(ins);
+		ra->AllocOp(ins);
 	}
 
 	void visitInstBinop(qir::InstBinop *ins)
 	{
-		AllocOperands(ins);
+		ra->AllocOp(ins);
 	}
 
 	void visitInstSetcc(qir::InstSetcc *ins)
 	{
-		AllocOperands(ins);
+		ra->AllocOp(ins);
 	}
 
 	void visitInstBr(qir::InstBr *ins)
@@ -452,7 +409,7 @@ public:
 
 	void visitInstBrcc(qir::InstBrcc *ins)
 	{
-		AllocOperands(ins);
+		ra->AllocOp(ins);
 		ra->BlockBoundary();
 	}
 
@@ -464,18 +421,18 @@ public:
 
 	void visitInstGBrind(qir::InstGBrind *ins)
 	{
-		AllocOperands(ins);
-		ra->RegionBoundary(); // merge into AllocOp
+		ra->AllocOp(ins);
+		ra->RegionBoundary();
 	}
 
 	void visitInstVMLoad(qir::InstVMLoad *ins)
 	{
-		AllocOperands(ins);
+		ra->AllocOp(ins);
 	}
 
 	void visitInstVMStore(qir::InstVMStore *ins)
 	{
-		AllocOperands(ins);
+		ra->AllocOp(ins);
 	}
 
 	void visitInstHcall(qir::InstHcall *ins)
@@ -483,28 +440,19 @@ public:
 		ra->CallOp(true);
 	}
 
-	void visit_amd64_shifts(qir::InstBinop *ins)
-	{
-		// amd64
-		static constexpr auto require_set = RegMask(0).Set(asmjit::x86::Gp::kIdCx);
-		static const std::array<qir::RegN, 3> require = {qir::RegNBad, qir::RegNBad,
-								 asmjit::x86::Gp::kIdCx};
-		AllocOperandsConstrained(ins, require_set, require);
-	}
-
 	void visit_sll(qir::InstBinop *ins)
 	{
-		visit_amd64_shifts(ins);
+		ra->AllocOp(ins);
 	}
 
 	void visit_srl(qir::InstBinop *ins)
 	{
-		visit_amd64_shifts(ins);
+		ra->AllocOp(ins);
 	}
 
 	void visit_sra(qir::InstBinop *ins)
 	{
-		visit_amd64_shifts(ins);
+		ra->AllocOp(ins);
 	}
 
 private:

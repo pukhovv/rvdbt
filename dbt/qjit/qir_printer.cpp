@@ -92,8 +92,8 @@ private:
 		ss << "    #" << ins->GetId() << " " << GetOpNameStr(ins->GetOpcode());
 	}
 
-	template <size_t N_OUT, size_t N_IN>
-	void printOperands(InstWithOperands<N_OUT, N_IN> *ins)
+	template <typename T>
+	inline void printOperands(T *ins)
 	{
 		// TODO: iterators
 		auto out = ins->outputs();

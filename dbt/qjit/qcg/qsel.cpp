@@ -9,16 +9,18 @@ struct QSel {
 
 	void Run();
 
-	void SelectOperands(qir::Inst *ins, qir::VOperandSpan dstl, qir::VOperandSpan srcl);
+	void SelectOperands(qir::Inst *ins);
 
 	qir::Region *region{};
 	qir::Builder qb{nullptr};
 };
 
-void QSel::SelectOperands(qir::Inst *ins, qir::VOperandSpan dstl, qir::VOperandSpan srcl)
+void QSel::SelectOperands(qir::Inst *ins)
 {
 	auto *op_ct = GetOpInfo(ins->GetOpcode()).ra_ct;
 	assert(op_ct);
+	auto srcl = ins->inputs();
+	auto dstl = ins->outputs();
 	auto src_n = srcl.size();
 	auto dst_n = dstl.size();
 	// satisfy aliases
@@ -34,7 +36,7 @@ void QSel::SelectOperands(qir::Inst *ins, qir::VOperandSpan dstl, qir::VOperandS
 			continue;
 		}
 
-		bool live_input = false; // TODO: liveness
+		bool live_input = false;
 		for (u8 k = 0; k < src_n; ++k) {
 			auto *src2 = &srcl[k];
 			if (k != i && src2->IsVGPR() && src2->GetVGPR() == dst->GetVGPR()) {
@@ -76,12 +78,6 @@ void QSel::SelectOperands(qir::Inst *ins, qir::VOperandSpan dstl, qir::VOperandS
 struct QSelVisitor : qir::InstVisitor<QSelVisitor, void> {
 	using Base = qir::InstVisitor<QSelVisitor, void>;
 
-	template <size_t N_OUT, size_t N_IN>
-	void SelectOperands(qir::InstWithOperands<N_OUT, N_IN> *ins)
-	{
-		sel->SelectOperands(ins, ins->outputs(), ins->inputs());
-	}
-
 public:
 	QSelVisitor(QSel *sel_) : sel(sel_) {}
 
@@ -92,58 +88,58 @@ public:
 
 	void visitInstUnop(qir::InstUnop *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visitInstBinop(qir::InstBinop *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visitInstSetcc(qir::InstSetcc *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visitInstBr(qir::InstBr *ins) {}
 
 	void visitInstBrcc(qir::InstBrcc *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visitInstGBr(qir::InstGBr *ins) {}
 
 	void visitInstGBrind(qir::InstGBrind *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visitInstVMLoad(qir::InstVMLoad *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visitInstVMStore(qir::InstVMStore *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visitInstHcall(qir::InstHcall *ins) {}
 
 	void visit_sll(qir::InstBinop *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visit_srl(qir::InstBinop *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 	void visit_sra(qir::InstBinop *ins)
 	{
-		SelectOperands(ins);
+		sel->SelectOperands(ins);
 	}
 
 private:

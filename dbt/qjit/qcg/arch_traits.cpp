@@ -46,8 +46,10 @@ constexpr InstCt<N_OUT, N_IN> InstCt<N_OUT, N_IN>::Make(std::array<RACtDef, N_OU
 	for (size_t iidx = N_OUT; iidx < N_OUT + N_IN; ++iidx) {
 		auto idef = idef_set[iidx - N_OUT];
 		if (idef.has_alias) {
-			ct[iidx].SetAlias(idef.alias);
-			ct[idef.alias].SetAlias(iidx);
+			auto aidx = idef.alias;
+			ct[iidx] = ct[aidx];
+			ct[iidx].SetAlias(aidx);
+			ct[aidx].SetAlias(iidx);
 		} else {
 			ct[iidx] = {.cr = idef.cr, .ci = idef.ci};
 		}
@@ -55,13 +57,17 @@ constexpr InstCt<N_OUT, N_IN> InstCt<N_OUT, N_IN>::Make(std::array<RACtDef, N_OU
 
 	std::array<u8, N_OUT + N_IN> order;
 
-	auto order_ct = [&](auto const &b, auto const &e) {
-		auto order_cmp = [&](u8 i0, u8 i1) { return ct[i0].cr.count() < ct[i1].cr.count(); };
+	auto order_ct = [&](u8 start, u8 len) {
+		auto order_cmp = [&](u8 i0, u8 i1) {
+			return ct[i0 + start].cr.count() < ct[i1 + start].cr.count();
+		};
+		auto b = order.begin() + start;
+		auto e = b + len;
 		std::iota(b, e, 0);
 		std::sort(b, e, order_cmp);
 	};
-	order_ct(order.begin(), order.begin() + N_OUT);
-	order_ct(order.begin() + N_OUT, order.end());
+	order_ct(0, N_OUT);
+	order_ct(N_OUT, N_IN);
 
 	return {ct, order};
 }

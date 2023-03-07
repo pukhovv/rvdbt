@@ -59,6 +59,7 @@ struct OpInfo {
 
 extern OpInfo op_info[to_underlying(qir::Op::Count)];
 
+// TODO: return ptr
 ALWAYS_INLINE OpInfo const &GetOpInfo(qir::Op op)
 {
 	return op_info[to_underlying(op)];
@@ -250,7 +251,7 @@ private:
 struct VOperandSpan {
 	VOperandSpan(VOperand *head_, u8 size_) : head(head_), len(size_) {}
 
-	inline VOperand &operator[](u8 idx)
+	inline VOperand &operator[](u8 idx) const
 	{
 		assert(idx < len);
 		return head[-idx];
