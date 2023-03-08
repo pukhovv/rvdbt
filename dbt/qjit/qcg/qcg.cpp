@@ -17,7 +17,7 @@ private:
 	friend struct QCodegenVisitor;
 };
 
-TBlock::TCode Generate(qir::Region *r, u32 ip)
+TBlock::TCode JITGenerate(qir::Region *r, u32 ip)
 {
 	ArchTraits::init();
 
@@ -36,7 +36,7 @@ TBlock::TCode Generate(qir::Region *r, u32 ip)
 	}
 
 	log_qcg("Generate code");
-	QEmit ce(r);
+	QEmit ce(r, true);
 	QCodegen cg(r, &ce);
 	cg.Run(ip);
 

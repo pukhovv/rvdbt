@@ -3,7 +3,7 @@
 namespace dbt::qcg
 {
 
-QEmit::QEmit(qir::Region *region)
+QEmit::QEmit(qir::Region *region, bool jit_mode_) : jit_mode(jit_mode_)
 {
 	if (jcode.init(jrt.environment())) {
 		Panic();
@@ -21,6 +21,7 @@ QEmit::QEmit(qir::Region *region)
 
 TBlock::TCode QEmit::EmitTCode()
 {
+	// assert(jit_mode);
 	jcode.flatten();
 	jcode.resolveUnresolvedLinks();
 
@@ -161,10 +162,14 @@ void QEmit::LocSpill(qir::RegN p, qir::VType type, u16 offs)
 
 void QEmit::Emit_hcall(qir::InstHcall *ins)
 {
-	// TODO: proper args
 	j.mov(asmjit::x86::rdi, R_STATE);
-	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i(0))); // TODO: reloc
-	j.call(ins->stub);
+	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i(0)));
+	if (jit_mode) {
+		j.call(stub_tab[ins->stub]);
+	} else {
+		j.call(asmjit::x86::Mem(R_STATE,
+					offsetof(CPUState, stub_tab) + RuntimeStubTab::offs(ins->stub)));
+	}
 }
 
 void QEmit::Emit_br(qir::InstBr *ins)
@@ -208,7 +213,11 @@ void QEmit::Emit_gbr(qir::InstGBr *ins)
 	j.embedUInt8(0, patch_size);
 	auto *slot = (jitabi::ppoint::BranchSlot *)(j.bufferPtr() - patch_size);
 	slot->gip = ins->tpc.GetConst();
-	slot->Reset(); // TODO: reloc
+	if (jit_mode) {
+		slot->LinkLazyJIT();
+	} else {
+		slot->LinkLazyAOT();
+	}
 }
 
 void QEmit::Emit_gbrind(qir::InstGBrind *ins)
@@ -225,7 +234,11 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 		// Inlined jmp_cache lookup
 		auto tmp0 = asmjit::x86::rdi;
 		auto tmp1 = asmjit::x86::rdx;
-		j.mov(tmp1.r64(), (uptr)tcache::jmp_cache_brind.data()); // TODO: reloc
+		if (jit_mode) {
+			j.mov(tmp1.r64(), (uptr)tcache::jmp_cache_brind.data());
+		} else {
+			j.mov(tmp1.r64(), asmjit::x86::Mem(R_STATE, offsetof(CPUState, jmp_cache_brind)));
+		}
 
 		j.mov(tmp0.r32(), ptgt.r32());
 		j.shr(tmp0.r32(), 2);
@@ -247,7 +260,7 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 
 	j.mov(asmjit::x86::gpq(asmjit::x86::Gp::kIdDi), R_STATE);
 	assert(ptgt.id() == asmjit::x86::Gp::kIdSi);
-	j.call(jitabi::helper_brind); // TODO: reloc
+	j.call(stub_tab[RuntimeStubId::id_brind]);
 	j.jmp(asmjit::x86::rdx);
 }
 

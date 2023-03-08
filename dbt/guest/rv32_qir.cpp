@@ -152,7 +152,7 @@ void RV32Translator::TranslateStore(insn::S i, VType type, VSign sgn)
 	qb.Create_vmstore(type, sgn, tmp, gprop(i.rs2(), type));
 }
 
-inline void RV32Translator::TranslateHelper(insn::Base i, void *stub)
+inline void RV32Translator::TranslateHelper(insn::Base i, RuntimeStubId stub)
 {
 	qb.Create_hcall(stub, vconst(i.raw));
 }
@@ -237,7 +237,7 @@ static ALWAYS_INLINE void LogInsn(IType i, u32 ip)
 #define TRANSLATOR_Helper(name)                                                                              \
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
-		TranslateHelper(i, (void *)HelperOp_##name);                                                 \
+		TranslateHelper(i, RuntimeStubId::id_rv32_##name);                                           \
 	}
 
 TRANSLATOR_Unimpl(ill);

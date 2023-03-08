@@ -26,7 +26,7 @@ TBlock *CompileAt(u32 ip)
 		log_qir.write(str.c_str());
 	}
 
-	auto tc = qcg::Generate(&region, ip);
+	auto tc = qcg::JITGenerate(&region, ip);
 
 	// TODO: concurrent tcache
 	auto tb = tcache::AllocateTBlock();

@@ -1,4 +1,6 @@
+#include "dbt/guest/rv32_insn.h"
 #include "dbt/guest/rv32_cpu.h"
+#include "dbt/util/logger.h"
 
 #include <sstream>
 

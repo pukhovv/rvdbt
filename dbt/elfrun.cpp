@@ -54,6 +54,7 @@ int main(int argc, char **argv)
 	dbt::InitCacheDir(cachedir.c_str());
 
 	dbt::mmu::Init();
+	dbt::tcache::Init();
 	dbt::ukernel uk{};
 	uk.SetFSRoot(fsroot.c_str());
 	dbt::ukernel::ElfImage elf;
@@ -68,9 +69,8 @@ int main(int argc, char **argv)
 	dbt::CPUState state{};
 	dbt::ukernel::InitThread(&state, &elf);
 	state.ip = elf.entry;
-
-	dbt::tcache::Init();
 	uk.Execute(&state);
+
 	dbt::profile_storage::UpdateProfile();
 	dbt::profile_storage::Destroy();
 

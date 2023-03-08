@@ -1,10 +1,13 @@
 #include "dbt/execute.h"
 #include "dbt/guest/rv32_decode.h"
 #include "dbt/guest/rv32_runtime.h"
+#include "dbt/mmu.h"
 #include <atomic>
 
 namespace dbt::rv32
 {
+
+thread_local CPUState *CPUState::tls_current{};
 
 #define GET_GIP() (gip)
 #define SET_GIP(gip_) (gip = gip_)
@@ -35,7 +38,7 @@ namespace dbt::rv32
 			gip += 4;                                                                            \
 		}                                                                                            \
 	}                                                                                                    \
-	extern "C" void __attribute__((used)) HelperOp_##name(CPUState *state, u32 insn_raw)                 \
+	extern "C" void __attribute__((used)) qcgstub_rv32_##name(CPUState *state, u32 insn_raw)             \
 	{                                                                                                    \
 		u32 gip = state->ip;                                                                         \
 		H_##name(state, gip, mmu::base, insn_raw);                                                   \

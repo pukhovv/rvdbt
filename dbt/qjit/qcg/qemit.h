@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dbt/qjit/qcg/arch_traits.h"
+#include "dbt/qjit/qcg/jitabi.h"
 #include "dbt/qjit/qcg/qcg.h"
 
 #include <vector>
@@ -8,7 +9,7 @@
 namespace dbt::qcg
 {
 struct QEmit {
-	QEmit(qir::Region *region);
+	QEmit(qir::Region *region, bool jit_mode_);
 
 	inline void SetBlock(qir::Block *bb_)
 	{
@@ -54,6 +55,9 @@ private:
 	std::vector<asmjit::Label> labels;
 
 	qir::Block *bb{};
+
+	bool jit_mode{};
+	RuntimeStubTab const &stub_tab{*RuntimeStubTab::GetGlobal()};
 };
 
 }; // namespace dbt::qcg

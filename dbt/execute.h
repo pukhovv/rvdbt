@@ -1,6 +1,8 @@
 #pragma once
 
 #include "dbt/guest/rv32_cpu.h"
+#include "dbt/util/logger.h"
+#include <csetjmp>
 
 namespace dbt
 {

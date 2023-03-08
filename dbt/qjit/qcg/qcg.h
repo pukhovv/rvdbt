@@ -6,6 +6,14 @@
 namespace dbt::qcg
 {
 
-TBlock::TCode Generate(qir::Region *r, u32 ip);
+TBlock::TCode JITGenerate(qir::Region *r, u32 ip);
+
+struct QSelPass {
+	static void run(qir::Region *region);
+};
+
+struct QRegAllocPass {
+	static void run(qir::Region *region);
+};
 
 }; // namespace dbt::qcg

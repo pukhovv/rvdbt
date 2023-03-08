@@ -16,6 +16,7 @@ add_library(dbtstatic STATIC
 	qjit/qir.cpp
 	qjit/qir_opt.cpp
 	qjit/qir_printer.cpp
+	qjit/runtime_stubs.cpp
 	qjit/qcg/arch_traits.cpp
 	qjit/qcg/jitabi.cpp
 	qjit/qcg/qcg.cpp

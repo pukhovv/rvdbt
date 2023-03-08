@@ -38,7 +38,7 @@ void Execute(CPUState *state)
 			tcache::CacheBrind(tb);
 		}
 
-		branch_slot = jitabi::trampoline_host_to_qjit(state, mmu::base, tb->tcode.ptr);
+		branch_slot = jitabi::trampoline_to_jit(state, mmu::base, tb->tcode.ptr);
 		if (unlikely(branch_slot)) {
 			state->ip = branch_slot->gip;
 		}

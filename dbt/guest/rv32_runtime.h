@@ -6,10 +6,6 @@
 namespace dbt::rv32
 {
 
-#define OP(name, format_, flags_) extern "C" void HelperOp_##name(CPUState *state, u32 insn_raw);
-RV32_OPCODE_LIST()
-#undef OP
-
 struct Interpreter {
 	static void Execute(CPUState *state);
 

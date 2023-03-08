@@ -1,76 +1,103 @@
 #pragma once
 
 #include "dbt/execute.h"
+#include "dbt/qjit/qcg/arch_traits.h"
 
 namespace dbt::jitabi
 {
-
-#define HELPER extern "C" NOINLINE __attribute__((used))
-#define HELPER_ASM extern "C" NOINLINE __attribute__((used, naked))
-
-namespace ppoint
-{
-struct BranchSlot {
-	void Reset();
-	void Link(void *to);
-
-	u8 code[12];
-	u32 gip;
-} __attribute__((packed));
-struct Call64Abs {
-	u64 op_mov_imm_rax : 16 = 0xb848;
-	u64 imm : 64;
-	u64 op_call_rax : 16 = 0xd0ff;
-} __attribute__((packed));
-static_assert(sizeof(Call64Abs) <= sizeof(BranchSlot::code));
-struct Jump64Abs {
-	u64 op_mov_imm_rax : 16 = 0xb848;
-	u64 imm : 64;
-	u64 op_jmp_rax : 16 = 0xe0ff;
-} __attribute__((packed));
-static_assert(sizeof(Jump64Abs) <= sizeof(BranchSlot::code));
-struct Jump32Rel {
-	u64 op_jmp_imm : 8 = 0xe9;
-	u64 imm : 32;
-} __attribute__((packed));
-static_assert(sizeof(Jump32Rel) <= sizeof(BranchSlot::code));
-}; // namespace ppoint
 
 struct _RetPair {
 	void *v0;
 	void *v1;
 };
 
-HELPER_ASM ppoint::BranchSlot *trampoline_host_to_qjit(CPUState *state, void *vmem, void *tc_ptr);
-HELPER_ASM void trampoline_qjit_to_host();
-HELPER_ASM void stub_link_branch();
-HELPER_ASM void stub_trace();
-HELPER _RetPair helper_link_branch(void *p_slot);
-HELPER _RetPair helper_brind(CPUState *state, u32 gip);
-HELPER void helper_raise();
-HELPER void helper_dump_trace(CPUState *state);
-
 namespace ppoint
 {
+struct BranchSlot {
+private:
+	struct Call64Abs {
+		u64 op_mov_imm_rax : 16 = 0xb848;
+		u64 imm : 64;
+		u64 op_call_rax : 16 = 0xd0ff;
+	} __attribute__((packed));
 
-inline void BranchSlot::Reset()
+	struct Jump64Abs {
+		u64 op_mov_imm_rax : 16 = 0xb848;
+		u64 imm : 64;
+		u64 op_jmp_rax : 16 = 0xe0ff;
+	} __attribute__((packed));
+
+	struct Jump32Rel {
+		u64 op_jmp_imm : 8 = 0xe9;
+		u32 imm : 32;
+	} __attribute__((packed));
+
+	// QCG-format relocation
+	struct CallTab {
+		u64 op_call_mem_r13_imm : 24 = 0x95ff41;
+		u32 imm : 32;
+	} __attribute__((packed));
+	static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
+
+	union {
+	private:
+		Call64Abs x0;
+		Jump64Abs x1;
+		Jump32Rel x2;
+		CallTab x3;
+	} __attribute__((packed, may_alias)) code;
+
+	template <typename P, typename... Args>
+	P *CreatePatch(Args &&...args)
+	{
+		static_assert(sizeof(P) <= sizeof(code));
+		return new (&code) P(args...);
+	}
+
+public:
+	void Link(void *to);
+	void LinkLazyJIT();
+	void LinkLazyAOT();
+
+	// Calculate BranchSlot* from retaddr if call by ptr was used
+	static inline BranchSlot *FromCallPtrRetaddr(void *ra)
+	{
+		return (BranchSlot *)((uptr)ra - sizeof(Call64Abs));
+	}
+
+	// Calculate BranchSlot* from retaddr if RuntimeStub call was used
+	static inline BranchSlot *FromCallRuntimeStubRetaddr(void *ra)
+	{
+		return (BranchSlot *)((uptr)ra - sizeof(CallTab));
+	}
+
+	u32 gip;
+} __attribute__((packed));
+
+inline void BranchSlot::LinkLazyJIT()
 {
-	auto *patch = new (&code) Call64Abs();
-	patch->imm = (uptr)stub_link_branch;
+	CreatePatch<Call64Abs>()->imm =
+	    (uptr)(*RuntimeStubTab::GetGlobal())[RuntimeStubId::id_link_branch_jit];
+}
+
+inline void BranchSlot::LinkLazyAOT()
+{
+	CreatePatch<CallTab>()->imm =
+	    offsetof(CPUState, stub_tab) + RuntimeStubTab::offs(RuntimeStubId::id_link_branch_aot);
 }
 
 inline void BranchSlot::Link(void *to)
 {
-	iptr rel = (iptr)to - ((iptr)code + sizeof(Jump32Rel));
+	iptr rel = (iptr)to - ((iptr)&code + sizeof(Jump32Rel));
 	if ((i32)rel == rel) {
-		auto *patch = new (&code) Jump32Rel();
-		patch->imm = rel;
+		CreatePatch<Jump32Rel>()->imm = rel;
 	} else {
-		auto *patch = new (&code) Jump64Abs();
-		patch->imm = (uptr)to;
+		CreatePatch<Jump64Abs>()->imm = (uptr)to;
 	}
 }
 
 } // namespace ppoint
+
+extern "C" ppoint::BranchSlot *trampoline_to_jit(CPUState *state, void *vmem, void *tc_ptr);
 
 } // namespace dbt::jitabi

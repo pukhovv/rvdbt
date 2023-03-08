@@ -3,6 +3,7 @@
 #include "dbt/arena.h"
 #include "dbt/qjit/ilist.h"
 #include "dbt/qjit/qir_ops.h"
+#include "dbt/qjit/runtime_stubs.h"
 #include "dbt/util/bitfield.h"
 #include "dbt/util/logger.h"
 
@@ -568,9 +569,11 @@ struct InstGBrind : InstWithOperands<0, 1> {
 
 struct InstHcall : InstWithOperands<0, 1> {
 	// TODO: variable number of operands
-	InstHcall(void *stub_, VOperand arg_) : InstWithOperands(Op::_hcall, {}, {arg_}), stub(stub_) {}
+	InstHcall(RuntimeStubId stub_, VOperand arg_) : InstWithOperands(Op::_hcall, {}, {arg_}), stub(stub_)
+	{
+	}
 
-	void *stub;
+	RuntimeStubId stub;
 };
 
 struct InstVMLoad : InstWithOperands<1, 1> {

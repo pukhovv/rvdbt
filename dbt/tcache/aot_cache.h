@@ -77,7 +77,7 @@ private:
 	static tcache::MapType::iterator UpdatePageProfile(tcache::MapType::iterator it);
 
 	static u32 AllocatePageData(u32 pageno);
-	static FilePageData *GetPageData(u32 pageno);
+	static FilePageData *GetOrCreatePageData(u32 pageno);
 
 	// Resolution method depends on ukernel elf loader capabilities
 	// Current implementation requires only one ElfProfile

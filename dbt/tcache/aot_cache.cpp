@@ -116,7 +116,7 @@ u32 profile_storage::AllocatePageData(u32 pageno)
 	return idx;
 }
 
-profile_storage::FilePageData *profile_storage::GetPageData(u32 pageno)
+profile_storage::FilePageData *profile_storage::GetOrCreatePageData(u32 pageno)
 {
 	auto &pfile = elf_prof;
 	auto it = pfile.page2idx.insert_or_assign(pageno, 0);
@@ -138,7 +138,7 @@ void profile_storage::UpdateProfile()
 tcache::MapType::iterator profile_storage::UpdatePageProfile(tcache::MapType::iterator it)
 {
 	u32 const pageno = it->first >> mmu::PAGE_BITS;
-	auto *const page_data = GetPageData(pageno);
+	auto *const page_data = GetOrCreatePageData(pageno);
 	log_prof("Update PageData for pageno=%u", pageno);
 
 	for (; it->first >> mmu::PAGE_BITS == pageno; ++it) {

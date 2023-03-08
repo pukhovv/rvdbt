@@ -1,12 +1,15 @@
 #pragma once
 
-#include "dbt/guest/rv32_insn.h"
-#include "dbt/mmu.h"
+#include "dbt/guest/rv32_ops.h"
+#include "dbt/qjit/runtime_stubs.h"
+#include "dbt/tcache/tcache.h"
+#include "dbt/util/common.h"
 
 #include <array>
 
 namespace dbt::rv32
 {
+
 enum class TrapCode : u32 {
 	NONE = 0,
 	UNALIGNED_IP,
@@ -16,9 +19,17 @@ enum class TrapCode : u32 {
 	TERMINATED,
 };
 
+// TODO: separate guest part
 struct CPUState {
-	using gpr_t = u32;
-	static constexpr u8 gpr_num = 32;
+	static inline void SetCurrent(CPUState *s)
+	{
+		tls_current = s;
+	}
+
+	inline CPUState *Current()
+	{
+		return tls_current;
+	}
 
 	bool IsTrapPending()
 	{
@@ -27,12 +38,22 @@ struct CPUState {
 
 	void DumpTrace(char const *event);
 
+	using gpr_t = u32;
+	static constexpr u8 gpr_num = 32;
+
 	std::array<gpr_t, gpr_num> gpr;
 	gpr_t ip;
 	TrapCode trapno;
+
+	tcache::JMPCache *jmp_cache_brind{&tcache::jmp_cache_brind};
+	RuntimeStubTab stub_tab{};
+
+private:
+	static thread_local CPUState *tls_current;
 };
 
-static constexpr u16 TB_MAX_INSNS = 64; // to synchronize debug tracing
+// qjit config, also used to synchronize int/jit debug tracing
+static constexpr u16 TB_MAX_INSNS = 64;
 
 } // namespace dbt::rv32
 

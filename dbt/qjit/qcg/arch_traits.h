@@ -1,10 +1,8 @@
 #pragma once
 
-#include "dbt/qjit/qcg/jitabi.h"
+#include "dbt/qjit/qcg/asmjit_deps.h"
 #include "dbt/qjit/qir_builder.h"
 #include "dbt/tcache/tcache.h"
-
-#include "dbt/qjit/qcg/asmjit_deps.h"
 
 #include <vector>
 
@@ -85,7 +83,7 @@ DEF_GPR(SP, Sp);
 DEF_GPR(TMP1, Ax);
 #undef DEF_GPR
 
-static constexpr RegMask GPR_FIXED = RegMask(0) //
+static constexpr RegMask GPR_FIXED = RegMask(0)
 					 .Set(STATE)
 #ifndef CONFIG_ZERO_MMU_BASE
 					 .Set(MEMBASE)
@@ -93,16 +91,8 @@ static constexpr RegMask GPR_FIXED = RegMask(0) //
 					 .Set(SP)
 					 .Set(TMP1);
 
-static constexpr RegMask GPR_CALL_CLOBBER = RegMask(0) //
-						.Set(RAX)
-						.Set(RDI)
-						.Set(RSI)
-						.Set(RDX)
-						.Set(RCX)
-						.Set(R8)
-						.Set(R9)
-						.Set(R10)
-						.Set(R11);
+static constexpr RegMask GPR_CALL_CLOBBER =
+    RegMask(0).Set(RAX).Set(RDI).Set(RSI).Set(RDX).Set(RCX).Set(R8).Set(R9).Set(R10).Set(R11);
 
 static constexpr RegMask GPR_ALL(((u32)1 << GPR_NUM) - 1);
 static constexpr RegMask GPR_POOL = GPR_ALL & ~GPR_FIXED;
@@ -136,13 +126,5 @@ struct RAOpCt {
 };
 
 bool match_gp_const(qir::VType type, i64 val, RACtImm ct);
-
-struct QSelPass {
-	static void run(qir::Region *region);
-};
-
-struct QRegAllocPass {
-	static void run(qir::Region *region);
-};
 
 } // namespace dbt::qcg

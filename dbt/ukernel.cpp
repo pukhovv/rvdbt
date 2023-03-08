@@ -23,6 +23,7 @@ LOG_STREAM(ukernel);
 
 void ukernel::Execute(CPUState *state)
 {
+	CPUState::SetCurrent(state);
 	while (true) {
 		dbt::Execute(state);
 		switch (state->trapno) {
@@ -48,6 +49,7 @@ void ukernel::Execute(CPUState *state)
 			unreachable("no handle for trap");
 		}
 	}
+	CPUState::SetCurrent(nullptr);
 }
 
 void ukernel::InitThread(CPUState *state, ElfImage *elf)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dbt/guest/rv32_cpu.h"
+#include "dbt/guest/rv32_insn.h"
 #include "dbt/qjit/qir_builder.h"
 #include <array>
 
@@ -33,9 +33,7 @@ private:
 	void TranslateBrcc(insn::B i, CondCode cc);
 	inline void TranslateSetcc(insn::R i, CondCode cc);
 	inline void TranslateSetcc(insn::I i, CondCode cc);
-	inline void TranslateHelper(insn::Base i, void *stub);
-
-	static constexpr u16 TB_MAX_INSNS = dbt::rv32::TB_MAX_INSNS;
+	inline void TranslateHelper(insn::Base i, RuntimeStubId stub);
 
 	qir::Builder qb;
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};

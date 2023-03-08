@@ -295,7 +295,7 @@ void QRegAlloc::AllocOp(qir::Inst *ins)
 			p = AllocPReg(ct.cr, avoid);
 			qb.Create_mov(qir::VOperand::MakePGPR(src->type, p),
 				      qir::VOperand::MakePGPR(src->type, src->p));
-			if constexpr (false) { // TODO: different dep. distance, check perf
+			if constexpr (false) { // TODO(tuning): different dep. distance, check perf
 				p2v[src->p] = nullptr;
 				p2v[p] = src;
 				src->p = p;
