@@ -1,8 +1,8 @@
 #pragma once
 
-#include "dbt/qjit/qcg/arch_traits.h"
-#include "dbt/qjit/qcg/jitabi.h"
-#include "dbt/qjit/qcg/qcg.h"
+#include "dbt/qmc/qcg/arch_traits.h"
+#include "dbt/qmc/qcg/jitabi.h"
+#include "dbt/qmc/qcg/qcg.h"
 
 #include <vector>
 
@@ -17,8 +17,8 @@ struct QEmit {
 		j.bind(labels[bb->GetId()]);
 	}
 
-	TBlock::TCode EmitTCode();
-	static void DumpTCode(TBlock::TCode const &tc);
+	std::span<u8> EmitCode(CompilerRuntime *cruntime);
+	static void DumpCode(std::span<u8> const &code);
 
 	void Prologue(u32 ip);
 	void StateSpill(qir::RegN p, qir::VType type, u16 offs);

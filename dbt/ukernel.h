@@ -2,25 +2,17 @@
 
 #include "dbt/guest/rv32_cpu.h"
 
-extern "C" {
-#include <elf.h>
-};
-
 namespace dbt
 {
 
 struct ukernel {
-	struct ElfImage {
-		Elf32_Ehdr ehdr;
-		u32 load_addr;
-		u32 stack_start;
-		u32 entry;
-		u32 brk;
-	};
+	struct ElfImage;
 
 	void SetFSRoot(char const *fsroot_);
 
-	void LoadElf(char const *path, ElfImage *img);
+	void BootElf(char const *path, ElfImage *elf);
+	static void ReproduceElf(char const *path, ElfImage *elf);
+
 	void InitAVectors(ElfImage *elf, int argv_n, char **argv);
 	static void InitThread(CPUState *state, ElfImage *elf);
 
@@ -33,7 +25,11 @@ struct ukernel {
 
 	u32 do_sys_brk(u32 newbrk);
 
+	static ElfImage exe_elf_image;
+
 private:
+	static void LoadElf(int elf_fd, ElfImage *elf);
+
 	std::string fsroot;
 	int exe_fd{-1};
 	u32 brk{};

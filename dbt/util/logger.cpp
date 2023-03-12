@@ -15,7 +15,7 @@ inline int xvsnprintf(char *dst, size_t n, char const *fmt, va_list args)
 
 static thread_local std::vector<char> g_log_buf(1024 * 2);
 
-void LogStream::commit_write(const char *str) const
+void LogStreamI::commit_write(const char *str) const
 {
 	auto &buf = g_log_buf;
 
@@ -30,7 +30,7 @@ retry:
 	fwrite(buf.data(), res, sizeof(char), stderr);
 }
 
-void LogStream::commit_printf(const char *fmt, ...) const
+void LogStreamI::commit_printf(const char *fmt, ...) const
 {
 	auto &buf = g_log_buf;
 	size_t cur = 0;
@@ -59,7 +59,7 @@ retry:
 	fwrite(buf.data(), cur, sizeof(char), stderr);
 }
 
-LogStream::Setup::Setup(LogStream &s)
+LogStreamI::Setup::Setup(LogStreamI &s)
 {
 	Logger::setup(s);
 }
@@ -70,7 +70,7 @@ Logger *Logger::get()
 	return &g_logger;
 }
 
-void Logger::setup(LogStream &s)
+void Logger::setup(LogStreamI &s)
 {
 	auto self = get();
 	self->streams.emplace(s.name, &s);

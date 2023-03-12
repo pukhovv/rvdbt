@@ -1,11 +1,12 @@
 #include "dbt/ukernel.h"
 #include "dbt/execute.h"
 #include "dbt/mmu.h"
-#include "dbt/tcache/aot_cache.h"
+#include "dbt/tcache/objprof.h"
 #include <alloca.h>
 #include <cstring>
 
 extern "C" {
+#include <elf.h>
 #include <fcntl.h>
 #include <libgen.h>
 #include <linux/limits.h>
@@ -20,6 +21,15 @@ extern "C" {
 namespace dbt
 {
 LOG_STREAM(ukernel);
+
+struct ukernel::ElfImage {
+	Elf32_Ehdr ehdr;
+	u32 load_addr;
+	u32 stack_start;
+	u32 entry;
+	u32 brk;
+};
+ukernel::ElfImage ukernel::exe_elf_image{};
 
 void ukernel::Execute(CPUState *state)
 {
@@ -55,6 +65,7 @@ void ukernel::Execute(CPUState *state)
 void ukernel::InitThread(CPUState *state, ElfImage *elf)
 {
 	state->gpr[2] = elf->stack_start;
+	state->ip = elf->entry;
 }
 
 void ukernel::SyscallDemo(CPUState *state)
@@ -351,9 +362,7 @@ u32 ukernel::do_sys_brk(u32 newbrk)
 	return brk = newbrk;
 }
 
-// -march=rv32i -O2 -fpic -fpie -static
-// -march=rv32i -O2 -fpic -fpie -static -ffreestanding -nostartfiles -nolibc
-void ukernel::LoadElf(const char *path, ElfImage *elf)
+void ukernel::BootElf(const char *path, ElfImage *elf)
 {
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
@@ -366,6 +375,39 @@ void ukernel::LoadElf(const char *path, ElfImage *elf)
 		chdir(dirname(buf));
 	}
 
+	LoadElf(fd, elf);
+	objprof::Open(fd, true);
+	exe_fd = fd;
+	brk = elf->brk; // TODO: move it out
+
+	static constexpr u32 stk_size = 8_MB; // switch to 32 * mmu::PAGE_SIZE if debugging
+#if 0
+	void *stk_ptr = mmu::MMap(0, stk_size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE);
+#else
+	[[maybe_unused]] void *stk_guard = mmu::mmap(mmu::ASPACE_SIZE - mmu::PAGE_SIZE, mmu::PAGE_SIZE, 0,
+						     MAP_ANON | MAP_PRIVATE | MAP_FIXED);
+	// ASAN somehow breaks MMap lookup if it's not MAP_FIXED
+	void *stk_ptr = mmu::mmap(mmu::ASPACE_SIZE - mmu::PAGE_SIZE - stk_size, stk_size,
+				  PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_FIXED);
+#endif
+	elf->stack_start = mmu::h2g(stk_ptr) + stk_size;
+}
+
+void ukernel::ReproduceElf(const char *path, ElfImage *elf)
+{
+	int fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		Panic("no such elf file");
+	}
+	LoadElf(fd, elf);
+	objprof::Open(fd, false);
+	close(fd);
+}
+
+// -march=rv32i -O2 -fpic -fpie -static
+// -march=rv32i -O2 -fpic -fpie -static -ffreestanding -nostartfiles -nolibc
+void ukernel::LoadElf(int fd, ElfImage *elf)
+{
 	auto &ehdr = elf->ehdr;
 
 	if (pread(fd, &elf->ehdr, sizeof(ehdr), 0) != sizeof(ehdr)) {
@@ -437,22 +479,6 @@ void ukernel::LoadElf(const char *path, ElfImage *elf)
 		elf->load_addr = std::min(elf->load_addr, vaddr - phdr->p_offset);
 		elf->brk = std::max(elf->brk, vaddr + phdr->p_memsz);
 	}
-	profile_storage::OpenProfile(fd);
-	exe_fd = fd; // close(fd);
-
-	brk = elf->brk; // TODO: move it out
-
-	static constexpr u32 stk_size = 8_MB; // switch to 32 * mmu::PAGE_SIZE if debugging
-#if 0
-	void *stk_ptr = mmu::MMap(0, stk_size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE);
-#else
-	[[maybe_unused]] void *stk_guard = mmu::mmap(mmu::ASPACE_SIZE - mmu::PAGE_SIZE, mmu::PAGE_SIZE, 0,
-						     MAP_ANON | MAP_PRIVATE | MAP_FIXED);
-	// ASAN somehow breaks MMap lookup if it's not MAP_FIXED
-	void *stk_ptr = mmu::mmap(mmu::ASPACE_SIZE - mmu::PAGE_SIZE - stk_size, stk_size,
-				  PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_FIXED);
-#endif
-	elf->stack_start = mmu::h2g(stk_ptr) + stk_size;
 }
 
 static u32 AllocAVectorStr(u32 stk, void const *str, u16 sz)

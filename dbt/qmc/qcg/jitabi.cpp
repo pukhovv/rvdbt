@@ -1,5 +1,5 @@
-#include "dbt/qjit/qcg/jitabi.h"
-#include "dbt/qjit/qcg/arch_traits.h"
+#include "dbt/qmc/qcg/jitabi.h"
+#include "dbt/qmc/qcg/arch_traits.h"
 #include "dbt/tcache/tcache.h"
 
 namespace dbt::jitabi
@@ -13,7 +13,7 @@ struct _RetPair {
 #define HELPER extern "C" NOINLINE __attribute__((used))
 #define HELPER_ASM extern "C" NOINLINE __attribute__((used, naked))
 
-/*    qjit qcg/llvm frame layout, grows down
+/*    qmc qcg/llvm frame layout, grows down
  *
  *			| ....		|  Execution loop
  *	trampoline call +---------------+-----------------------

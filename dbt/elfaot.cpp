@@ -1,5 +1,6 @@
+#include "dbt/aot/aot.h"
 #include "dbt/guest/rv32_cpu.h"
-#include "dbt/tcache/aot_cache.h"
+#include "dbt/tcache/objprof.h"
 #include "dbt/tcache/tcache.h"
 #include "dbt/ukernel.h"
 #include <boost/any.hpp>
@@ -33,8 +34,17 @@ int main(int argc, char **argv)
 	std::string cachedir = *boost::unsafe_any_cast<std::string>(&adesc_vm["cache"].value());
 	std::string elfpath = *boost::unsafe_any_cast<std::string>(&adesc_vm["elf"].value());
 
-	dbt::InitCacheDir(cachedir.c_str());
+	dbt::objprof::Init(cachedir.c_str(), false);
+	dbt::mmu::Init();
 
-	dbt::profile_storage::Destroy();
+	auto elf = &dbt::ukernel::exe_elf_image;
+	dbt::ukernel::ReproduceElf(elfpath.c_str(), elf);
+
+	dbt::AOTCompileElf();
+
+#ifndef NDEBUG
+	dbt::objprof::Destroy();
+	dbt::mmu::Destroy();
+#endif
 	return 0;
 }

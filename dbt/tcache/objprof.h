@@ -8,6 +8,7 @@
 #include <array>
 #include <bitset>
 #include <map>
+#include <span>
 
 #include "md5.h"
 #include "sys/stat.h"
@@ -17,10 +18,6 @@
 namespace dbt
 {
 LOG_STREAM(prof);
-
-// Set it before ukernel chroots
-void InitCacheDir(char const *path);
-static std::string g_dbt_cache_dir;
 
 struct FileChecksum {
 	uint8_t data[16]{};
@@ -34,24 +31,54 @@ struct FileChecksum {
 	}
 };
 
-struct profile_storage {
-	struct FilePageData {
+struct objprof {
+	struct PageData {
+		static constexpr uint idx_bits = 2; // insn size
+
 		inline static constexpr u32 po2idx(u32 ip)
 		{
-			return ip >> 2; // insn size
+			return ip >> idx_bits;
 		}
 
-		using PageBitset = std::bitset<(mmu::PAGE_SIZE >> 2)>;
+		inline static constexpr u32 idx2po(u32 idx)
+		{
+			return idx << idx_bits;
+		}
+
+		using PageBitset = std::bitset<(mmu::PAGE_SIZE >> idx_bits)>;
 
 		u32 pageno{}; // currently it's vaddr
 		PageBitset executed{};
 		PageBitset brind{};
 	} __attribute__((packed));
 
+	// Set it before ukernel chroots
+	static void Init(char const *cache_path, bool use_aot_);
+
+	// Open elf profile
+	static void Open(int elf_fd, bool jit_mode);
+	static void Destroy();
+
+	// Access profile data
+	static bool HasProfile();
+	static std::span<const PageData> const GetProfile();
+
+	// Walk all pages in tcache
+	static void UpdateProfile();
+
+	// Walk specific page
+	// static void UpdatePageProfile(u32 vaddr);
+
+	// For clients: get associated file path
+	static std::string GetCachePath(char const *extension);
+
+private:
+	objprof() = delete;
+
 	struct FileHeader {
 		FileChecksum csum{};
 		u32 n_pages{};
-		FilePageData pages[];
+		PageData pages[];
 	} __attribute__((packed));
 
 	struct ElfProfile {
@@ -60,28 +87,17 @@ struct profile_storage {
 		size_t fsize{};
 	};
 
-	static void OpenProfile(int elf_fd);
-
-	static void Destroy();
-
-	// Walk all pages in tcache
-	static void UpdateProfile();
-
-	// Walk specific page
-	// static void UpdatePageProfile(u32 vaddr);
-
-private:
-	profile_storage() = delete;
-
 	// Walk tcache until page boundary
 	static tcache::MapType::iterator UpdatePageProfile(tcache::MapType::iterator it);
 
 	static u32 AllocatePageData(u32 pageno);
-	static FilePageData *GetOrCreatePageData(u32 pageno);
+	static PageData *GetOrCreatePageData(u32 pageno);
 
 	// Resolution method depends on ukernel elf loader capabilities
 	// Current implementation requires only one ElfProfile
 	static ElfProfile elf_prof;
+
+	static bool use_aot;
 };
 
 } // namespace dbt

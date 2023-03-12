@@ -1,7 +1,7 @@
 #pragma once
 
 #include "dbt/guest/rv32_ops.h"
-#include "dbt/qjit/runtime_stubs.h"
+#include "dbt/qmc/runtime_stubs.h"
 #include "dbt/tcache/tcache.h"
 #include "dbt/util/common.h"
 
@@ -52,7 +52,7 @@ private:
 	static thread_local CPUState *tls_current;
 };
 
-// qjit config, also used to synchronize int/jit debug tracing
+// qmc config, also used to synchronize int/jit debug tracing
 static constexpr u16 TB_MAX_INSNS = 64;
 
 } // namespace dbt::rv32

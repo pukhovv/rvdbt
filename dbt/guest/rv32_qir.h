@@ -1,7 +1,7 @@
 #pragma once
 
 #include "dbt/guest/rv32_insn.h"
-#include "dbt/qjit/qir_builder.h"
+#include "dbt/qmc/qir_builder.h"
 #include <array>
 
 namespace dbt::qir::rv32

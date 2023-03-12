@@ -1,14 +1,14 @@
 #pragma once
 
-#include "dbt/qjit/qir.h"
-#include "dbt/tcache/tcache.h"
+#include "dbt/qmc/compile.h"
+#include "dbt/qmc/qir.h"
 
 namespace dbt::qcg
 {
 
 LOG_STREAM(qcg);
 
-TBlock::TCode JITGenerate(qir::Region *r, u32 ip);
+std::span<u8> GenerateCode(CompilerRuntime *cruntime, qir::Region *r, u32 ip);
 
 struct MachineRegionInfo {
 	bool has_calls = false;

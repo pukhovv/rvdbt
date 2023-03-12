@@ -1,5 +1,5 @@
 #include "dbt/guest/rv32_cpu.h"
-#include "dbt/tcache/aot_cache.h"
+#include "dbt/tcache/objprof.h"
 #include "dbt/tcache/tcache.h"
 #include "dbt/ukernel.h"
 #include <boost/any.hpp>
@@ -32,7 +32,8 @@ int main(int argc, char **argv)
 	bpo::options_description adesc("options");
 	adesc.add_options()("help", "help")("logs", bpo::value<std::string>())(
 	    "fsroot", bpo::value<std::string>()->required(), "isolated path for emulated process")(
-	    "cache", bpo::value<std::string>()->required(), "directory for dbt cache files");
+	    "cache", bpo::value<std::string>()->required(), "directory for dbt cache files")(
+	    "aot", bpo::value<bool>()->default_value(false), "boot aot file if available");
 	bpo::variables_map adesc_vm;
 	bpo::store(bpo::parse_command_line(dbt_argc, argv, adesc), adesc_vm);
 	bpo::notify(adesc_vm);
@@ -48,33 +49,33 @@ int main(int argc, char **argv)
 			dbt::Logger::enable(e.c_str());
 		}
 	}
-	std::string fsroot = *boost::unsafe_any_cast<std::string>(&adesc_vm["fsroot"].value());
-	std::string cachedir = *boost::unsafe_any_cast<std::string>(&adesc_vm["cache"].value());
+	auto fsroot = *boost::unsafe_any_cast<std::string>(&adesc_vm["fsroot"].value());
+	auto cachedir = *boost::unsafe_any_cast<std::string>(&adesc_vm["cache"].value());
+	auto use_aot = *boost::unsafe_any_cast<bool>(&adesc_vm["aot"].value());
 
-	dbt::InitCacheDir(cachedir.c_str());
+	dbt::objprof::Init(cachedir.c_str(), use_aot);
 
 	dbt::mmu::Init();
 	dbt::tcache::Init();
 	dbt::ukernel uk{};
 	uk.SetFSRoot(fsroot.c_str());
-	dbt::ukernel::ElfImage elf;
+	auto elf = &dbt::ukernel::exe_elf_image;
 	{
 		std::string elf_path = fsroot + '/' + guest_argv[0];
-		uk.LoadElf(elf_path.c_str(), &elf);
+		uk.BootElf(elf_path.c_str(), elf);
 	}
 #ifdef CONFIG_LINUX_GUEST
-	uk.InitAVectors(&elf, guest_argc, guest_argv);
+	uk.InitAVectors(elf, guest_argc, guest_argv);
 #endif
 
 	dbt::CPUState state{};
-	dbt::ukernel::InitThread(&state, &elf);
-	state.ip = elf.entry;
+	dbt::ukernel::InitThread(&state, elf);
 	uk.Execute(&state);
 
-	dbt::profile_storage::UpdateProfile();
-	dbt::profile_storage::Destroy();
+	dbt::objprof::UpdateProfile();
 
 #ifndef NDEBUG
+	dbt::objprof::Destroy();
 	dbt::tcache::Destroy();
 	dbt::mmu::Destroy();
 #endif

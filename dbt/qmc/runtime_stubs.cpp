@@ -1,4 +1,4 @@
-#include "dbt/qjit/runtime_stubs.h"
+#include "dbt/qmc/runtime_stubs.h"
 
 namespace dbt
 {

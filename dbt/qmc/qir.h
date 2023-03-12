@@ -1,9 +1,9 @@
 #pragma once
 
 #include "dbt/arena.h"
-#include "dbt/qjit/ilist.h"
-#include "dbt/qjit/qir_ops.h"
-#include "dbt/qjit/runtime_stubs.h"
+#include "dbt/qmc/ilist.h"
+#include "dbt/qmc/qir_ops.h"
+#include "dbt/qmc/runtime_stubs.h"
 #include "dbt/util/bitfield.h"
 #include "dbt/util/logger.h"
 
@@ -689,6 +689,11 @@ struct VRegsInfo {
 	inline auto NumGlobals() const
 	{
 		return glob_info->n_regs;
+	}
+
+	inline auto NumLocals() const
+	{
+		return loc_info.size();
 	}
 
 	inline auto NumAll() const

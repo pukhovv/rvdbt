@@ -1,6 +1,6 @@
-#include "dbt/qjit/qcg/qcg.h"
-#include "dbt/qjit/qcg/qemit.h"
-#include "dbt/qjit/qir_printer.h"
+#include "dbt/qmc/qcg/qcg.h"
+#include "dbt/qmc/qcg/qemit.h"
+#include "dbt/qmc/qir_printer.h"
 
 namespace dbt::qcg
 {
@@ -17,34 +17,26 @@ private:
 	friend struct QCodegenVisitor;
 };
 
-TBlock::TCode JITGenerate(qir::Region *r, u32 ip)
+std::span<u8> GenerateCode(CompilerRuntime *cruntime, qir::Region *r, u32 ip)
 {
 	ArchTraits::init();
 	MachineRegionInfo mregion_info;
 
-	log_qcg("Select instructions");
 	QSelPass::run(r, &mregion_info);
-	if (log_qcg.enabled()) {
-		auto str = qir::PrinterPass::run(r);
-		log_qcg.write(str.c_str());
-	}
+	qir::PrinterPass::run(log_qcg, "IR dump after QSelPass", r);
 
-	log_qcg("Allocate regs");
 	QRegAllocPass::run(r);
-	if (log_qcg.enabled()) {
-		auto str = qir::PrinterPass::run(r);
-		log_qcg.write(str.c_str());
-	}
+	qir::PrinterPass::run(log_qcg, "IR dump after QRegAllocPass", r);
 
-	log_qcg("Generate code: jit_mode=%u is_leaf=%u", true, !mregion_info.has_calls);
-	QEmit ce(r, true, !mregion_info.has_calls);
+	bool jit_mode = !cruntime->AllowsRelocation();
+	log_qcg("Emit machine instructions: jit_mode=%u is_leaf=%u", jit_mode, !mregion_info.has_calls);
+	QEmit ce(r, jit_mode, !mregion_info.has_calls);
 	QCodegen cg(r, &ce);
 	cg.Run(ip);
 
-	log_qcg("Relocate to tcache");
-	auto tc = ce.EmitTCode();
-	QEmit::DumpTCode(tc);
-	return tc;
+	auto code = ce.EmitCode(cruntime);
+	QEmit::DumpCode(code);
+	return code;
 }
 
 struct QCodegenVisitor : qir::InstVisitor<QCodegenVisitor, void> {

@@ -1,4 +1,4 @@
-#include "dbt/qjit/qcg/qemit.h"
+#include "dbt/qmc/qcg/qemit.h"
 
 namespace dbt::qcg
 {
@@ -21,36 +21,29 @@ QEmit::QEmit(qir::Region *region, bool jit_mode_, bool is_leaf_) : jit_mode(jit_
 	}
 }
 
-TBlock::TCode QEmit::EmitTCode()
+std::span<u8> QEmit::EmitCode(CompilerRuntime *cruntime)
 {
-	// assert(jit_mode);
 	jcode.flatten();
 	jcode.resolveUnresolvedLinks();
 
-	size_t jit_sz = jcode.codeSize();
-	TBlock::TCode tc{nullptr, jit_sz};
-	tc.ptr = tcache::AllocateCode(jit_sz, 8);
-	if (tc.ptr == nullptr) {
+	size_t code_sz = jcode.codeSize();
+	void *code_ptr = cruntime->AllocateCode(code_sz, 8);
+	if (code_ptr == nullptr) {
 		Panic();
 	}
 
-	jcode.relocateToBase((uptr)tc.ptr);
-	if (jit_sz < jcode.codeSize()) {
-		Panic();
-	}
-	jcode.copyFlattenedData(tc.ptr, tc.size);
-	tc.size = jcode.codeSize();
-	return tc;
+	jcode.relocateToBase((uptr)code_ptr);
+	jcode.copyFlattenedData(code_ptr, code_sz);
+	code_sz = jcode.codeSize();
+	return {(u8 *)code_ptr, code_sz};
 }
 
-void QEmit::DumpTCode(TBlock::TCode const &tcode)
+void QEmit::DumpCode(std::span<u8> const &code)
 {
-	if (!log_qcg.enabled()) {
-		return;
+	if (log_qcg.enabled()) {
+		auto str = MakeHexStr(code.data(), code.size());
+		log_qcg.write(str.c_str());
 	}
-
-	auto str = MakeHexStr((u8 *)tcode.ptr, tcode.size);
-	log_qcg.write(str.c_str());
 }
 
 static inline asmjit::x86::Gp make_gpr(qir::RegN pr, qir::VType type)

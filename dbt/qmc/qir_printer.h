@@ -1,12 +1,22 @@
 #pragma once
 
-#include "dbt/qjit/qir.h"
+#include "dbt/qmc/qir.h"
 
 namespace dbt::qir
 {
 
 struct PrinterPass {
 	static std::string run(Region *r);
+
+	static inline void run(LogStream &stream, std::string const &header, Region *r)
+	{
+		if (!stream.enabled()) {
+			return;
+		}
+		auto str = qir::PrinterPass::run(r);
+		stream.write(header.c_str());
+		stream.write(str.c_str());
+	}
 
 private:
 	PrinterPass() = delete;

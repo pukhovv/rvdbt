@@ -1,4 +1,4 @@
-#include "dbt/qjit/qcg/arch_traits.h"
+#include "dbt/qmc/qcg/arch_traits.h"
 #include <algorithm>
 #include <numeric>
 

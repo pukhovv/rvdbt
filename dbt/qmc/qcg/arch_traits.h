@@ -1,10 +1,7 @@
 #pragma once
 
-#include "dbt/qjit/qcg/asmjit_deps.h"
-#include "dbt/qjit/qir_builder.h"
-#include "dbt/tcache/tcache.h"
-
-#include <vector>
+#include "dbt/qmc/qcg/asmjit_deps.h"
+#include "dbt/qmc/qir.h"
 
 namespace dbt::qcg
 {
@@ -98,7 +95,7 @@ DEF_GPR(R15, R15);
 #undef DEF_GPR
 
 #define DEF_FIXED(name, reg) [[maybe_unused]] static constexpr auto name = reg;
-// qjit fixed regs
+// qmc fixed regs
 DEF_FIXED(STATE, R13);	 // ghccc0
 DEF_FIXED(MEMBASE, RBP); // ghccc1
 DEF_FIXED(SP, RSP);

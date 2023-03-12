@@ -1,5 +1,6 @@
-#include "dbt/qjit/qcg/arch_traits.h"
-#include "dbt/qjit/qcg/qcg.h"
+#include "dbt/qmc/qcg/arch_traits.h"
+#include "dbt/qmc/qcg/qcg.h"
+#include "dbt/qmc/qir_builder.h"
 
 namespace dbt::qcg
 {

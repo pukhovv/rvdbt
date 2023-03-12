@@ -1,4 +1,4 @@
-#include "dbt/qjit/qir_printer.h"
+#include "dbt/qmc/qir_printer.h"
 #include <sstream>
 
 namespace dbt::qir
@@ -196,6 +196,8 @@ public:
 std::string PrinterPass::run(Region *r)
 {
 	std::stringstream ss;
+
+	ss << "region: n_glob=" << r->GetVRegsInfo()->NumAll() << " n_loc=" << r->GetVRegsInfo()->NumLocals();
 
 	for (auto &bb : r->blist) {
 		ss << "\nbb." << bb.GetId() << ":";

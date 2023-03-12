@@ -1,7 +1,7 @@
 #include "dbt/execute.h"
 #include "dbt/guest/rv32_runtime.h"
-#include "dbt/qjit/qcg/jitabi.h"
-#include "dbt/qjit/qcompile.h"
+#include "dbt/qmc/compile.h"
+#include "dbt/qmc/qcg/jitabi.h"
 
 namespace dbt
 {
@@ -13,6 +13,48 @@ static inline bool HandleTrap(CPUState *state)
 	// Currenlty only delegates to ukernel
 	return !state->IsTrapPending();
 }
+
+struct JITCompilerRuntime final : CompilerRuntime {
+	void *AllocateCode(size_t sz, uint align) override
+	{
+		return tcache::AllocateCode(sz, align);
+	}
+
+	bool AllowsRelocation() const override
+	{
+		return false;
+	}
+
+	uptr GetVMemBase() const override
+	{
+		return (uptr)mmu::base;
+	}
+
+	void UpdateIPBoundary(std::pair<u32, u32> &iprange) const override
+	{
+#ifndef CONFIG_DUMP_TRACE // TODO(tuning): force page boundary
+		u32 upper = iprange.second;
+		if (auto *tb_upper = tcache::LookupUpperBound(iprange.first)) {
+			upper = std::min(upper, tb_upper->ip);
+		}
+		// upper = std::min(upper, roundup(iprange.first, mmu::PAGE_SIZE));
+		iprange.second = upper;
+#endif
+	}
+
+	void *AnnounceRegion(u32 ip, std::span<u8> const &code) override
+	{
+		// TODO: concurrent tcache
+		auto tb = tcache::AllocateTBlock();
+		if (tb == nullptr) {
+			Panic();
+		}
+		tb->ip = ip;
+		tb->tcode = TBlock::TCode{code.data(), code.size()};
+		tcache::Insert(tb);
+		return (void *)tb;
+	}
+};
 
 void Execute(CPUState *state)
 {
@@ -30,7 +72,8 @@ void Execute(CPUState *state)
 
 		TBlock *tb = tcache::Lookup(state->ip);
 		if (tb == nullptr) {
-			tb = qir::CompileAt(state->ip);
+			auto jrt = JITCompilerRuntime();
+			tb = (TBlock *)qir::CompileAt(&jrt, {state->ip, -1});
 		}
 
 		if (branch_slot) {

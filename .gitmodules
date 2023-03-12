@@ -1,3 +1,6 @@
 [submodule "dbt/third_party/asmjit"]
 	path = dbt/third_party/asmjit
 	url = https://github.com/asmjit/asmjit
+[submodule "dbt/third_party/elfio"]
+	path = dbt/third_party/elfio
+	url = https://github.com/serge1/ELFIO

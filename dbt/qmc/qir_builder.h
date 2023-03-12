@@ -1,7 +1,7 @@
 #pragma once
 
-#include "dbt/qjit/qir.h"
-#include "dbt/qjit/qir_opt.h"
+#include "dbt/qmc/qir.h"
+#include "dbt/qmc/qir_opt.h"
 
 namespace dbt::qir
 {

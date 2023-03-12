@@ -31,6 +31,7 @@ void tcache::Destroy()
 
 void tcache::Invalidate()
 {
+	unreachable("tcache invalidation is not supported");
 	jmp_cache_generic.fill(nullptr);
 	jmp_cache_brind.fill(nullptr);
 	tcache_map.clear();

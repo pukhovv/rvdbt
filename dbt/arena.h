@@ -33,6 +33,11 @@ struct MemArena {
 		return used;
 	}
 
+	inline void *BaseAddr() const
+	{
+		return pool;
+	}
+
 private:
 	u8 *pool{nullptr};
 	size_t pool_sz{0};

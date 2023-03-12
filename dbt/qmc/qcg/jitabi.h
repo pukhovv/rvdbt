@@ -1,7 +1,7 @@
 #pragma once
 
 #include "dbt/execute.h"
-#include "dbt/qjit/qcg/arch_traits.h"
+#include "dbt/qmc/qcg/arch_traits.h"
 
 namespace dbt::jitabi
 {

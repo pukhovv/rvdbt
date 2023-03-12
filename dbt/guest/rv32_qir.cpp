@@ -1,7 +1,7 @@
 #include "dbt/guest/rv32_qir.h"
 #include "dbt/guest/rv32_decode.h"
 #include "dbt/guest/rv32_runtime.h"
-#include "dbt/qjit/qir_printer.h"
+#include "dbt/qmc/qir_printer.h"
 #include "dbt/tcache/cflow_dump.h"
 
 #include <sstream>
@@ -66,7 +66,7 @@ RV32Translator::RV32Translator(qir::Region *region_, u32 ip, uptr vmem)
 
 void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip, uptr vmem)
 {
-	log_qir("RV32Translator: [%08x]", ip);
+	log_qir("RV32Translator: [%08x:%08x]", ip, boundary_ip);
 	RV32Translator t(region, ip, vmem);
 	t.insn_ip = ip;
 	cflow_dump::RecordEntry(ip);
@@ -78,14 +78,14 @@ void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip, upt
 		if (t.control != Control::NEXT) {
 			break;
 		}
-		if (num_insns == TB_MAX_INSNS || t.insn_ip == boundary_ip) {
+		if (num_insns == TB_MAX_INSNS || t.insn_ip >= boundary_ip) {
 			t.control = Control::TB_OVF;
 			t.qb.Create_gbr(VOperand::MakeConst(VType::I32, t.insn_ip));
 			cflow_dump::RecordGBr(t.bb_ip, t.insn_ip);
 			break;
 		}
 	}
-	log_qir("RV32Translator: finish scan");
+	log_qir("RV32Translator: stop at %08x", ip);
 }
 
 // TODO: move to late qir pass?

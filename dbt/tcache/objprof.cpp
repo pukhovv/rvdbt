@@ -1,8 +1,11 @@
-#include "dbt/tcache/aot_cache.h"
+#include "dbt/tcache/objprof.h"
+#include "dbt/aot/aot.h"
 #include <fcntl.h>
 
 namespace dbt
 {
+
+static std::string g_dbt_cache_dir;
 
 FileChecksum FileChecksum::FromFile(int fd)
 {
@@ -25,13 +28,14 @@ FileChecksum FileChecksum::FromFile(int fd)
 	return sum;
 }
 
-void InitCacheDir(char const *path)
+void objprof::Init(char const *path, bool use_aot_)
 {
 	char buf[PATH_MAX];
 	if (!realpath(path, buf)) {
 		Panic(std::string("failed to resolve ") + path);
 	}
 	g_dbt_cache_dir = std::string(buf) + "/";
+	use_aot = use_aot_;
 }
 
 static std::string MakeCachePath(FileChecksum const &csum, char const *extension)
@@ -39,9 +43,16 @@ static std::string MakeCachePath(FileChecksum const &csum, char const *extension
 	return g_dbt_cache_dir + csum.ToString() + extension;
 }
 
-profile_storage::ElfProfile profile_storage::elf_prof{};
+std::string objprof::GetCachePath(char const *extension)
+{
+	assert(HasProfile());
+	return MakeCachePath(elf_prof.fmap->csum, extension);
+}
 
-void profile_storage::OpenProfile(int elf_fd)
+objprof::ElfProfile objprof::elf_prof{};
+bool objprof::use_aot = false;
+
+void objprof::Open(int elf_fd, bool jit_mode)
 {
 	auto csum = FileChecksum::FromFile(elf_fd);
 	auto path = MakeCachePath(csum, ".prof");
@@ -54,6 +65,9 @@ void profile_storage::OpenProfile(int elf_fd)
 	if (fd = open(path.c_str(), O_RDWR, 0666); fd < 0) {
 		if (errno != ENOENT) {
 			Panic("failed to open " + path);
+		}
+		if (!jit_mode) {
+			return;
 		}
 		new_file = true;
 	}
@@ -87,10 +101,13 @@ void profile_storage::OpenProfile(int elf_fd)
 			log_prof("Found PageData for pageno=%u", pageno);
 			pfile.page2idx.insert({pageno, idx});
 		}
+		if (use_aot) {
+			BootAOTFile();
+		}
 	}
 }
 
-void profile_storage::Destroy()
+void objprof::Destroy()
 {
 	auto &pfile = elf_prof;
 	int rc;
@@ -103,8 +120,9 @@ void profile_storage::Destroy()
 	}
 }
 
-u32 profile_storage::AllocatePageData(u32 pageno)
+u32 objprof::AllocatePageData(u32 pageno)
 {
+	log_prof("Allocate PageData for pageno=%u", pageno);
 	auto &pfile = elf_prof;
 	auto fmap = pfile.fmap;
 	auto idx = fmap->n_pages++;
@@ -116,17 +134,17 @@ u32 profile_storage::AllocatePageData(u32 pageno)
 	return idx;
 }
 
-profile_storage::FilePageData *profile_storage::GetOrCreatePageData(u32 pageno)
+objprof::PageData *objprof::GetOrCreatePageData(u32 pageno)
 {
 	auto &pfile = elf_prof;
-	auto it = pfile.page2idx.insert_or_assign(pageno, 0);
+	auto it = pfile.page2idx.insert({pageno, 0});
 	if (it.second) {
 		it.first->second = AllocatePageData(pageno);
 	}
 	return &pfile.fmap->pages[it.first->second];
 }
 
-void profile_storage::UpdateProfile()
+void objprof::UpdateProfile()
 {
 	auto &tmap = tcache::tcache_map;
 
@@ -135,19 +153,32 @@ void profile_storage::UpdateProfile()
 	}
 }
 
-tcache::MapType::iterator profile_storage::UpdatePageProfile(tcache::MapType::iterator it)
+tcache::MapType::iterator objprof::UpdatePageProfile(tcache::MapType::iterator it)
 {
 	u32 const pageno = it->first >> mmu::PAGE_BITS;
 	auto *const page_data = GetOrCreatePageData(pageno);
+	assert(page_data->pageno == pageno);
 	log_prof("Update PageData for pageno=%u", pageno);
 
-	for (; it->first >> mmu::PAGE_BITS == pageno; ++it) {
+	for (; (it->first >> mmu::PAGE_BITS) == pageno; ++it) {
 		auto tb = it->second;
-		auto po_idx = FilePageData::po2idx(it->first & ~mmu::PAGE_MASK);
+		auto po_idx = PageData::po2idx(it->first & ~mmu::PAGE_MASK);
 		page_data->executed.set(po_idx, true);
 		page_data->brind.set(po_idx, tb->flags.is_brind_target);
 	}
 	return it;
+}
+
+bool objprof::HasProfile()
+{
+	return elf_prof.fmap != nullptr;
+}
+
+std::span<const objprof::PageData> const objprof::GetProfile()
+{
+	assert(HasProfile());
+	auto const *fmap = elf_prof.fmap;
+	return {fmap->pages, fmap->n_pages};
 }
 
 } // namespace dbt

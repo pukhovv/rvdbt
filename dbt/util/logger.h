@@ -7,8 +7,8 @@
 namespace dbt
 {
 
-struct LogStream {
-	consteval LogStream(char const *name_, char const *prefix_) : name(name_), prefix(prefix_) {}
+struct LogStreamI {
+	consteval LogStreamI(char const *name_, char const *prefix_) : name(name_), prefix(prefix_) {}
 
 	ALWAYS_INLINE void write(char const *str) const
 	{
@@ -36,7 +36,7 @@ struct LogStream {
 	}
 
 	struct Setup {
-		Setup(LogStream &s);
+		Setup(LogStreamI &s);
 	};
 
 private:
@@ -70,17 +70,18 @@ struct Logger {
 	static void enable(char const *name);
 
 private:
-	friend struct LogStream::Setup;
+	friend struct LogStreamI::Setup;
 
 	Logger() = default;
 	static Logger *get();
 
-	static void setup(LogStream &s);
+	static void setup(LogStreamI &s);
 
-	std::map<std::string, LogStream *> streams{};
+	std::map<std::string, LogStreamI *> streams{};
 };
 
 #ifndef NDEBUG
+using LogStream = LogStreamI;
 #define LOG_STREAM(name)                                                                                     \
 	constinit inline LogStream log_##name{#name, "[" #name "]"};                                         \
 	namespace                                                                                            \
@@ -88,6 +89,7 @@ private:
 	inline ::dbt::LogStream::Setup setup_log_##name{log_##name};                                         \
 	}
 #else
+using LogStream = LogStreamNull;
 #define LOG_STREAM(name) constinit inline LogStreamNull log_##name{};
 #endif
 

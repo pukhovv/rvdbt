@@ -76,7 +76,7 @@ struct tcache {
 
 private:
 	tcache() = delete;
-	friend struct profile_storage;
+	friend struct objprof;
 
 	static TBlock *LookupFull(u32 ip);
 
