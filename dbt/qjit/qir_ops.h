@@ -3,7 +3,7 @@
 #define QIR_DEF_APPLY_CLASS2BASE(name, cls, flags) CLASS(cls, name, name)
 
 #define QIR_DEF_LIST(LEAF, BASE, CLASS)                                                                      \
-	BASE(hcall, InstHcall, Flags::SIDEEFF)                                                               \
+	BASE(hcall, InstHcall, Flags::SIDEEFF | Flags::HAS_CALLS)                                            \
 	BASE(br, InstBr, 0)                                                                                  \
 	BASE(brcc, InstBrcc, 0)                                                                              \
 	BASE(gbr, InstGBr, Flags::REXIT)                                                                     \

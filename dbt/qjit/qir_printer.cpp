@@ -110,7 +110,7 @@ private:
 		auto out = ins->outputs();
 		for (u8 idx = 0; idx < out.size(); ++idx)
 			print(out[idx]);
-		auto in = ins->outputs();
+		auto in = ins->inputs();
 		for (u8 idx = 0; idx < in.size(); ++idx)
 			print(in[idx]);
 	}

@@ -60,7 +60,7 @@ struct QRegAlloc {
 	void AllocOp(qir::Inst *ins);
 	void CallOp(bool use_globals = true);
 
-	static constexpr u16 frame_size{qcg::stub_frame_size};
+	static constexpr u16 frame_size{ArchTraits::spillframe_size};
 
 	qir::Region *region{};
 	qir::VRegsInfo const *vregs_info{};

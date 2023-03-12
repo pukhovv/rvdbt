@@ -3,8 +3,10 @@
 namespace dbt::qcg
 {
 
-QEmit::QEmit(qir::Region *region, bool jit_mode_) : jit_mode(jit_mode_)
+QEmit::QEmit(qir::Region *region, bool jit_mode_, bool is_leaf_) : jit_mode(jit_mode_), is_leaf(is_leaf_)
 {
+	spillframe_sp_offs = sizeof(uptr) * (is_leaf ? 1 : 2);
+
 	if (jcode.init(jrt.environment())) {
 		Panic();
 	}
@@ -75,15 +77,21 @@ static inline asmjit::Imm make_imm(qir::VOperand opr)
 	return asmjit::imm(opr.GetConst());
 }
 
-static inline asmjit::x86::Mem make_slot(qir::VOperand opr)
+inline asmjit::x86::Mem QEmit::make_slot(qir::VOperand opr)
 {
-	auto offs = opr.GetSlotOffs();
 	auto size = VTypeToSize(opr.GetType());
-	auto base = opr.IsLSlot() ? QEmit::R_SP : QEmit::R_STATE;
+	auto offs = opr.GetSlotOffs();
+	asmjit::x86::Gp base;
+	if (opr.IsLSlot()) {
+		base = QEmit::R_SP;
+		offs += spillframe_sp_offs;
+	} else {
+		base = QEmit::R_STATE;
+	}
 	return asmjit::x86::Mem(base, offs, size);
 }
 
-static inline asmjit::Operand make_operand(qir::VOperand opr)
+inline asmjit::Operand QEmit::make_operand(qir::VOperand opr)
 {
 	if (likely(opr.IsGPR())) {
 		return make_gpr(opr);
@@ -92,6 +100,14 @@ static inline asmjit::Operand make_operand(qir::VOperand opr)
 		return make_imm(opr);
 	}
 	return make_slot(opr);
+}
+
+inline asmjit::Operand QEmit::make_stubcall_target(RuntimeStubId stub)
+{
+	if (jit_mode) {
+		return asmjit::imm(stub_tab[stub]);
+	}
+	return asmjit::x86::Mem(R_STATE, offsetof(CPUState, stub_tab) + RuntimeStubTab::offs(stub));
 }
 
 static inline asmjit::x86::CondCode make_cc(qir::CondCode cc)
@@ -122,9 +138,25 @@ static inline asmjit::x86::CondCode make_cc(qir::CondCode cc)
 	}
 }
 
+void QEmit::FrameSetup()
+{
+	if (!is_leaf) {
+		// Push something to satisfy x86 frame alignment
+		j.push(asmjit::x86::rcx);
+	}
+}
+
+void QEmit::FrameDestroy()
+{
+	if (!is_leaf) {
+		j.pop(asmjit::x86::rcx);
+	}
+}
+
 void QEmit::Prologue(u32 ip)
 {
 	// j.int3();
+	FrameSetup();
 #ifdef CONFIG_DUMP_TRACE
 	// j.mov(ctx->vreg_ip->GetSpill(), ctx->tb->ip);
 	j.mov(asmjit::x86::Mem(R_STATE, offsetof(CPUState, ip), 4), ip);
@@ -162,14 +194,10 @@ void QEmit::LocSpill(qir::RegN p, qir::VType type, u16 offs)
 
 void QEmit::Emit_hcall(qir::InstHcall *ins)
 {
+	assert(!is_leaf);
 	j.mov(asmjit::x86::rdi, R_STATE);
 	j.emit(asmjit::x86::Inst::kIdMov, asmjit::x86::rsi, make_operand(ins->i(0)));
-	if (jit_mode) {
-		j.call(stub_tab[ins->stub]);
-	} else {
-		j.call(asmjit::x86::Mem(R_STATE,
-					offsetof(CPUState, stub_tab) + RuntimeStubTab::offs(ins->stub)));
-	}
+	j.emit(asmjit::x86::Inst::kIdCall, make_stubcall_target(ins->stub));
 }
 
 void QEmit::Emit_br(qir::InstBr *ins)
@@ -209,6 +237,7 @@ void QEmit::Emit_brcc(qir::InstBrcc *ins)
 
 void QEmit::Emit_gbr(qir::InstGBr *ins)
 {
+	FrameDestroy();
 	static constexpr size_t patch_size = sizeof(jitabi::ppoint::BranchSlot);
 	j.embedUInt8(0, patch_size);
 	auto *slot = (jitabi::ppoint::BranchSlot *)(j.bufferPtr() - patch_size);
@@ -223,11 +252,7 @@ void QEmit::Emit_gbr(qir::InstGBr *ins)
 void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 {
 	auto ptgt = make_gpr(ins->i(0));
-	{ // TODO: force si alloc
-		auto tmp_ptgt = asmjit::x86::gpd(asmjit::x86::Gp::kIdSi);
-		j.mov(tmp_ptgt, ptgt);
-		ptgt = tmp_ptgt;
-	}
+	assert(ptgt.id() == asmjit::x86::Gp::kIdSi);
 
 	auto slowpath = j.newLabel();
 	{
@@ -253,14 +278,26 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 
 		j.mov(tmp0.r64(), asmjit::x86::ptr(tmp0.r64(), offsetof(dbt::TBlock, tcode) +
 								   offsetof(dbt::TBlock::TCode, ptr)));
+		FrameDestroy();
 		j.jmp(tmp0.r64());
 	}
 
 	j.bind(slowpath);
 
 	j.mov(asmjit::x86::gpq(asmjit::x86::Gp::kIdDi), R_STATE);
-	assert(ptgt.id() == asmjit::x86::Gp::kIdSi);
-	j.call(stub_tab[RuntimeStubId::id_brind]);
+
+	// Allow call in leaf procedure and setup frame in slowpath
+	if (is_leaf) {
+		j.push(asmjit::x86::rcx);
+	}
+
+	j.emit(asmjit::x86::Inst::kIdCall, make_stubcall_target(RuntimeStubId::id_brind));
+
+	if (is_leaf) {
+		j.pop(asmjit::x86::rcx);
+	} else {
+		FrameDestroy();
+	}
 	j.jmp(asmjit::x86::rdx);
 }
 

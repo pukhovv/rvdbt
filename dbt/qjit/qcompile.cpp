@@ -16,7 +16,7 @@ TBlock *CompileAt(u32 ip)
 	if (auto *tb_bound = tcache::LookupUpperBound(ip)) {
 		upper_bound = tb_bound->ip;
 	}
-	// TODO: forced page boudary
+	// TODO: forced page boundary
 	// upper_bound = std::min(upper_bound, roundup(ip, mmu::PAGE_SIZE));
 #endif
 

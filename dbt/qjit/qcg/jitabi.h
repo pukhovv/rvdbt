@@ -6,11 +6,6 @@
 namespace dbt::jitabi
 {
 
-struct _RetPair {
-	void *v0;
-	void *v1;
-};
-
 namespace ppoint
 {
 struct BranchSlot {

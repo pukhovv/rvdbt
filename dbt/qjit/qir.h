@@ -305,6 +305,7 @@ struct alignas(alignof(VOperand)) Inst : IListNode<Inst>, InstOperandAccessMixin
 	enum Flags { // TODO: enum class
 		SIDEEFF = 1 << 0,
 		REXIT = 1 << 1,
+		HAS_CALLS = 1 << 2,
 	};
 
 	inline Op GetOpcode() const

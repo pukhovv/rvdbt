@@ -5,39 +5,61 @@
 namespace dbt::jitabi
 {
 
+struct _RetPair {
+	void *v0;
+	void *v1;
+};
+
 #define HELPER extern "C" NOINLINE __attribute__((used))
 #define HELPER_ASM extern "C" NOINLINE __attribute__((used, naked))
 
+/*    qjit qcg/llvm frame layout, grows down
+ *
+ *			| ....		|  Execution loop
+ *	trampoline call +---------------+-----------------------
+ *			| link+fp|saved |  qcg spill frame, created in trampoline
+ *			+---------------+  no callee saved regs expected
+ *			| qcg locals	|  returning to this frame is not allowed
+ *  	       tailcall +---------------+-----------------------
+ *			| link+pad  	|  Translated region frame
+ *			+---------------|  Destroyed on branch to next region
+ *			| llvm locals	|  qcg/ghccc callconv doesn't preserve fp
+ *   abs/qcg-reloc call +---------------+-----------------------
+ *			| ....		|  qcgstub_* frame
+ */
+
+static_assert((u64(QCG_SPILL_FRAME_SIZE) & 15) == 0);
+static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
+static_assert(qcg::ArchTraits::MEMBASE == asmjit::x86::Gp::kIdBp);
+
+// Build qcg spillframe and enter translated code
 HELPER_ASM ppoint::BranchSlot *trampoline_to_jit(CPUState *state, void *vmem, void *tc_ptr)
 {
-	__asm("pushq	%rbp\n\t"
-	      "movq	%rsp, %rbp\n\t"
-	      "pushq	%rbx\n\t"
-	      "pushq	%r12\n\t"
-	      "pushq	%r13\n\t"
-	      "pushq	%r14\n\t"
-	      "pushq	%r15\n\t"
-	      "movq 	%rdi, %r13\n\t" // STATE
-	      "movq	%rsi, %r12\n\t" // MEMBASE
-	      "subq	$248, %rsp\n\t" // stub_frame_size
-	      "jmpq	*%rdx\n\t");	// tc_ptr
+	asm("pushq	%rbp\n\t"
+	    "pushq	%rbx\n\t"
+	    "pushq	%r12\n\t"
+	    "pushq	%r13\n\t"
+	    "pushq	%r14\n\t"
+	    "pushq	%r15\n\t"
+	    "movq 	%rdi, %r13\n\t"	  // STATE
+	    "movq	%rsi, %rbp\n\t"); // MEMBASE
+	asm("sub     $" STRINGIFY(QCG_SPILL_FRAME_SIZE + 8) ", %rsp\n\t");
+	asm("callq	*%rdx\n\t" // tc_ptr
+	    "int	$3");	   // use escape/raise stub instead
 }
 
+// Escape from translated code, forward `rax` to caller
 HELPER_ASM void qcgstub_escape()
 {
-	__asm("addq	$248, %rsp\n\t" // stub_frame_size
-	      "popq	%r15\n\t"
-	      "popq	%r14\n\t"
-	      "popq	%r13\n\t"
-	      "popq	%r12\n\t"
-	      "popq	%rbx\n\t"
-	      "popq	%rbp\n\t"
-	      "retq	\n\t");
+	asm("addq   $(" STRINGIFY(QCG_SPILL_FRAME_SIZE + 16) "), %rsp\n\t");
+	asm("popq	%r15\n\t"
+	    "popq	%r14\n\t"
+	    "popq	%r13\n\t"
+	    "popq	%r12\n\t"
+	    "popq	%rbx\n\t"
+	    "popq	%rbp\n\t"
+	    "retq	\n\t");
 }
-static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
-static_assert(qcg::ArchTraits::MEMBASE == asmjit::x86::Gp::kIdR12);
-static_assert(qcg::ArchTraits::SP == asmjit::x86::Gp::kIdSp);
-static_assert(qcg::stub_frame_size == 248);
 
 // Caller uses 2nd value in returned pair as jump target
 static ALWAYS_INLINE _RetPair TryLinkBranch(ppoint::BranchSlot *slot)
@@ -50,18 +72,22 @@ static ALWAYS_INLINE _RetPair TryLinkBranch(ppoint::BranchSlot *slot)
 	return {slot, (void *)qcgstub_escape};
 }
 
+// Lazy region linking, absolute call target (jit/aot mode)
 HELPER_ASM void qcgstub_link_branch_jit()
 {
-	__asm("popq	%rdi\n\t"
-	      "callq	qcg_TryLinkBranchJIT@plt\n\t"
-	      "jmpq	*%rdx\n\t");
+	asm("movq	0(%rsp), %rdi\n\t"
+	    "callq	qcg_TryLinkBranchJIT@plt\n\t"
+	    "popq	%rdi\n\t" // pop somewhere
+	    "jmpq	*%rdx\n\t");
 }
 
+// Lazy region linking, qcg-relocation call target (aot mode)
 HELPER_ASM void qcgstub_link_branch_aot()
 {
-	__asm("popq	%rdi\n\t"
-	      "callq	qcg_TryLinkBranchAOT@plt\n\t"
-	      "jmpq	*%rdx\n\t");
+	asm("movq	0(%rsp), %rdi\n\t"
+	    "callq	qcg_TryLinkBranchAOT@plt\n\t"
+	    "popq	%rdi\n\t" // pop somewhere
+	    "jmpq	*%rdx\n\t");
 }
 
 HELPER _RetPair qcg_TryLinkBranchJIT(void *retaddr)
@@ -74,6 +100,7 @@ HELPER _RetPair qcg_TryLinkBranchAOT(void *retaddr)
 	return TryLinkBranch(ppoint::BranchSlot::FromCallRuntimeStubRetaddr(retaddr));
 }
 
+// Indirect branch slowpath
 HELPER _RetPair qcgstub_brind(CPUState *state, u32 gip)
 {
 	state->ip = gip;
@@ -114,17 +141,17 @@ HELPER void qcgstub_raise()
 
 HELPER_ASM void qcgstub_trace()
 {
-	__asm(PUSH_NONCSR_GPR());
+	asm(PUSH_NONCSR_GPR());
 
-	__asm("pushq	%r13\n\t"
-	      "movq	%r13, %rdi\n\t" // STATE
-	      "subq	$8, %rsp\n\t"
-	      "callq	qcg_DumpTrace@plt\n\t"
-	      "addq	$8, %rsp\n\t"
-	      "popq	%r13\n\t");
+	asm("pushq	%r13\n\t"
+	    "movq	%r13, %rdi\n\t" // STATE
+	    "subq	$8, %rsp\n\t"
+	    "callq	qcg_DumpTrace@plt\n\t"
+	    "addq	$8, %rsp\n\t"
+	    "popq	%r13\n\t");
 
-	__asm(POP_NONCSR_GPR());
-	__asm("retq	\n\t");
+	asm(POP_NONCSR_GPR());
+	asm("retq	\n\t");
 }
 static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
 

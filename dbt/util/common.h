@@ -23,6 +23,8 @@ typedef int16_t i16;
 typedef int8_t i8;
 
 #define EMPTY_MACRO(...)
+#define STRINGIFY(x) STRINGIFY1(x)
+#define STRINGIFY1(x) #x
 
 #define POISON_PTR ((void *)0xb00bab00deaddead)
 #define POISON_GUEST ((u32)0xdedb00ba)

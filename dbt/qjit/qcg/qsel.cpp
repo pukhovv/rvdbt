@@ -5,7 +5,10 @@ namespace dbt::qcg
 {
 
 struct QSel {
-	QSel(qir::Region *region_) : region(region_) {}
+	QSel(qir::Region *region_, MachineRegionInfo *region_info_)
+	    : region(region_), region_info(region_info_)
+	{
+	}
 
 	void Run();
 
@@ -13,6 +16,7 @@ struct QSel {
 
 	qir::Region *region{};
 	qir::Builder qb{nullptr};
+	MachineRegionInfo *region_info{};
 };
 
 void QSel::SelectOperands(qir::Inst *ins)
@@ -66,7 +70,7 @@ void QSel::SelectOperands(qir::Inst *ins)
 		}
 		auto type = src->GetType();
 		auto val = src->GetConst();
-		if (ct.ci != RACtImm::NO && match_gp_const(type, val, ct.ci)) {
+		if (ct.ci != RACtImm::NO && ArchTraits::match_gp_const(type, val, ct.ci)) {
 			continue;
 		}
 		auto tmp = qir::VOperand::MakeVGPR(type, qb.CreateVGPR(type));
@@ -155,13 +159,17 @@ void QSel::Run()
 		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
 			qb = qir::Builder(&bb, iit);
 			QSelVisitor(this).visit(&*iit);
+
+			if (iit->GetFlags() & qir::Inst::HAS_CALLS) {
+				region_info->has_calls = true;
+			}
 		}
 	}
 }
 
-void QSelPass::run(qir::Region *region)
+void QSelPass::run(qir::Region *region, MachineRegionInfo *region_info)
 {
-	QSel sel(region);
+	QSel sel(region, region_info);
 	sel.Run();
 }
 

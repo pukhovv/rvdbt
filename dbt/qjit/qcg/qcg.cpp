@@ -20,9 +20,10 @@ private:
 TBlock::TCode JITGenerate(qir::Region *r, u32 ip)
 {
 	ArchTraits::init();
+	MachineRegionInfo mregion_info;
 
 	log_qcg("Select instructions");
-	QSelPass::run(r);
+	QSelPass::run(r, &mregion_info);
 	if (log_qcg.enabled()) {
 		auto str = qir::PrinterPass::run(r);
 		log_qcg.write(str.c_str());
@@ -35,8 +36,8 @@ TBlock::TCode JITGenerate(qir::Region *r, u32 ip)
 		log_qcg.write(str.c_str());
 	}
 
-	log_qcg("Generate code");
-	QEmit ce(r, true);
+	log_qcg("Generate code: jit_mode=%u is_leaf=%u", true, !mregion_info.has_calls);
+	QEmit ce(r, true, !mregion_info.has_calls);
 	QCodegen cg(r, &ce);
 	cg.Run(ip);
 

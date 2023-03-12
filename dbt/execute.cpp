@@ -21,6 +21,7 @@ void Execute(CPUState *state)
 	jitabi::ppoint::BranchSlot *branch_slot = nullptr;
 
 	while (likely(!HandleTrap(state))) {
+		assert(state == CPUState::Current());
 		assert(state->gpr[0] == 0);
 		if constexpr (config::use_interp) {
 			Interpreter::Execute(state);

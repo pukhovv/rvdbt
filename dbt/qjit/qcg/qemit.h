@@ -9,7 +9,7 @@
 namespace dbt::qcg
 {
 struct QEmit {
-	QEmit(qir::Region *region, bool jit_mode_);
+	QEmit(qir::Region *region, bool jit_mode_, bool is_leaf_);
 
 	inline void SetBlock(qir::Block *bb_)
 	{
@@ -33,9 +33,11 @@ struct QEmit {
 	static constexpr auto R_STATE = asmjit::x86::gpq(ArchTraits::STATE);
 	static constexpr auto R_MEMBASE = asmjit::x86::gpq(ArchTraits::MEMBASE);
 	static constexpr auto R_SP = asmjit::x86::gpq(ArchTraits::SP);
-	static constexpr auto R_TMP1 = asmjit::x86::gpq(ArchTraits::TMP1);
 
 private:
+	void FrameSetup();
+	void FrameDestroy();
+
 	template <asmjit::x86::Inst::Id Op>
 	ALWAYS_INLINE void EmitInstBinop(qir::InstBinop *ins);
 
@@ -43,9 +45,21 @@ private:
 		virtual void handleError(asmjit::Error err, const char *message,
 					 asmjit::BaseEmitter *origin) override
 		{
-			Panic("jit codegen failed");
+			Panic("qemit asmjit failed");
 		}
 	};
+
+	inline asmjit::Operand make_operand(qir::VOperand opr);
+	inline asmjit::x86::Mem make_slot(qir::VOperand opr);
+	inline asmjit::Operand make_stubcall_target(RuntimeStubId stub);
+
+	qir::Block *bb{};
+
+	bool jit_mode{};
+	RuntimeStubTab const &stub_tab{*RuntimeStubTab::GetGlobal()};
+
+	bool is_leaf;
+	u32 spillframe_sp_offs;
 
 	asmjit::JitRuntime jrt{};
 	asmjit::CodeHolder jcode{};
@@ -53,11 +67,6 @@ private:
 	JitErrorHandler jerr{};
 
 	std::vector<asmjit::Label> labels;
-
-	qir::Block *bb{};
-
-	bool jit_mode{};
-	RuntimeStubTab const &stub_tab{*RuntimeStubTab::GetGlobal()};
 };
 
 }; // namespace dbt::qcg

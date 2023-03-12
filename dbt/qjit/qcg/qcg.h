@@ -6,10 +6,16 @@
 namespace dbt::qcg
 {
 
+LOG_STREAM(qcg);
+
 TBlock::TCode JITGenerate(qir::Region *r, u32 ip);
 
+struct MachineRegionInfo {
+	bool has_calls = false;
+};
+
 struct QSelPass {
-	static void run(qir::Region *region);
+	static void run(qir::Region *region, MachineRegionInfo *region_info);
 };
 
 struct QRegAllocPass {

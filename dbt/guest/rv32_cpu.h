@@ -26,7 +26,7 @@ struct CPUState {
 		tls_current = s;
 	}
 
-	inline CPUState *Current()
+	static inline CPUState *Current()
 	{
 		return tls_current;
 	}
