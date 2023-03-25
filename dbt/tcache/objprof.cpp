@@ -163,6 +163,9 @@ tcache::MapType::iterator objprof::UpdatePageProfile(tcache::MapType::iterator i
 	for (; (it->first >> mmu::PAGE_BITS) == pageno; ++it) {
 		auto tb = it->second;
 		auto po_idx = PageData::po2idx(it->first & ~mmu::PAGE_MASK);
+		if (page_data->executed.test(po_idx) != true) {
+			log_prof("new tb: %08x", it->first);
+		}
 		page_data->executed.set(po_idx, true);
 		page_data->brind.set(po_idx, tb->flags.is_brind_target);
 	}

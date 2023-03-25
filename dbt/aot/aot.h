@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dbt/qmc/compile.h"
 #include "dbt/ukernel.h"
 
 namespace dbt
@@ -20,7 +21,9 @@ struct AOTTabHeader {
 	AOTSymbol sym[];
 };
 
-void AOTCompileElf();
+void AOTCompileELF();
 void BootAOTFile();
+
+void AOTCompileObject(CompilerRuntime *aotrt);
 
 } // namespace dbt

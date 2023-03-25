@@ -70,6 +70,7 @@ void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip, upt
 	RV32Translator t(region, ip, vmem);
 	t.insn_ip = ip;
 	cflow_dump::RecordEntry(ip);
+	assert(boundary_ip != 0);
 
 	u32 num_insns = 0;
 	while (true) {

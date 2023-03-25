@@ -37,7 +37,7 @@ private:
 
 	qir::Builder qb;
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
-	uptr vmem_base{}; // jit/aot
+	uptr vmem_base{};
 	u32 insn_ip{0};
 	u32 bb_ip{}; // for cflow_dump
 };
