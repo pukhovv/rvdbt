@@ -216,7 +216,8 @@ entry:
 	state->DumpTrace("entry");
 #define XDUMP(name)                                                                                          \
 	do {                                                                                                 \
-		if (++icount == TB_MAX_INSNS || (insn::Insn_##name::flags & insn::Flags::Branch))            \
+		if (++icount == TB_MAX_INSNS || !(gip & ~mmu::PAGE_MASK) ||                                  \
+		    (insn::Insn_##name::flags & insn::Flags::Branch))                                        \
 			goto entry;                                                                          \
 	} while (0)
 #else

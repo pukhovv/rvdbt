@@ -32,14 +32,12 @@ struct JITCompilerRuntime final : CompilerRuntime {
 
 	void UpdateIPBoundary(std::pair<u32, u32> &iprange) const override
 	{
-#ifndef CONFIG_DUMP_TRACE // TODO(tuning): force page boundary
 		u32 upper = iprange.second;
+		upper = std::min(upper, roundup(iprange.first, mmu::PAGE_SIZE));
 		if (auto *tb_upper = tcache::LookupUpperBound(iprange.first)) {
 			upper = std::min(upper, tb_upper->ip);
 		}
-		// upper = std::min(upper, roundup(iprange.first, mmu::PAGE_SIZE));
 		iprange.second = upper;
-#endif
 	}
 
 	void *AnnounceRegion(u32 ip, std::span<u8> const &code) override
