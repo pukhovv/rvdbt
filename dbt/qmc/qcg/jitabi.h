@@ -1,7 +1,11 @@
 #pragma once
 
-#include "dbt/execute.h"
 #include "dbt/qmc/qcg/arch_traits.h"
+
+namespace dbt
+{
+struct CPUState;
+} // namespace dbt
 
 namespace dbt::jitabi
 {
@@ -52,7 +56,7 @@ private:
 public:
 	void Link(void *to);
 	void LinkLazyJIT();
-	void LinkLazyAOT();
+	void LinkLazyAOT(u16 stub_tab_offs);
 
 	// Calculate BranchSlot* from retaddr if call by ptr was used
 	static inline BranchSlot *FromCallPtrRetaddr(void *ra)
@@ -67,6 +71,9 @@ public:
 	}
 
 	u32 gip;
+	struct {
+		bool cross_segment : 1 {false};
+	} flags;
 } __attribute__((packed));
 
 inline void BranchSlot::LinkLazyJIT()
@@ -75,10 +82,9 @@ inline void BranchSlot::LinkLazyJIT()
 	    (uptr)(*RuntimeStubTab::GetGlobal())[RuntimeStubId::id_link_branch_jit];
 }
 
-inline void BranchSlot::LinkLazyAOT()
+inline void BranchSlot::LinkLazyAOT(u16 stub_tab_offs)
 {
-	CreatePatch<CallTab>()->imm =
-	    offsetof(CPUState, stub_tab) + RuntimeStubTab::offs(RuntimeStubId::id_link_branch_aot);
+	CreatePatch<CallTab>()->imm = stub_tab_offs + RuntimeStubTab::offs(RuntimeStubId::id_link_branch_aot);
 }
 
 inline void BranchSlot::Link(void *to)

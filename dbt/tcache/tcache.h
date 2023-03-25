@@ -13,6 +13,11 @@ namespace dbt
 {
 LOG_STREAM(tcache);
 
+namespace jitabi::ppoint
+{
+struct BranchSlot;
+} // namespace jitabi::ppoint
+
 struct alignas(8) TBlock {
 	struct TCode {
 		void *ptr{nullptr};
@@ -23,6 +28,7 @@ struct alignas(8) TBlock {
 	u32 ip{0};
 	struct {
 		bool is_brind_target : 1 {false};
+		bool is_segment_entry : 1 {false};
 	} flags;
 };
 
@@ -59,6 +65,12 @@ struct tcache {
 			cflow_dump::RecordBrindEntry(tb->ip);
 		}
 		tb->flags.is_brind_target = true;
+	}
+
+	static inline void RecordLink(jitabi::ppoint::BranchSlot *slot, TBlock *tgt, bool cross_segment)
+	{
+		// TODO: record {tgt:slot} for unlinking
+		tgt->flags.is_segment_entry |= cross_segment;
 	}
 
 	static void *AllocateCode(size_t sz, u16 align);

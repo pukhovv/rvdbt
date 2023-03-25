@@ -8,7 +8,7 @@ namespace dbt::qcg
 struct QRegAlloc {
 	static constexpr auto N_PREGS = ArchTraits::GPR_NUM;
 	static constexpr auto PREGS_POOL = ArchTraits::GPR_POOL;
-	static constexpr auto MAX_VREGS = 128;
+	static constexpr auto MAX_VREGS = 512; // TODO: reuse temps
 
 	struct RTrack {
 		RTrack() {}

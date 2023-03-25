@@ -1,4 +1,5 @@
 #include "dbt/qmc/qcg/jitabi.h"
+#include "dbt/execute.h"
 #include "dbt/qmc/qcg/arch_traits.h"
 #include "dbt/tcache/tcache.h"
 
@@ -62,20 +63,23 @@ HELPER_ASM void qcgstub_escape()
 }
 
 // Caller uses 2nd value in returned pair as jump target
-static ALWAYS_INLINE _RetPair TryLinkBranch(ppoint::BranchSlot *slot)
+static ALWAYS_INLINE _RetPair TryLinkBranch(CPUState *state, ppoint::BranchSlot *slot)
 {
 	auto found = tcache::Lookup(slot->gip);
 	if (likely(found)) {
 		slot->Link(found->tcode.ptr);
+		tcache::RecordLink(slot, found, slot->flags.cross_segment);
 		return {slot, found->tcode.ptr};
 	}
+	state->ip = slot->gip;
 	return {slot, (void *)qcgstub_escape};
 }
 
 // Lazy region linking, absolute call target (jit/aot mode)
 HELPER_ASM void qcgstub_link_branch_jit()
 {
-	asm("movq	0(%rsp), %rdi\n\t"
+	asm("movq	0(%rsp), %rsi\n\t"
+	    "movq	%r13, %rdi\n\t"
 	    "callq	qcg_TryLinkBranchJIT@plt\n\t"
 	    "popq	%rdi\n\t" // pop somewhere
 	    "jmpq	*%rdx\n\t");
@@ -84,20 +88,21 @@ HELPER_ASM void qcgstub_link_branch_jit()
 // Lazy region linking, qcg-relocation call target (aot mode)
 HELPER_ASM void qcgstub_link_branch_aot()
 {
-	asm("movq	0(%rsp), %rdi\n\t"
+	asm("movq	0(%rsp), %rsi\n\t"
+	    "movq	%r13, %rdi\n\t"
 	    "callq	qcg_TryLinkBranchAOT@plt\n\t"
 	    "popq	%rdi\n\t" // pop somewhere
 	    "jmpq	*%rdx\n\t");
 }
 
-HELPER _RetPair qcg_TryLinkBranchJIT(void *retaddr)
+HELPER _RetPair qcg_TryLinkBranchJIT(CPUState *state, void *retaddr)
 {
-	return TryLinkBranch(ppoint::BranchSlot::FromCallPtrRetaddr(retaddr));
+	return TryLinkBranch(state, ppoint::BranchSlot::FromCallPtrRetaddr(retaddr));
 }
 
-HELPER _RetPair qcg_TryLinkBranchAOT(void *retaddr)
+HELPER _RetPair qcg_TryLinkBranchAOT(CPUState *state, void *retaddr)
 {
-	return TryLinkBranch(ppoint::BranchSlot::FromCallRuntimeStubRetaddr(retaddr));
+	return TryLinkBranch(state, ppoint::BranchSlot::FromCallRuntimeStubRetaddr(retaddr));
 }
 
 // Indirect branch slowpath

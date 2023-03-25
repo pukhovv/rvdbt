@@ -40,7 +40,7 @@ int main(int argc, char **argv)
 	auto elf = &dbt::ukernel::exe_elf_image;
 	dbt::ukernel::ReproduceElf(elfpath.c_str(), elf);
 
-	dbt::AOTCompileElf();
+	dbt::AOTCompileELF();
 
 #ifndef NDEBUG
 	dbt::objprof::Destroy();

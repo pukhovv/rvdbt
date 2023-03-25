@@ -4,10 +4,13 @@
 #include "dbt/mmu.h"
 #include <atomic>
 
+namespace dbt
+{
+thread_local CPUState *CPUState::tls_current{};
+} // namespace dbt
+
 namespace dbt::rv32
 {
-
-thread_local CPUState *CPUState::tls_current{};
 
 #define GET_GIP() (gip)
 #define SET_GIP(gip_) (gip = gip_)
@@ -24,8 +27,7 @@ thread_local CPUState *CPUState::tls_current{};
 	{                                                                                                    \
 		insn::Insn_##name i{(u32)insn_raw};                                                          \
 		static constexpr auto flags = decltype(i)::flags;                                            \
-		if constexpr (flags & insn::Flags::Trap ||                                                   \
-			      (flags & insn::Flags::MayTrap && config::unsafe_traps)) {                      \
+		if constexpr (flags & insn::Flags::Trap || flags & insn::Flags::MayTrap) {                   \
 			state->ip = GET_GIP();                                                               \
 		}                                                                                            \
 		Impl_##name(state, gip, vmem, i);                                                            \
@@ -216,7 +218,8 @@ entry:
 	state->DumpTrace("entry");
 #define XDUMP(name)                                                                                          \
 	do {                                                                                                 \
-		if (++icount == TB_MAX_INSNS || (insn::Insn_##name::flags & insn::Flags::Branch))            \
+		if (++icount == TB_MAX_INSNS || !(gip & ~mmu::PAGE_MASK) ||                                  \
+		    (insn::Insn_##name::flags & insn::Flags::Branch))                                        \
 			goto entry;                                                                          \
 	} while (0)
 #else

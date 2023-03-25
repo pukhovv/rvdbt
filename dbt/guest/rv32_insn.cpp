@@ -63,7 +63,7 @@ std::ostream &operator<<(std::ostream &o, A i)
 
 LOG_STREAM(trace);
 
-void CPUState::DumpTrace(char const *event)
+void CPUStateImpl::DumpTrace(char const *event)
 {
 	std::array<char, 1024> buf;
 	auto cur = buf.begin();

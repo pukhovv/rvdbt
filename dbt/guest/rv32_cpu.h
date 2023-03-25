@@ -20,17 +20,7 @@ enum class TrapCode : u32 {
 };
 
 // TODO: separate guest part
-struct CPUState {
-	static inline void SetCurrent(CPUState *s)
-	{
-		tls_current = s;
-	}
-
-	static inline CPUState *Current()
-	{
-		return tls_current;
-	}
-
+struct CPUStateImpl {
 	bool IsTrapPending()
 	{
 		return trapno == TrapCode::NONE;
@@ -47,9 +37,6 @@ struct CPUState {
 
 	tcache::JMPCache *jmp_cache_brind{&tcache::jmp_cache_brind};
 	RuntimeStubTab stub_tab{};
-
-private:
-	static thread_local CPUState *tls_current;
 };
 
 // qmc config, also used to synchronize int/jit debug tracing
@@ -59,5 +46,20 @@ static constexpr u16 TB_MAX_INSNS = 64;
 
 namespace dbt
 {
-using CPUState = rv32::CPUState;
+struct CPUState : rv32::CPUStateImpl {
+	static inline void SetCurrent(CPUState *s)
+	{
+		tls_current = s;
+	}
+
+	static inline CPUState *Current()
+	{
+		return tls_current;
+	}
+
+private:
+	static thread_local CPUState *tls_current;
+};
+static_assert(std::is_standard_layout_v<CPUState>);
+
 } // namespace dbt

@@ -8,7 +8,7 @@ namespace dbt::qcg
 
 LOG_STREAM(qcg);
 
-std::span<u8> GenerateCode(CompilerRuntime *cruntime, qir::Region *r, u32 ip);
+std::span<u8> GenerateCode(CompilerRuntime *cruntime, qir::CodeSegment *segment, qir::Region *r, u32 ip);
 
 struct MachineRegionInfo {
 	bool has_calls = false;

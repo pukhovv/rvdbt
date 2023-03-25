@@ -5,6 +5,8 @@ add_library(dbtstatic STATIC
 	util/logger.cpp
 
 	aot/aot.cpp
+	aot/aot_module.cpp
+	aot/aot_file.cpp
 	aot/aot_boot.cpp
 	arena.cpp
 	mmu.cpp
@@ -26,6 +28,7 @@ add_library(dbtstatic STATIC
 	qmc/qcg/qra.cpp
 	qmc/qcg/qsel.cpp
 
+	guest/rv32_analyser.cpp
 	guest/rv32_insn.cpp
 	guest/rv32_interp.cpp
 	guest/rv32_qir.cpp

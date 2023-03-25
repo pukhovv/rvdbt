@@ -17,7 +17,7 @@ private:
 	friend struct QCodegenVisitor;
 };
 
-std::span<u8> GenerateCode(CompilerRuntime *cruntime, qir::Region *r, u32 ip)
+std::span<u8> GenerateCode(CompilerRuntime *cruntime, qir::CodeSegment *segment, qir::Region *r, u32 ip)
 {
 	ArchTraits::init();
 	MachineRegionInfo mregion_info;
@@ -28,13 +28,13 @@ std::span<u8> GenerateCode(CompilerRuntime *cruntime, qir::Region *r, u32 ip)
 	QRegAllocPass::run(r);
 	qir::PrinterPass::run(log_qcg, "IR dump after QRegAllocPass", r);
 
-	bool jit_mode = !cruntime->AllowsRelocation();
-	log_qcg("Emit machine instructions: jit_mode=%u is_leaf=%u", jit_mode, !mregion_info.has_calls);
-	QEmit ce(r, jit_mode, !mregion_info.has_calls);
+	log_qcg("Emit machine instructions: reloc=%u is_leaf=%u", !cruntime->AllowsRelocation(),
+		!mregion_info.has_calls);
+	QEmit ce(r, cruntime, segment, !mregion_info.has_calls);
 	QCodegen cg(r, &ce);
 	cg.Run(ip);
 
-	auto code = ce.EmitCode(cruntime);
+	auto code = ce.EmitCode();
 	QEmit::DumpCode(code);
 	return code;
 }

@@ -49,7 +49,8 @@ struct objprof {
 
 		u32 pageno{}; // currently it's vaddr
 		PageBitset executed{};
-		PageBitset brind{};
+		PageBitset brind_target{};
+		PageBitset segment_entry{};
 	} __attribute__((packed));
 
 	// Set it before ukernel chroots

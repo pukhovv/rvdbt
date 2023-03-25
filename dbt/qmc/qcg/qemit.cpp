@@ -1,9 +1,11 @@
 #include "dbt/qmc/qcg/qemit.h"
+#include "dbt/guest/rv32_cpu.h"
 
 namespace dbt::qcg
 {
 
-QEmit::QEmit(qir::Region *region, bool jit_mode_, bool is_leaf_) : jit_mode(jit_mode_), is_leaf(is_leaf_)
+QEmit::QEmit(qir::Region *region, CompilerRuntime *cruntime_, qir::CodeSegment *segment_, bool is_leaf_)
+    : cruntime(cruntime_), segment(segment_), jit_mode(!cruntime->AllowsRelocation()), is_leaf(is_leaf_)
 {
 	spillframe_sp_offs = sizeof(uptr) * (is_leaf ? 1 : 2);
 
@@ -21,7 +23,7 @@ QEmit::QEmit(qir::Region *region, bool jit_mode_, bool is_leaf_) : jit_mode(jit_
 	}
 }
 
-std::span<u8> QEmit::EmitCode(CompilerRuntime *cruntime)
+std::span<u8> QEmit::EmitCode()
 {
 	jcode.flatten();
 	jcode.resolveUnresolvedLinks();
@@ -235,10 +237,11 @@ void QEmit::Emit_gbr(qir::InstGBr *ins)
 	j.embedUInt8(0, patch_size);
 	auto *slot = (jitabi::ppoint::BranchSlot *)(j.bufferPtr() - patch_size);
 	slot->gip = ins->tpc.GetConst();
+	slot->flags.cross_segment = !segment->InSegment(slot->gip);
 	if (jit_mode) {
 		slot->LinkLazyJIT();
 	} else {
-		slot->LinkLazyAOT();
+		slot->LinkLazyAOT(offsetof(CPUState, stub_tab));
 	}
 }
 
