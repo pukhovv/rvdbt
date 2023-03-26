@@ -4,10 +4,13 @@
 #include "dbt/mmu.h"
 #include <atomic>
 
+namespace dbt
+{
+thread_local CPUState *CPUState::tls_current{};
+} // namespace dbt
+
 namespace dbt::rv32
 {
-
-thread_local CPUState *CPUState::tls_current{};
 
 #define GET_GIP() (gip)
 #define SET_GIP(gip_) (gip = gip_)

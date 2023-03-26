@@ -6,7 +6,9 @@ namespace dbt
 void ModuleGraph::Dump()
 {
 	auto dump_node = [](ModuleGraphNode const &n) {
-		if (n.brind_target) {
+		if (n.flags.is_segment_entry) {
+			log_modulegraph("B%08x[fillcolor=green]", n.ip);
+		} else if (n.flags.is_brind_target) {
 			log_modulegraph("B%08x[fillcolor=orange]", n.ip);
 		} else {
 			log_modulegraph("B%08x[fillcolor=cyan]", n.ip);

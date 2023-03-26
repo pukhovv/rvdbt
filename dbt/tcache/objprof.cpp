@@ -166,8 +166,16 @@ tcache::MapType::iterator objprof::UpdatePageProfile(tcache::MapType::iterator i
 		if (page_data->executed.test(po_idx) != true) {
 			log_prof("new tb: %08x", it->first);
 		}
-		page_data->executed.set(po_idx, true);
-		page_data->brind.set(po_idx, tb->flags.is_brind_target);
+
+		auto upd_observed = [&](PageData::PageBitset &bits, bool val) {
+			if (val) {
+				bits.set(po_idx);
+			}
+		};
+
+		upd_observed(page_data->executed, true);
+		upd_observed(page_data->brind_target, tb->flags.is_brind_target);
+		upd_observed(page_data->segment_entry, tb->flags.is_segment_entry);
 	}
 	return it;
 }

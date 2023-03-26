@@ -9,7 +9,7 @@
 namespace dbt::qcg
 {
 struct QEmit {
-	QEmit(qir::Region *region, bool jit_mode_, bool is_leaf_);
+	QEmit(qir::Region *region, CompilerRuntime *cruntime_, qir::CodeSegment *segment_, bool is_leaf_);
 
 	inline void SetBlock(qir::Block *bb_)
 	{
@@ -17,7 +17,7 @@ struct QEmit {
 		j.bind(labels[bb->GetId()]);
 	}
 
-	std::span<u8> EmitCode(CompilerRuntime *cruntime);
+	std::span<u8> EmitCode();
 	static void DumpCode(std::span<u8> const &code);
 
 	void Prologue(u32 ip);
@@ -55,7 +55,10 @@ private:
 
 	qir::Block *bb{};
 
-	bool jit_mode{};
+	CompilerRuntime *cruntime{};
+	qir::CodeSegment *segment{};
+	bool jit_mode;
+
 	RuntimeStubTab const &stub_tab{*RuntimeStubTab::GetGlobal()};
 
 	bool is_leaf;

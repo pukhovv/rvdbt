@@ -63,6 +63,7 @@ void Execute(CPUState *state)
 	while (likely(!HandleTrap(state))) {
 		assert(state == CPUState::Current());
 		assert(state->gpr[0] == 0);
+		assert(!branch_slot || branch_slot->gip == state->ip);
 		if constexpr (config::use_interp) {
 			Interpreter::Execute(state);
 			continue;
@@ -71,19 +72,21 @@ void Execute(CPUState *state)
 		TBlock *tb = tcache::Lookup(state->ip);
 		if (tb == nullptr) {
 			auto jrt = JITCompilerRuntime();
-			tb = (TBlock *)qir::CompileAt(&jrt, {state->ip, -1});
+			u32 gip_page = rounddown(state->ip, mmu::PAGE_SIZE);
+			qir::CompilerJob job(&jrt, qir::CodeSegment(gip_page, mmu::PAGE_SIZE),
+					     {state->ip, -1});
+			tb = (TBlock *)qir::CompilerDoJob(job);
+			// TODO: add oncompletion lambda
 		}
 
 		if (branch_slot) {
 			branch_slot->Link(tb->tcode.ptr);
+			tcache::RecordLink(branch_slot, tb, branch_slot->flags.cross_segment);
 		} else {
 			tcache::CacheBrind(tb);
 		}
 
 		branch_slot = jitabi::trampoline_to_jit(state, mmu::base, tb->tcode.ptr);
-		if (unlikely(branch_slot)) {
-			state->ip = branch_slot->gip;
-		}
 	}
 }
 

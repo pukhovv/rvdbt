@@ -11,13 +11,13 @@ LOG_STREAM(aot)
 
 using FilePageData = objprof::PageData;
 
-static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
+static ModuleGraph BuildModuleGraph(FilePageData const &page)
 {
 	u32 const page_vaddr = page.pageno << mmu::PAGE_BITS;
 	u32 const next_page_vaddr = page_vaddr + mmu::PAGE_SIZE;
 
 	std::vector<u32> iplist;
-	ModuleGraph mg(page_vaddr);
+	ModuleGraph mg(qir::CodeSegment(page_vaddr, mmu::PAGE_SIZE));
 
 	for (u32 idx = 0; idx < page.executed.size(); ++idx) {
 		if (!page.executed[idx]) {
@@ -26,8 +26,11 @@ static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
 		u32 ip = page_vaddr + FilePageData::idx2po(idx);
 		iplist.push_back(ip);
 		mg.RecordEntry(ip);
-		if (page.brind[idx]) {
-			mg.RecordBrindEntry(ip);
+		if (page.brind_target[idx]) {
+			mg.RecordBrindTarget(ip);
+		}
+		if (page.segment_entry[idx]) {
+			mg.RecordSegmentEntry(ip);
 		}
 	}
 
@@ -38,11 +41,21 @@ static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
 		rv32::RV32Analyser::Analyse(&mg, ip, ip_next, (uptr)mmu::base);
 	}
 
-	mg.Dump();
+	return mg;
+}
+
+static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
+{
+	auto mg = BuildModuleGraph(page);
+
+	if (mg.segment.gip_base == 0x25000) { // temp
+		mg.Dump();
+	}
 
 	for (auto const &e : mg.ip_map) {
 		auto const &n = *e.second;
-		qir::CompileAt(aotrt, {n.ip, n.ip_end});
+		qir::CompilerJob job(aotrt, mg.segment, {n.ip, n.ip_end});
+		qir::CompilerDoJob(job);
 	}
 }
 

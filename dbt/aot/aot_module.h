@@ -2,6 +2,7 @@
 
 #include "dbt/arena.h"
 #include "dbt/mmu.h"
+#include "dbt/qmc/compile.h"
 #include "dbt/tcache/cflow_dump.h"
 #include <list>
 #include <map>
@@ -29,18 +30,21 @@ struct ModuleGraphNode {
 
 	u32 ip{};
 	u32 ip_end{0};
-	bool brind_target{false};
+	struct {
+		bool is_brind_target : 1 {false};
+		bool is_segment_entry : 1 {false};
+	} flags;
 
 	std::list<ModuleGraphNode *> succs;
 	std::list<ModuleGraphNode *> preds;
 };
 
 struct ModuleGraph {
-	explicit ModuleGraph(u32 page_ip_) : page_ip(page_ip_) {}
+	explicit ModuleGraph(qir::CodeSegment segment_) : segment(segment_) {}
 
 	inline bool InModule(u32 ip)
 	{
-		return page_ip == rounddown(ip, mmu::PAGE_SIZE);
+		return segment.InSegment(ip);
 	}
 
 	inline ModuleGraphNode *GetNode(u32 ip)
@@ -68,10 +72,16 @@ struct ModuleGraph {
 		AddNode(ip);
 	}
 
-	inline void RecordBrindEntry(u32 ip)
+	inline void RecordBrindTarget(u32 ip)
 	{
 		cflow_dump::RecordBrindEntry(ip);
-		GetNode(ip)->brind_target = true;
+		GetNode(ip)->flags.is_brind_target = true;
+	}
+
+	inline void RecordSegmentEntry(u32 ip)
+	{
+		cflow_dump::RecordBrindEntry(ip);
+		GetNode(ip)->flags.is_segment_entry = true;
 	}
 
 	inline void RecordGBr(u32 ip, u32 tgtip)
@@ -102,7 +112,7 @@ struct ModuleGraph {
 
 	void Dump();
 
-	u32 const page_ip;
+	qir::CodeSegment segment;
 
 	using RegionMap = std::map<u32, std::unique_ptr<ModuleGraphNode>>;
 	RegionMap ip_map;
