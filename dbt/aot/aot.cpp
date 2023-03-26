@@ -49,6 +49,7 @@ static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
 	auto mg = BuildModuleGraph(page);
 
 	if (mg.segment.gip_base == 0x25000) { // temp
+		mg.MergeRegions();
 		mg.Dump();
 	}
 

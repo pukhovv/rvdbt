@@ -12,6 +12,53 @@ namespace dbt
 {
 LOG_STREAM(modulegraph)
 
+using Mark = uint16_t;
+
+struct MarkerKeeper;
+
+template <typename N, typename S>
+struct Marker {
+	inline Marker(MarkerKeeper *mkeeper, u8 states);
+
+	inline S Get(N *n)
+	{
+		Mark m = n->GetMark();
+		assert(m < mmax);
+		if (m < mmin) {
+			return 0;
+		}
+		return static_cast<S>(m - mmin);
+	}
+
+	inline void Set(N *n, S s)
+	{
+		auto m = static_cast<Mark>(s);
+		assert(n->GetMark() < mmax);
+		assert(m + mmin < mmax);
+		n->SetMark(m + mmin);
+	}
+
+private:
+	Marker() = default;
+	Mark mmin{0}, mmax{0};
+};
+
+struct MarkerKeeper {
+
+private:
+	template <typename N, typename S>
+	friend struct Marker;
+
+	Mark mmin{0}, mmax{0};
+};
+
+template <typename N, typename S>
+inline Marker<N, S>::Marker(MarkerKeeper *keeper, u8 states)
+{
+	mmin = keeper->mmin = keeper->mmax;
+	mmax = keeper->mmax = keeper->mmin + states;
+}
+
 struct ModuleGraphNode {
 	explicit ModuleGraphNode(u32 ip_) : ip(ip_) {}
 
@@ -37,10 +84,25 @@ struct ModuleGraphNode {
 
 	std::list<ModuleGraphNode *> succs;
 	std::list<ModuleGraphNode *> preds;
+
+	ModuleGraphNode *dominator{};
+	Mark mark{};
+
+	Mark GetMark() const
+	{
+		return mark;
+	}
+	void SetMark(Mark mark_)
+	{
+		mark = mark_;
+	}
 };
 
 struct ModuleGraph {
-	explicit ModuleGraph(qir::CodeSegment segment_) : segment(segment_) {}
+	explicit ModuleGraph(qir::CodeSegment segment_)
+	    : segment(segment_), root(std::make_unique<ModuleGraphNode>(0))
+	{
+	}
 
 	inline bool InModule(u32 ip)
 	{
@@ -75,13 +137,17 @@ struct ModuleGraph {
 	inline void RecordBrindTarget(u32 ip)
 	{
 		cflow_dump::RecordBrindEntry(ip);
-		GetNode(ip)->flags.is_brind_target = true;
+		auto *node = GetNode(ip);
+		node->flags.is_brind_target = true;
+		root->AddSucc(node);
 	}
 
 	inline void RecordSegmentEntry(u32 ip)
 	{
 		cflow_dump::RecordBrindEntry(ip);
-		GetNode(ip)->flags.is_segment_entry = true;
+		auto *node = GetNode(ip);
+		node->flags.is_segment_entry = true;
+		root->AddSucc(node);
 	}
 
 	inline void RecordGBr(u32 ip, u32 tgtip)
@@ -110,12 +176,18 @@ struct ModuleGraph {
 		// sidecall
 	}
 
+	void ComputeDomTree();
+	void MergeRegions();
 	void Dump();
 
 	qir::CodeSegment segment;
 
+	std::unique_ptr<ModuleGraphNode> root;
+
 	using RegionMap = std::map<u32, std::unique_ptr<ModuleGraphNode>>;
 	RegionMap ip_map;
+
+	MarkerKeeper markers;
 };
 
 } // namespace dbt
