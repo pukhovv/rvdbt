@@ -1,4 +1,5 @@
 #include "dbt/aot/aot_module.h"
+#include <set>
 #include <vector>
 
 namespace dbt
@@ -12,6 +13,8 @@ void ModuleGraph::Dump()
 			log_modulegraph("B%08x[fillcolor=green]", n.ip);
 		} else if (n.flags.is_brind_target) {
 			log_modulegraph("B%08x[fillcolor=orange]", n.ip);
+		} else if (n.flags.region_entry) {
+			log_modulegraph("B%08x[fillcolor=purple]", n.ip);
 		} else {
 			log_modulegraph("B%08x[fillcolor=cyan]", n.ip);
 		}
@@ -154,9 +157,48 @@ void ModuleGraph::ComputeDomTree()
 	}
 }
 
+void ModuleGraph::ComputeDomFrontier()
+{
+	for (auto const &e : ip_map) {
+		auto b = e.second.get();
+		if (b->preds.size() > 1) {
+			for (auto runner : b->preds) {
+				while (runner != b->dominator) {
+					runner->domfrontier.insert(b);
+					runner = runner->dominator;
+				}
+			}
+		}
+	}
+}
+
 void ModuleGraph::MergeRegions()
 {
 	ComputeDomTree();
+	ComputeDomFrontier();
+
+	std::vector<ModuleGraphNode *> wlist;
+
+	for (auto const &e : ip_map) {
+		auto n = e.second.get();
+		if (n->flags.is_brind_target || n->flags.is_segment_entry) {
+			n->flags.region_entry = true;
+			wlist.push_back(n);
+		}
+	}
+
+	while (!wlist.empty()) {
+		auto x = wlist.back();
+		wlist.pop_back();
+
+		for (auto y : x->domfrontier) {
+			if (!y->flags.region_entry) {
+				wlist.push_back(y);
+			}
+		}
+
+		x->flags.region_entry = true;
+	}
 }
 
 } // namespace dbt

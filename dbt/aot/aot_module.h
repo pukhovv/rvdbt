@@ -7,6 +7,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 
 namespace dbt
 {
@@ -80,12 +81,14 @@ struct ModuleGraphNode {
 	struct {
 		bool is_brind_target : 1 {false};
 		bool is_segment_entry : 1 {false};
+		bool region_entry : 1 {false};
 	} flags;
 
 	std::list<ModuleGraphNode *> succs;
 	std::list<ModuleGraphNode *> preds;
 
 	ModuleGraphNode *dominator{};
+	std::set<ModuleGraphNode *> domfrontier;
 	Mark mark{};
 
 	Mark GetMark() const
@@ -177,6 +180,7 @@ struct ModuleGraph {
 	}
 
 	void ComputeDomTree();
+	void ComputeDomFrontier();
 	void MergeRegions();
 	void Dump();
 
