@@ -47,10 +47,7 @@ static ModuleGraph BuildModuleGraph(FilePageData const &page)
 static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
 {
 	auto mg = BuildModuleGraph(page);
-
-	if (mg.segment.gip_base == 0x25000) { // temp
-		auto regions = mg.ComputeRegions();
-	}
+	auto regions = mg.ComputeRegions();
 
 	for (auto const &e : mg.ip_map) {
 		auto const &n = *e.second;

@@ -134,6 +134,7 @@ void ModuleGraph::ComputeDomTree()
 		for (auto n : rpot) {
 			rpon.Set(n, rpo_no++);
 		}
+		assert(rpo_no == n_nodes);
 	}
 
 	auto *start = root.get();
@@ -160,13 +161,11 @@ void ModuleGraph::ComputeDomTree()
 			}
 			Node *new_idom = nullptr;
 			for (auto p : b->preds) {
-				if (!new_idom) {
-					new_idom = p;
-				}
 				if (p->dominator) {
-					new_idom = intersect(p, new_idom);
+					new_idom = new_idom ? intersect(p, new_idom) : p;
 				}
 			}
+			assert(new_idom);
 			if (b->dominator != new_idom) {
 				b->dominator = new_idom;
 				changed = true;
