@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <vector>
 
 namespace dbt
 {
@@ -181,7 +182,8 @@ struct ModuleGraph {
 
 	void ComputeDomTree();
 	void ComputeDomFrontier();
-	void MergeRegions();
+	void ComputeRegionIDF();
+	std::vector<std::vector<ModuleGraphNode *>> ComputeRegions();
 	void Dump();
 
 	qir::CodeSegment segment;

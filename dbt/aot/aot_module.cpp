@@ -1,5 +1,7 @@
 #include "dbt/aot/aot_module.h"
+#include <iomanip>
 #include <set>
+#include <sstream>
 #include <vector>
 
 namespace dbt
@@ -172,11 +174,8 @@ void ModuleGraph::ComputeDomFrontier()
 	}
 }
 
-void ModuleGraph::MergeRegions()
+void ModuleGraph::ComputeRegionIDF()
 {
-	ComputeDomTree();
-	ComputeDomFrontier();
-
 	std::vector<ModuleGraphNode *> wlist;
 
 	for (auto const &e : ip_map) {
@@ -199,6 +198,69 @@ void ModuleGraph::MergeRegions()
 
 		x->flags.region_entry = true;
 	}
+}
+
+std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegions()
+{
+	ComputeDomTree();
+	ComputeDomFrontier();
+	ComputeRegionIDF();
+
+	std::vector<std::vector<ModuleGraphNode *>> regions;
+
+	auto compute_region = [this](ModuleGraphNode *entry) {
+		Marker<ModuleGraphNode, bool> marker(&markers, 2);
+
+		using ChildIt = std::list<ModuleGraphNode *>::iterator;
+		std::vector<std::pair<ModuleGraphNode *, ChildIt>> stk;
+
+		auto push_node = [&](ModuleGraphNode *node, bool force = false) {
+			if (force || (!marker.Get(node) && !node->flags.region_entry)) {
+				stk.push_back(std::make_pair(node, node->succs.begin()));
+				marker.Set(node, true);
+			}
+		};
+
+		std::vector<ModuleGraphNode *> region_nodes{entry};
+
+		push_node(entry, true);
+
+		while (!stk.empty()) {
+			auto &p = stk.back();
+			if (p.second == p.first->succs.end()) {
+				region_nodes.push_back(p.first);
+				stk.pop_back();
+			} else {
+				push_node(*p.second++);
+			}
+		}
+
+		return region_nodes;
+	};
+
+	for (auto const &e : ip_map) {
+		auto n = e.second.get();
+		if (n->flags.region_entry) {
+			regions.push_back(compute_region(n));
+		}
+	}
+
+	for (auto const &r : regions) {
+		std::stringstream ss;
+		ss << std::hex;
+		ss << "subgraph cluster_R" << std::setfill('0') << std::setw(8) << r[0]->ip
+		   << "{style=filled;color=lightgrey;";
+		for (size_t i = 0; i < r.size(); ++i) {
+			ss << " B" << std::setfill('0') << std::setw(8) << r[i]->ip;
+		}
+		ss << "}";
+		auto str = ss.str();
+		log_modulegraph(str.c_str());
+	}
+
+	Dump();
+
+	return regions;
 }
 
 } // namespace dbt
