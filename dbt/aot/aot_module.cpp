@@ -42,6 +42,22 @@ void ModuleGraph::Dump()
 	}
 }
 
+void ModuleGraph::DumpRegions(std::vector<std::vector<ModuleGraphNode *>> const &regions)
+{
+	for (auto const &r : regions) {
+		std::stringstream ss;
+		ss << std::hex;
+		ss << "subgraph cluster_R" << std::setfill('0') << std::setw(8) << r[0]->ip
+		   << "{style=filled;color=lightgrey;";
+		for (size_t i = 0; i < r.size(); ++i) {
+			ss << " B" << std::setfill('0') << std::setw(8) << r[i]->ip;
+		}
+		ss << "}";
+		auto str = ss.str();
+		log_modulegraph(str.c_str());
+	}
+}
+
 struct RPOTraversal {
 	using OrderVec = std::vector<ModuleGraphNode *>;
 
@@ -200,12 +216,8 @@ void ModuleGraph::ComputeRegionIDF()
 	}
 }
 
-std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegions()
+std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegionDomSets()
 {
-	ComputeDomTree();
-	ComputeDomFrontier();
-	ComputeRegionIDF();
-
 	std::vector<std::vector<ModuleGraphNode *>> regions;
 
 	auto compute_region = [this](ModuleGraphNode *entry) {
@@ -245,20 +257,18 @@ std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegions()
 		}
 	}
 
-	for (auto const &r : regions) {
-		std::stringstream ss;
-		ss << std::hex;
-		ss << "subgraph cluster_R" << std::setfill('0') << std::setw(8) << r[0]->ip
-		   << "{style=filled;color=lightgrey;";
-		for (size_t i = 0; i < r.size(); ++i) {
-			ss << " B" << std::setfill('0') << std::setw(8) << r[i]->ip;
-		}
-		ss << "}";
-		auto str = ss.str();
-		log_modulegraph(str.c_str());
-	}
+	return regions;
+}
+
+std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegions()
+{
+	ComputeDomTree();
+	ComputeDomFrontier();
+	ComputeRegionIDF();
+	auto regions = ComputeRegionDomSets();
 
 	Dump();
+	DumpRegions(regions);
 
 	return regions;
 }

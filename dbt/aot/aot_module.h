@@ -183,7 +183,10 @@ struct ModuleGraph {
 	void ComputeDomTree();
 	void ComputeDomFrontier();
 	void ComputeRegionIDF();
+	std::vector<std::vector<ModuleGraphNode *>> ComputeRegionDomSets();
+
 	std::vector<std::vector<ModuleGraphNode *>> ComputeRegions();
+	void DumpRegions(std::vector<std::vector<ModuleGraphNode *>> const &regions);
 	void Dump();
 
 	qir::CodeSegment segment;
