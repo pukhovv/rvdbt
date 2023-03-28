@@ -96,8 +96,7 @@ void RV32Translator::TranslateIPRange(u32 ip, u32 boundary_ip)
 		}
 		if (num_insns == TB_MAX_INSNS || insn_ip >= boundary_ip) {
 			control = Control::TB_OVF;
-			qb.Create_gbr(VOperand::MakeConst(VType::I32, insn_ip));
-			cflow_dump::RecordGBr(bb_ip, insn_ip);
+			MakeGBr(insn_ip);
 			break;
 		}
 	}
