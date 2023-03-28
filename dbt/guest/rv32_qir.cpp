@@ -59,30 +59,45 @@ StateInfo const *RV32Translator::GetStateInfo()
 }
 StateInfo const *const RV32Translator::state_info = GetStateInfo();
 
-RV32Translator::RV32Translator(qir::Region *region_, u32 ip, uptr vmem)
-    : qb(region_->CreateBlock()), vmem_base(vmem), bb_ip(ip)
+RV32Translator::RV32Translator(qir::Region *region_, uptr vmem) : qb(), vmem_base(vmem) {}
+
+void RV32Translator::Translate(qir::Region *region, CompilerJob::IpRangesSet *ipranges, uptr vmem)
 {
+	log_qir("RV32Translator: start");
+	RV32Translator t(region, vmem);
+
+	for (auto const &range : *ipranges) {
+		t.loc_entries.insert({range.first, region->CreateBlock()});
+	}
+
+	for (auto const &range : *ipranges) {
+		t.TranslateIPRange(range.first, range.second);
+	}
+
+	log_qir("RV32Translator: finish");
 }
 
-void RV32Translator::Translate(qir::Region *region, u32 ip, u32 boundary_ip, uptr vmem)
+void RV32Translator::TranslateIPRange(u32 ip, u32 boundary_ip)
 {
 	log_qir("RV32Translator: [%08x:%08x]", ip, boundary_ip);
-	RV32Translator t(region, ip, vmem);
-	t.insn_ip = ip;
+	bb_ip = insn_ip = ip;
 	cflow_dump::RecordEntry(ip);
 	assert(boundary_ip != 0);
 
+	qb = qir::Builder(loc_entries.find(ip)->second);
+
 	u32 num_insns = 0;
+	control = Control::NEXT;
 	while (true) {
-		t.TranslateInsn();
+		TranslateInsn();
 		num_insns++;
-		if (t.control != Control::NEXT) {
+		if (control != Control::NEXT) {
 			break;
 		}
-		if (num_insns == TB_MAX_INSNS || t.insn_ip >= boundary_ip) {
-			t.control = Control::TB_OVF;
-			t.qb.Create_gbr(VOperand::MakeConst(VType::I32, t.insn_ip));
-			cflow_dump::RecordGBr(t.bb_ip, t.insn_ip);
+		if (num_insns == TB_MAX_INSNS || insn_ip >= boundary_ip) {
+			control = Control::TB_OVF;
+			qb.Create_gbr(VOperand::MakeConst(VType::I32, insn_ip));
+			cflow_dump::RecordGBr(bb_ip, insn_ip);
 			break;
 		}
 	}
@@ -105,6 +120,17 @@ void RV32Translator::TranslateInsn()
 	(this->*decoder::Decode(insn_ptr))(insn_ptr);
 }
 
+void RV32Translator::MakeGBr(u32 ip)
+{
+	auto it = loc_entries.find(ip);
+	if (it != loc_entries.end()) {
+		qb.Create_br();
+		qb.GetBlock()->AddSucc(it->second);
+	} else {
+		qb.Create_gbr(vconst(ip));
+	}
+}
+
 void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 {
 	auto bb_f = qb.CreateBlock();
@@ -113,10 +139,10 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 	qb.GetBlock()->AddSucc(bb_f);
 	qb.Create_brcc(cc, gprop(i.rs1()), gprop(i.rs2()));
 	qb = Builder(bb_f);
-	qb.Create_gbr(vconst(insn_ip + 4));
+	MakeGBr(insn_ip + 4);
 	cflow_dump::RecordGBr(bb_ip, insn_ip + 4);
 	qb = Builder(bb_t);
-	qb.Create_gbr(vconst(insn_ip + i.imm()));
+	MakeGBr(insn_ip + i.imm());
 	cflow_dump::RecordGBr(bb_ip, insn_ip + i.imm());
 }
 
@@ -264,7 +290,7 @@ TRANSLATOR(jal)
 		cflow_dump::RecordGBr(bb_ip, insn_ip + i.imm());
 	}
 
-	qb.Create_gbr(vconst(insn_ip + i.imm()));
+	MakeGBr(insn_ip + i.imm());
 }
 TRANSLATOR(jalr)
 {

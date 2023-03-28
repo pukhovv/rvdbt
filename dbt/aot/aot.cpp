@@ -51,7 +51,7 @@ static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
 
 	for (auto const &e : mg.ip_map) {
 		auto const &n = *e.second;
-		qir::CompilerJob job(aotrt, mg.segment, {n.ip, n.ip_end});
+		qir::CompilerJob job(aotrt, mg.segment, {{n.ip, n.ip_end}});
 		qir::CompilerDoJob(job);
 	}
 }

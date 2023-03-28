@@ -14,15 +14,18 @@ void *CompilerDoJob(CompilerJob &job)
 	auto &iprange = job.iprange;
 	auto &cruntime = job.cruntime;
 	auto &segment = job.segment;
+	auto entry_ip = iprange[0].first;
 
-	cruntime->UpdateIPBoundary(iprange);
+	for (auto &b : iprange) {
+		cruntime->UpdateIPBoundary(b);
+	}
 
-	IRTranslator::Translate(&region, iprange.first, iprange.second, cruntime->GetVMemBase());
+	IRTranslator::Translate(&region, &iprange, cruntime->GetVMemBase());
 	PrinterPass::run(log_qir, "Initial IR after IRTranslator", &region);
 
-	auto tcode = qcg::GenerateCode(cruntime, &segment, &region, iprange.first);
+	auto tcode = qcg::GenerateCode(cruntime, &segment, &region, entry_ip);
 
-	return cruntime->AnnounceRegion(iprange.first, tcode);
+	return cruntime->AnnounceRegion(entry_ip, tcode);
 }
 
 } // namespace dbt::qir

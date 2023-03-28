@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dbt/guest/rv32_insn.h"
+#include "dbt/qmc/compile.h"
 #include "dbt/qmc/qir_builder.h"
 #include <array>
 
@@ -17,16 +18,19 @@ struct RV32Translator {
 	RV32_OPCODE_LIST()
 #undef OP
 
-	static void Translate(qir::Region *region, u32 ip, u32 boundary_ip, uptr vmem);
+	static void Translate(qir::Region *region, CompilerJob::IpRangesSet *ipranges, uptr vmem);
 
 	static StateInfo const *const state_info;
 
 private:
 	static StateInfo const *GetStateInfo();
 
-	explicit RV32Translator(qir::Region *region, u32 ip, uptr vmem);
+	explicit RV32Translator(qir::Region *region, uptr vmem);
+	void TranslateIPRange(u32 ip, u32 boundary_ip);
 	void PreSideeff();
 	void TranslateInsn();
+
+	void MakeGBr(u32 ip);
 
 	void TranslateLoad(insn::I i, VType type, VSign sgn);
 	void TranslateStore(insn::S i, VType type, VSign sgn);
@@ -36,6 +40,8 @@ private:
 	inline void TranslateHelper(insn::Base i, RuntimeStubId stub);
 
 	qir::Builder qb;
+	std::map<u32, qir::Block *> loc_entries;
+
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
 	uptr vmem_base{};
 	u32 insn_ip{0};

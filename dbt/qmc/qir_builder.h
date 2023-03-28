@@ -7,6 +7,7 @@ namespace dbt::qir
 {
 
 struct Builder {
+	explicit Builder() : bb(nullptr), it(nullptr) {}
 	explicit Builder(Block *bb_) : bb(bb_), it(bb->ilist.end()) {}
 	explicit Builder(Block *bb_, IListIterator<Inst> it_) : bb(bb_), it(it_) {}
 	NO_COPY(Builder)

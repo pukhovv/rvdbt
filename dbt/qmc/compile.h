@@ -2,6 +2,7 @@
 
 #include "dbt/util/common.h"
 #include <span>
+#include <vector>
 
 namespace dbt
 {
@@ -34,14 +35,17 @@ struct CodeSegment {
 };
 
 struct CompilerJob {
-	explicit CompilerJob(CompilerRuntime *cruntime_, CodeSegment segment_, std::pair<u32, u32> iprange_)
+	using IpRangesSet = std::vector<std::pair<u32, u32>>;
+
+	explicit CompilerJob(CompilerRuntime *cruntime_, CodeSegment segment_, IpRangesSet &&iprange_)
 	    : cruntime(cruntime_), segment(segment_), iprange(iprange_)
 	{
+		assert(iprange.size());
 	}
 
 	CompilerRuntime *cruntime;
 	CodeSegment segment;
-	std::pair<u32, u32> iprange;
+	IpRangesSet iprange;
 };
 
 void *CompilerDoJob(CompilerJob &job);

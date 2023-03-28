@@ -471,9 +471,7 @@ struct InstBinop : InstWithOperands<1, 2> {
 struct Block;
 
 struct InstBr : InstNoOperands {
-	InstBr(Block *target_) : InstNoOperands(Op::_br), target(target_) {}
-
-	Block *target;
+	InstBr() : InstNoOperands(Op::_br) {}
 };
 
 // TODO: compact and fast encoding

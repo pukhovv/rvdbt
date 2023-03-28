@@ -30,6 +30,7 @@ struct JITCompilerRuntime final : CompilerRuntime {
 		return (uptr)mmu::base;
 	}
 
+	// TODO: remove that
 	void UpdateIPBoundary(std::pair<u32, u32> &iprange) const override
 	{
 		u32 upper = iprange.second;
@@ -74,7 +75,7 @@ void Execute(CPUState *state)
 			auto jrt = JITCompilerRuntime();
 			u32 gip_page = rounddown(state->ip, mmu::PAGE_SIZE);
 			qir::CompilerJob job(&jrt, qir::CodeSegment(gip_page, mmu::PAGE_SIZE),
-					     {state->ip, -1});
+					     {{state->ip, -1}});
 			tb = (TBlock *)qir::CompilerDoJob(job);
 			// TODO: add oncompletion lambda
 		}
