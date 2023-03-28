@@ -49,11 +49,24 @@ static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
 
+#if 1
+	for (auto const &r : regions) {
+		assert(r[0]->flags.region_entry);
+		qir::CompilerJob::IpRangesSet ipranges;
+		for (auto n : r) {
+			ipranges.push_back({n->ip, n->ip_end});
+		}
+
+		qir::CompilerJob job(aotrt, mg.segment, std::move(ipranges));
+		qir::CompilerDoJob(job);
+	}
+#else
 	for (auto const &e : mg.ip_map) {
 		auto const &n = *e.second;
 		qir::CompilerJob job(aotrt, mg.segment, {{n.ip, n.ip_end}});
 		qir::CompilerDoJob(job);
 	}
+#endif
 }
 
 void AOTCompileObject(CompilerRuntime *aotrt)

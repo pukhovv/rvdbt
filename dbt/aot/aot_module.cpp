@@ -222,6 +222,8 @@ std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegionDomSets()
 	auto compute_region = [this](ModuleGraphNode *entry) {
 		Marker<ModuleGraphNode, bool> marker(&markers, 2);
 
+		std::vector<ModuleGraphNode *> region_nodes{};
+
 		using ChildIt = std::list<ModuleGraphNode *>::iterator;
 		std::vector<std::pair<ModuleGraphNode *, ChildIt>> stk;
 
@@ -229,17 +231,15 @@ std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegionDomSets()
 			if (force || (!marker.Get(node) && !node->flags.region_entry)) {
 				stk.push_back(std::make_pair(node, node->succs.begin()));
 				marker.Set(node, true);
+				region_nodes.push_back(node);
 			}
 		};
-
-		std::vector<ModuleGraphNode *> region_nodes{entry};
 
 		push_node(entry, true);
 
 		while (!stk.empty()) {
 			auto &p = stk.back();
 			if (p.second == p.first->succs.end()) {
-				region_nodes.push_back(p.first);
 				stk.pop_back();
 			} else {
 				push_node(*p.second++);
