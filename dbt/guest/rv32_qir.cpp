@@ -122,6 +122,7 @@ void RV32Translator::TranslateInsn()
 
 void RV32Translator::MakeGBr(u32 ip)
 {
+	cflow_dump::RecordGBr(bb_ip, ip);
 	auto it = loc_entries.find(ip);
 	if (it != loc_entries.end()) {
 		qb.Create_br();
@@ -133,17 +134,43 @@ void RV32Translator::MakeGBr(u32 ip)
 
 void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 {
+#if 1
+	auto make_target = [&](u32 ip) {
+		cflow_dump::RecordGBr(bb_ip, ip);
+		auto it = loc_entries.find(ip);
+		if (it != loc_entries.end()) {
+			return it->second;
+		} else {
+			qb = Builder(qb.CreateBlock());
+			qb.Create_gbr(vconst(ip));
+			return qb.GetBlock();
+		}
+	};
+
+	auto bb_src = qb.GetBlock();
+	auto bb_f = make_target(insn_ip + 4);
+	auto bb_t = make_target(insn_ip + i.imm());
+	qb = Builder(bb_src);
+
+	qb.Create_brcc(cc, gprop(i.rs1()), gprop(i.rs2()));
+	qb.GetBlock()->AddSucc(bb_t);
+	qb.GetBlock()->AddSucc(bb_f);
+#else // TODO: qir cleanup pass: remove empty bb
 	auto bb_f = qb.CreateBlock();
 	auto bb_t = qb.CreateBlock();
+
 	qb.GetBlock()->AddSucc(bb_t);
 	qb.GetBlock()->AddSucc(bb_f);
 	qb.Create_brcc(cc, gprop(i.rs1()), gprop(i.rs2()));
-	qb = Builder(bb_f);
-	MakeGBr(insn_ip + 4);
-	cflow_dump::RecordGBr(bb_ip, insn_ip + 4);
+
 	qb = Builder(bb_t);
 	MakeGBr(insn_ip + i.imm());
 	cflow_dump::RecordGBr(bb_ip, insn_ip + i.imm());
+
+	qb = Builder(bb_f);
+	MakeGBr(insn_ip + 4);
+	cflow_dump::RecordGBr(bb_ip, insn_ip + 4);
+#endif
 }
 
 inline void RV32Translator::TranslateSetcc(rv32::insn::R i, CondCode cc)
