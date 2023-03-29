@@ -27,8 +27,7 @@ namespace dbt::rv32
 	{                                                                                                    \
 		insn::Insn_##name i{(u32)insn_raw};                                                          \
 		static constexpr auto flags = decltype(i)::flags;                                            \
-		if constexpr (flags & insn::Flags::Trap ||                                                   \
-			      (flags & insn::Flags::MayTrap && config::unsafe_traps)) {                      \
+		if constexpr (flags & insn::Flags::Trap || flags & insn::Flags::MayTrap) {                   \
 			state->ip = GET_GIP();                                                               \
 		}                                                                                            \
 		Impl_##name(state, gip, vmem, i);                                                            \

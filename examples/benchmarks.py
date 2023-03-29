@@ -94,7 +94,7 @@ class Benchmark:
     def launch_with(self, exec: BaseExec):
         exec.setup(self.root, self.args)
         exec.run()
-        if self.ofile is not None and os.path.isfile(self.get_ofile(exec)):
+        if self.ofile is not None and os.path.isfile(self.ofile):
             os.rename(self.ofile, self.get_ofile(exec))
         return exec
 

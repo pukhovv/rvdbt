@@ -127,6 +127,7 @@ void RV32Translator::MakeGBr(u32 ip)
 		qb.Create_br();
 		qb.GetBlock()->AddSucc(it->second);
 	} else {
+		PreSideeff();
 		qb.Create_gbr(vconst(ip));
 	}
 }
@@ -141,6 +142,7 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 			return it->second;
 		} else {
 			qb = Builder(qb.CreateBlock());
+			PreSideeff();
 			qb.Create_gbr(vconst(ip));
 			return qb.GetBlock();
 		}
@@ -228,8 +230,7 @@ static ALWAYS_INLINE void LogInsn(IType i, u32 ip)
 		insn::Insn_##name i{*(u32 *)insn};                                                           \
 		LogInsn(i, insn_ip);                                                                         \
 		static constexpr auto flags = decltype(i)::flags;                                            \
-		if constexpr (flags & insn::Flags::Branch || flags & insn::Flags::Trap ||                    \
-			      (flags & insn::Flags::MayTrap && config::unsafe_traps)) {                      \
+		if constexpr (flags & insn::Flags::Trap || flags & insn::Flags::MayTrap) {                   \
 			PreSideeff();                                                                        \
 		}                                                                                            \
 		V_##name(i);                                                                                 \
@@ -334,6 +335,7 @@ TRANSLATOR(jalr)
 		cflow_dump::RecordGBrind(bb_ip);
 	}
 
+	PreSideeff();
 	qb.Create_gbrind(tgt);
 }
 TRANSLATOR_Brcc(beq, EQ);

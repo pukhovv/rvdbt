@@ -6,8 +6,6 @@
 #define CONFIG_ZERO_MMU_BASE
 #endif
 
-#define CONFIG_UNSAFE_TRAPS
-
 /****************************************************************************/
 
 //#define CONFIG_USE_INTERP
@@ -30,11 +28,6 @@ static constexpr bool use_interp = false;
 static constexpr bool zero_membase = true;
 #else
 static constexpr bool zero_membase = false;
-#endif
-#ifdef CONFIG_UNSAFE_TRAPS
-static constexpr bool unsafe_traps = true;
-#else
-static constexpr bool unsafe_traps = false;
 #endif
 #ifdef CONFIG_DUMP_TRACE
 static constexpr bool dump_trace = true;

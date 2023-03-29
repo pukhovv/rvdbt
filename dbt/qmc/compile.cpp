@@ -8,7 +8,7 @@ namespace dbt::qir
 
 void *CompilerDoJob(CompilerJob &job)
 {
-	MemArena arena(64_KB);
+	MemArena arena(1_MB);
 	qir::Region region(&arena, IRTranslator::state_info);
 
 	auto &iprange = job.iprange;
