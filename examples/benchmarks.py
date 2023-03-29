@@ -7,14 +7,18 @@ from typing import Type
 
 
 class BaseExec:
-    def __init__(self, root, cmd):
+    def __init__(self):
         self.name = None
-        self.root = root
-        self.args = cmd
+        self.root = None
+        self.args = None
         self.rc = None
         self.out = None
         self.err = None
         self.time = None
+
+    def setup(self, root, cmd):
+        self.root = root
+        self.args = cmd
 
     def run(self):
         pass
@@ -23,8 +27,7 @@ class BaseExec:
 class QEMUExec(BaseExec):
     bin_path = "qemu-riscv32"
 
-    def __init__(self, root, cmd):
-        super().__init__(root, cmd)
+    def __init__(self):
         self.name = "qemu"
 
     def run(self):
@@ -41,15 +44,33 @@ class QEMUExec(BaseExec):
 class RVDBTExec(BaseExec):
     build_dir = None
 
-    def __init__(self, root, cmd):
-        super().__init__(root, cmd)
-        self.name = "rvdbt"
+    def __init__(self, aot):
+        super().__init__()
+        self.name = "rvdbt-" + ("jit", "aot")[aot]
+        self.aot = aot
+
+    def setup(self, root, cmd):
+        super().setup(root, cmd)
+        if not self.aot:
+            self.setup_ok = True
+            return
+        pargs = [RVDBTExec.build_dir + "/bin/elfaot",
+                 "--cache=dbtcache",
+                 "--elf=" + self.root + "/" + self.args[0]]
+        p = subprocess.Popen(pargs, cwd=RVDBTExec.build_dir,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.out, self.err = p.communicate()
+        self.rc = p.returncode
+        self.setup_ok = self.rc == 0
 
     def run(self):
+        if not self.setup_ok:
+            return
         pargs = [RVDBTExec.build_dir + "/bin/elfrun",
                  "--cache=dbtcache",
-                 "--fsroot=" + self.root,
-                 "--"] + self.args
+                 "--fsroot=" + self.root]
+        pargs += ["--aot=" + ("off", "on")[self.aot]]
+        pargs += ["--"] + self.args
         timer = time.time()
         p = subprocess.Popen(pargs, cwd=RVDBTExec.build_dir,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -70,10 +91,10 @@ class Benchmark:
         assert (self.ofile is not None)
         return self.ofile + "." + exec.name
 
-    def launch_with(self, exec_type: Type[BaseExec]):
-        exec = exec_type(self.root, self.args)
+    def launch_with(self, exec: BaseExec):
+        exec.setup(self.root, self.args)
         exec.run()
-        if self.ofile is not None:
+        if self.ofile is not None and os.path.isfile(self.get_ofile(exec)):
             os.rename(self.ofile, self.get_ofile(exec))
         return exec
 
@@ -85,20 +106,23 @@ class Benchmark:
             return "stdout"
 
         if self.ofile is not None:
+            if not os.path.isfile(self.get_ofile(exec)):
+                return "outfile-missing"
             if not filecmp.cmp(self.get_ofile(exec_ref), self.get_ofile(exec)):
-                return "outfile"
+                return "outfile-diff"
 
         return None
 
     def result(self, exec: BaseExec, exec_ref: BaseExec = None):
-        if exec_ref is None:
+        is_ref = ((exec == exec_ref) or (exec_ref is None))
+        if is_ref:
             res = "ok"
         else:
             res = self.verify(exec, exec_ref)
             res = (res, "ok")[res is None]
         res += ":" + str(exec.rc)
         report = [res, exec.time]
-        if exec_ref is not None:
+        if exec.time is not None:
             report += [f"{exec_ref.time / exec.time:.3f}"]
         return report
 
@@ -125,10 +149,12 @@ def RunTests(opts):
 
     for b in benchmarks:
         print(b.root + " " + " ".join(b.args))
-        ref_exec = b.launch_with(QEMUExec)
-        dbt_exec = b.launch_with(RVDBTExec)
-        print([ref_exec.name] + b.result(ref_exec))
-        print([dbt_exec.name] + b.result(dbt_exec, ref_exec))
+
+        execs = [QEMUExec(), RVDBTExec(False), RVDBTExec(True)]
+        ref_exec = execs[0]
+        for e in execs:
+            b.launch_with(e)
+            print([e.name] + b.result(e, ref_exec))
 
 
 def main():

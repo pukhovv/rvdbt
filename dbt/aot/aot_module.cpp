@@ -134,7 +134,9 @@ void ModuleGraph::ComputeDomTree()
 		for (auto n : rpot) {
 			rpon.Set(n, rpo_no++);
 		}
-		assert(rpo_no == n_nodes);
+		if (rpo_no != n_nodes) {
+			Panic("unreachable regions in modulegraph");
+		}
 	}
 
 	auto *start = root.get();

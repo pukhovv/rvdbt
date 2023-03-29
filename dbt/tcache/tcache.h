@@ -70,7 +70,7 @@ struct tcache {
 	static inline void RecordLink(jitabi::ppoint::BranchSlot *slot, TBlock *tgt, bool cross_segment)
 	{
 		// TODO: record {tgt:slot} for unlinking
-		tgt->flags.is_segment_entry = cross_segment;
+		tgt->flags.is_segment_entry |= cross_segment;
 	}
 
 	static void *AllocateCode(size_t sz, u16 align);
