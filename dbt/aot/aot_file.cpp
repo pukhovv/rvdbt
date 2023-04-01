@@ -80,7 +80,7 @@ void AOTCompileELF()
 
 	elfio::section *aottab_sec = writer.sections.add(".aottab");
 	aottab_sec->set_type(elfio::SHT_PROGBITS);
-	aottab_sec->set_flags(elfio::SHF_ALLOC | elfio::SHF_WRITE);
+	aottab_sec->set_flags(elfio::SHF_ALLOC | elfio::SHF_WRITE); // TODO: read?
 	aottab_sec->set_addr_align(0x1000);
 
 	elfio::section *str_sec = writer.sections.add(".strtab");
@@ -151,7 +151,7 @@ void ExecuteAOTLinker(std::vector<AOTSymbol> &aot_symbols)
 		u8 bind, type, other;
 		elfio::Elf_Half shidx;
 		if (!syma.get_symbol(name, addr, size, bind, type, shidx, other)) {
-			Panic();
+			Panic("symbol " + name + " not found");
 		}
 		return std::make_pair(addr, shidx);
 	};

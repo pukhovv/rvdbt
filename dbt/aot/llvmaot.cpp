@@ -90,6 +90,7 @@ private:
 	std::vector<llvm::Value *> vlocs;
 
 	llvm::Function *qcg_jitabi_nevercalled{};
+	llvm::ConstantPointerNull *qcgfn_null{};
 	u32 stackmap_id{1};
 };
 
@@ -249,9 +250,13 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	intr->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
 #else
+	llvm::FunctionType *qcg_ftype =
+	    llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx),
+				    {llvm::Type::getInt8PtrTy(*ctx), llvm::Type::getInt8PtrTy(*ctx)}, false);
+	auto *qcgfn_null = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(qcg_ftype));
 	lb->CreateIntrinsic(llvm::Intrinsic::experimental_stackmap, {},
 			    {const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot))});
-	auto call = lb->CreateCall(qcg_jitabi_nevercalled, {statev, membasev});
+	auto call = lb->CreateCall(qcg_ftype, qcgfn_null, {statev, membasev});
 	call->addFnAttr(llvm::Attribute::NoReturn);
 	call->setCallingConv(llvm::CallingConv::GHC);
 	call->setTailCall(true);
@@ -354,6 +359,7 @@ llvm::Function *LLVMGen::Run()
 
 	qcg_jitabi_nevercalled = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage,
 							"qcgstub_nevercalled", cmodule);
+	qcgfn_null = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(qcg_ftype));
 
 	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, MakeAotSymbol(region_ip),
 				      cmodule);
@@ -469,7 +475,7 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 
 		auto func = qir::LLVMGenPass::run(region, n.ip, ctx, cmodule);
 		fpm->run(*func, *fam);
-		func->print(llvm::errs(), nullptr);
+		// func->print(llvm::errs(), nullptr);
 
 		aot_symbols->push_back({n.ip, 0});
 		break;
@@ -477,7 +483,20 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 #endif
 }
 
-static void GenerateObjectFile(llvm::Module *module, std::string const &filename)
+static void AddAOTTabSection(llvm::LLVMContext &ctx, llvm::Module &cmodule,
+			     std::vector<AOTSymbol> &aot_symbols)
+{
+	size_t aottab_size = sizeof(AOTTabHeader) + sizeof(aot_symbols[0]) * aot_symbols.size();
+	auto type = llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx), aottab_size);
+	auto zeroinit = llvm::ConstantAggregateZero::get(type);
+	auto aottab = new llvm::GlobalVariable(cmodule, type, true, llvm::GlobalVariable::ExternalLinkage,
+					       zeroinit, AOT_SYM_AOTTAB);
+
+	aottab->setAlignment(llvm::Align(alignof(AOTTabHeader)));
+	aottab->setSection("aottab");
+}
+
+static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filename)
 {
 	auto TargetTriple = llvm::sys::getDefaultTargetTriple();
 	llvm::InitializeNativeTarget();
@@ -495,8 +514,8 @@ static void GenerateObjectFile(llvm::Module *module, std::string const &filename
 	auto RM = llvm::Optional<llvm::Reloc::Model>();
 	auto TargetMachine = Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
 
-	module->setDataLayout(TargetMachine->createDataLayout());
-	module->setTargetTriple(TargetTriple);
+	cmodule->setDataLayout(TargetMachine->createDataLayout());
+	cmodule->setTargetTriple(TargetTriple);
 
 	std::error_code EC;
 	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
@@ -514,7 +533,7 @@ static void GenerateObjectFile(llvm::Module *module, std::string const &filename
 		Panic();
 	}
 
-	pass.run(*module);
+	pass.run(*cmodule);
 	dest.flush();
 }
 
@@ -547,13 +566,15 @@ void LLVMAOTCompileELF()
 		LLVMAOTCompilePage(&aotrt, &aot_symbols, &ctx, &cmodule, page, &fpm, &fam);
 		break;
 	}
+	assert(!verifyModule(cmodule, &llvm::errs()));
 	// assert(0);
+	AddAOTTabSection(ctx, cmodule, aot_symbols);
 
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
 	GenerateObjectFile(&cmodule, obj_path);
 	ExecuteAOTLinker(aot_symbols);
 
-	assert(0);
+	// assert(0);
 }
 
 } // namespace dbt
