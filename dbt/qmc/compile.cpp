@@ -6,6 +6,7 @@
 namespace dbt::qir
 {
 
+// TODO: reuse code
 void *CompilerDoJob(CompilerJob &job)
 {
 	MemArena arena(1_MB);
@@ -22,6 +23,27 @@ void *CompilerDoJob(CompilerJob &job)
 	auto tcode = qcg::GenerateCode(cruntime, &segment, &region, entry_ip);
 
 	return cruntime->AnnounceRegion(entry_ip, tcode);
+}
+
+// TODO: ArenaObjects
+static qir::Region *AllocRegion(MemArena *arena)
+{
+	auto *mem = arena->Allocate<Region>();
+	assert(mem);
+	return new (mem) qir::Region(arena, IRTranslator::state_info);
+}
+
+qir::Region *CompilerGenRegionIR(MemArena *arena, CompilerJob &job)
+{
+	auto *region = AllocRegion(arena);
+
+	auto &iprange = job.iprange;
+	auto &cruntime = job.cruntime;
+
+	IRTranslator::Translate(region, &iprange, cruntime->GetVMemBase());
+	PrinterPass::run(log_qir, "Initial IR after IRTranslator", region);
+
+	return region;
 }
 
 } // namespace dbt::qir

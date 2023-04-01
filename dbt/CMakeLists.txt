@@ -8,6 +8,7 @@ add_library(dbtstatic STATIC
 	aot/aot_module.cpp
 	aot/aot_file.cpp
 	aot/aot_boot.cpp
+	aot/llvmaot.cpp
 	arena.cpp
 	mmu.cpp
 	execute.cpp
@@ -39,6 +40,18 @@ target_include_directories(dbtstatic SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/th
 target_link_libraries(dbtstatic PUBLIC asmjit::asmjit ${Boost_LIBRARIES} m md)
 
 target_include_directories(dbtstatic SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/third_party/elfio")
+
+find_package(LLVM 15 REQUIRED CONFIG)
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+
+include_directories(${LLVM_INCLUDE_DIRS})
+separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+add_definitions(${LLVM_DEFINITIONS_LIST})
+
+llvm_map_components_to_libnames(llvm_libs support core irreader passes asmparser asmprinter target x86asmparser x86codegen x86desc x86disassembler x86info x86targetmca)
+target_link_libraries(dbtstatic PUBLIC ${llvm_libs})
+
 
 add_executable(elfrun elfrun.cpp)
 target_include_directories(elfrun PUBLIC "${PROJECT_SOURCE_DIR}")

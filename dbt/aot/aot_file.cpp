@@ -14,13 +14,6 @@ namespace dbt
 {
 LOG_STREAM(aot)
 
-static inline std::string MakeAotSymbol(u32 ip)
-{
-	std::stringstream ss;
-	ss << AOT_SYM_PREFIX << std::hex << ip;
-	return ss.str();
-}
-
 struct AOTCompilerRuntime final : CompilerRuntime {
 	AOTCompilerRuntime(elfio::section *elf_text_, const elfio::string_section_accessor &elf_stra_,
 			   const elfio::symbol_section_accessor &elf_syma_, std::vector<AOTSymbol> &aotsyms_)
@@ -62,8 +55,6 @@ struct AOTCompilerRuntime final : CompilerRuntime {
 	elfio::symbol_section_accessor elf_syma;
 	std::vector<AOTSymbol> &aotsyms;
 };
-
-static void FixupAOTTabSection();
 
 void AOTCompileELF()
 {
@@ -129,7 +120,7 @@ void AOTCompileELF()
 	FixupAOTTabSection();
 }
 
-static void FixupAOTTabSection()
+void FixupAOTTabSection()
 {
 	auto aot_path = objprof::GetCachePath(AOT_SO_EXTENSION);
 
