@@ -44,7 +44,7 @@ struct AOTCompilerRuntime final : CompilerRuntime {
 
 		elf_syma.add_symbol(str_idx, code_offs, code.size(), elfio::STB_GLOBAL, elfio::STT_FUNC, 0,
 				    elf_text->get_index());
-		aotsyms.push_back({ip, code_offs});
+		aotsyms.push_back({ip, 0});
 
 		return nullptr;
 	}
@@ -100,29 +100,31 @@ void AOTCompileELF()
 
 	aot_sec->set_data((char const *)aotrt.code_arena.BaseAddr(), aotrt.code_arena.GetUsedSize());
 
-	auto header = AOTTabHeader{.n_sym = aot_symbols.size()};
-	aottab_sec->append_data((char const *)&header, sizeof(header));
-	aottab_sec->append_data((char const *)aot_symbols.data(), sizeof(AOTSymbol) * aot_symbols.size());
+	// auto header = AOTTabHeader{.n_sym = aot_symbols.size()};
+	// aottab_sec->append_data((char const *)&header, sizeof(header));
+	// aottab_sec->append_data((char const *)aot_symbols.data(), sizeof(AOTSymbol) * aot_symbols.size());
+	aottab_sec->set_size(sizeof(AOTTabHeader) + sizeof(AOTSymbol) * aot_symbols.size());
 	syma.add_symbol(stra.add_string(AOT_SYM_AOTTAB), 0, aottab_sec->get_size(), elfio::STB_GLOBAL,
 			elfio::STT_OBJECT, 0, aottab_sec->get_index());
 
 	assert(writer.validate().empty());
 
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
-	auto so_path = objprof::GetCachePath(AOT_SO_EXTENSION);
 	writer.save(obj_path);
 
+	ExecuteAOTLinker(aot_symbols);
+}
+
+void ExecuteAOTLinker(std::vector<AOTSymbol> &aot_symbols)
+{
+	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
+	auto aot_path = objprof::GetCachePath(AOT_SO_EXTENSION);
+
 	if (system(
-		("/usr/bin/ld -z relro --hash-style=gnu -m elf_x86_64 -shared -o" + so_path + " " + obj_path)
+		("/usr/bin/ld -z relro --hash-style=gnu -m elf_x86_64 -shared -o" + aot_path + " " + obj_path)
 		    .c_str()) < 0) {
 		Panic();
 	}
-	FixupAOTTabSection();
-}
-
-void FixupAOTTabSection()
-{
-	auto aot_path = objprof::GetCachePath(AOT_SO_EXTENSION);
 
 	elfio::elfio elf;
 	if (!elf.load(aot_path)) {
@@ -154,10 +156,11 @@ void FixupAOTTabSection()
 		return std::make_pair(addr, shidx);
 	};
 
+#if 0
 	AOTTabHeader const *aottab{};
 	size_t aottab_offs;
 	{
-		auto [vaddr, shidx] = resolve_sym("_aot_tab");
+		auto [vaddr, shidx] = resolve_sym(AOT_SYM_AOTTAB);
 		auto section = elf.sections[shidx];
 		// stupid action to retrive loaded data
 		auto soffs = vaddr - section->get_address();
@@ -174,6 +177,23 @@ void FixupAOTTabSection()
 		auto gip = aottab->sym[idx].gip;
 		aottab_res->sym[idx] = {gip, resolve_sym(MakeAotSymbol(gip)).first};
 	}
+#else
+	for (auto &sym : aot_symbols) {
+		auto gip = sym.gip;
+		log_aot("found aottab[%08x]", gip);
+		sym = {gip, resolve_sym(MakeAotSymbol(gip)).first};
+	}
+	AOTTabHeader aottab_header;
+	aottab_header.n_sym = aot_symbols.size();
+
+	size_t aottab_offs;
+	{
+		auto [vaddr, shidx] = resolve_sym(AOT_SYM_AOTTAB);
+		auto section = elf.sections[shidx];
+		auto soffs = vaddr - section->get_address();
+		aottab_offs = section->get_offset() + soffs;
+	}
+#endif
 
 	int fd = open(aot_path.c_str(), O_WRONLY);
 	if (!fd) {
@@ -182,7 +202,11 @@ void FixupAOTTabSection()
 	if (lseek(fd, aottab_offs, SEEK_SET) == (off_t)-1) {
 		Panic();
 	}
-	if (write(fd, aottab_res, aottab_mem_sz) != aottab_mem_sz) {
+	if (write(fd, &aottab_header, sizeof(AOTTabHeader)) != sizeof(AOTTabHeader)) {
+		Panic();
+	}
+	size_t aot_symbols_size = sizeof(aot_symbols[0]) * aot_symbols.size();
+	if (write(fd, aot_symbols.data(), aot_symbols_size) != aot_symbols_size) {
 		Panic();
 	}
 	close(fd);

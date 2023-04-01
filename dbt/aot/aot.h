@@ -37,7 +37,7 @@ void LLVMAOTCompileELF();
 void BootAOTFile();
 
 ModuleGraph BuildModuleGraph(objprof::PageData const &page);
-void FixupAOTTabSection();
+void ExecuteAOTLinker(std::vector<AOTSymbol> &aot_symbols);
 
 void AOTCompileObject(CompilerRuntime *aotrt);
 

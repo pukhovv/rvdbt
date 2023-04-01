@@ -439,9 +439,9 @@ struct LLVMAOTCompilerRuntime final : CompilerRuntime {
 	}
 };
 
-static void LLVMAOTCompilePage(CompilerRuntime *aotrt, llvm::LLVMContext *ctx, llvm::Module *cmodule,
-			       objprof::PageData const &page, llvm::FunctionPassManager *fpm,
-			       llvm::FunctionAnalysisManager *fam)
+static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *aot_symbols,
+			       llvm::LLVMContext *ctx, llvm::Module *cmodule, objprof::PageData const &page,
+			       llvm::FunctionPassManager *fpm, llvm::FunctionAnalysisManager *fam)
 {
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
@@ -456,6 +456,8 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, llvm::LLVMContext *ctx, l
 
 		qir::CompilerJob job(aotrt, mg.segment, std::move(ipranges));
 		qir::CompilerDoJob(job);
+
+		aot_symbols->push_back({r[0].ip, 0});
 	}
 #else
 	for (auto const &e : mg.ip_map) {
@@ -468,6 +470,8 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, llvm::LLVMContext *ctx, l
 		auto func = qir::LLVMGenPass::run(region, n.ip, ctx, cmodule);
 		fpm->run(*func, *fam);
 		func->print(llvm::errs(), nullptr);
+
+		aot_symbols->push_back({n.ip, 0});
 		break;
 	}
 #endif
@@ -536,14 +540,18 @@ void LLVMAOTCompileELF()
 	llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
 
 	auto aotrt = LLVMAOTCompilerRuntime{};
+	std::vector<AOTSymbol> aot_symbols;
+	aot_symbols.reserve(64_KB);
 
 	for (auto const &page : objprof::GetProfile()) {
-		LLVMAOTCompilePage(&aotrt, &ctx, &cmodule, page, &fpm, &fam);
+		LLVMAOTCompilePage(&aotrt, &aot_symbols, &ctx, &cmodule, page, &fpm, &fam);
 		break;
 	}
 	// assert(0);
 
-	GenerateObjectFile(&cmodule, "llvmout.o");
+	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
+	GenerateObjectFile(&cmodule, obj_path);
+	ExecuteAOTLinker(aot_symbols);
 
 	assert(0);
 }
