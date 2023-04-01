@@ -46,10 +46,11 @@ class QEMUExec(BaseExec):
 class RVDBTExec(BaseExec):
     build_dir = None
 
-    def __init__(self, aot):
+    def __init__(self, aot, llvm=False):
         super().__init__()
-        self.name = "rvdbt-" + ("jit", "aot")[aot]
+        self.name = "rvdbt-" + ("jit", ("qcgaot", "llvmaot")[llvm])[aot]
         self.aot = aot
+        self.llvm = llvm
 
     def setup(self, root, cmd):
         super().setup(root, cmd)
@@ -58,6 +59,7 @@ class RVDBTExec(BaseExec):
             return
         pargs = [RVDBTExec.build_dir + "/bin/elfaot",
                  "--cache=dbtcache",
+                 "--llvm=" + ("off", "on")[self.llvm],
                  "--elf=" + self.root + "/" + self.args[0]]
         p = subprocess.Popen(pargs, cwd=RVDBTExec.build_dir,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -102,7 +104,7 @@ class Benchmark:
 
     def verify(self, exec: BaseExec, exec_ref: BaseExec):
         if exec_ref.rc != exec.rc:
-            return "retcode"
+            return "retcode,out=" + str(exec.err)
 
         if self.cmp_out and exec_ref.out != exec.out:
             return "stdout"
@@ -155,7 +157,8 @@ def RunTests(opts):
     benchmarks: list[Benchmark] = []
     benchmarks += GetBenchmarks_Automotive(opts.prebuilts_dir)
 
-    def get_execs(): return [QEMUExec(), RVDBTExec(False), RVDBTExec(True)]
+    def get_execs(): return [QEMUExec(), RVDBTExec(
+        False), RVDBTExec(True, False), RVDBTExec(True, True)]
 
     csvtab = [["+"] + list(map(lambda e: e.name, get_execs()))]
 

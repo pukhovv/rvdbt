@@ -1,7 +1,9 @@
 #pragma once
 
+#include "dbt/arena.h"
 #include "dbt/util/common.h"
 #include <span>
+#include <sstream>
 #include <vector>
 
 namespace dbt
@@ -13,10 +15,18 @@ struct CompilerRuntime {
 
 	virtual bool AllowsRelocation() const = 0;
 
-	virtual uptr GetVMemBase() const = 0;
-
 	virtual void *AnnounceRegion(u32 ip, std::span<u8> const &code) = 0;
 };
+
+static constexpr std::string_view AOT_SYM_PREFIX = "_x";
+
+inline std::string MakeAotSymbol(u32 ip)
+{
+	std::stringstream ss;
+	ss << AOT_SYM_PREFIX << std::hex << ip;
+	return ss.str();
+}
+
 } // namespace dbt
 
 namespace dbt::qir
@@ -37,18 +47,25 @@ struct CodeSegment {
 struct CompilerJob {
 	using IpRangesSet = std::vector<IpRange>;
 
-	explicit CompilerJob(CompilerRuntime *cruntime_, CodeSegment segment_, IpRangesSet &&iprange_)
-	    : cruntime(cruntime_), segment(segment_), iprange(iprange_)
+	explicit CompilerJob(CompilerRuntime *cruntime_, uptr vmem_, CodeSegment segment_,
+			     IpRangesSet &&iprange_)
+	    : cruntime(cruntime_), vmem(vmem_), segment(segment_), iprange(iprange_)
 	{
 		assert(iprange.size());
 	}
 
 	CompilerRuntime *cruntime;
+
+	uptr vmem;
 	CodeSegment segment;
 	IpRangesSet iprange;
 };
 
 // Now qmc operates only in synchronous mode, so returns a value from runtime.AnnounceRegion
 void *CompilerDoJob(CompilerJob &job);
+
+struct Region;
+// Just generate IR
+Region *CompilerGenRegionIR(MemArena *arena, CompilerJob &job);
 
 } // namespace dbt::qir

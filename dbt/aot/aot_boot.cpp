@@ -29,7 +29,9 @@ void BootAOTFile()
 	}
 
 	void *so_handle = dlopen(aot_path.c_str(), RTLD_NOW);
-	assert(so_handle);
+	if (!so_handle) {
+		Panic(dlerror());
+	}
 	link_map *lmap;
 	if (dlinfo(so_handle, RTLD_DI_LINKMAP, (void *)&lmap) < 0) {
 		Panic();

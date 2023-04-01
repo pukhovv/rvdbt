@@ -9,7 +9,7 @@ namespace dbt
 {
 LOG_STREAM(aot)
 
-void ModuleGraph::Dump()
+void ModuleGraph::Dump(std::vector<std::vector<ModuleGraphNode *>> const *regions)
 {
 	auto dump_node = [](ModuleGraphNode const &n) {
 		if (n.flags.is_segment_entry) {
@@ -41,21 +41,20 @@ void ModuleGraph::Dump()
 		// 	log_modulegraph("B%08x->B%08x[color=grey]", n.dominator->ip, n.ip);
 		// }
 	}
-}
 
-void ModuleGraph::DumpRegions(std::vector<std::vector<ModuleGraphNode *>> const &regions)
-{
-	for (auto const &r : regions) {
-		std::stringstream ss;
-		ss << std::hex;
-		ss << "subgraph cluster_R" << std::setfill('0') << std::setw(8) << r[0]->ip
-		   << "{style=filled;color=lightgrey;";
-		for (size_t i = 0; i < r.size(); ++i) {
-			ss << " B" << std::setfill('0') << std::setw(8) << r[i]->ip;
+	if (regions) {
+		for (auto const &r : *regions) {
+			std::stringstream ss;
+			ss << std::hex;
+			ss << "subgraph cluster_R" << std::setfill('0') << std::setw(8) << r[0]->ip
+			   << "{style=filled;color=lightgrey;";
+			for (size_t i = 0; i < r.size(); ++i) {
+				ss << " B" << std::setfill('0') << std::setw(8) << r[i]->ip;
+			}
+			ss << "}";
+			auto str = ss.str();
+			log_modulegraph(str.c_str());
 		}
-		ss << "}";
-		auto str = ss.str();
-		log_modulegraph(str.c_str());
 	}
 }
 
@@ -269,8 +268,7 @@ std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegions()
 	ComputeRegionIDF();
 	auto regions = ComputeRegionDomSets();
 
-	Dump();
-	DumpRegions(regions);
+	Dump(&regions);
 
 	return regions;
 }

@@ -94,19 +94,19 @@ DEF_GPR(R14, R14);
 DEF_GPR(R15, R15);
 #undef DEF_GPR
 
+#define QMC_FIXED_REGS(X)                                                                                    \
+	X(STATE, R13)	 /* ghccc0 */                                                                        \
+	X(MEMBASE, RBP)	 /* ghccc1 */                                                                        \
+	X(SPUNWIND, R12) /* ghccc2 // Release after fixing llvm.patchpoint */                                \
+	X(SP, RSP)
+
 #define DEF_FIXED(name, reg) [[maybe_unused]] static constexpr auto name = reg;
-// qmc fixed regs
-DEF_FIXED(STATE, R13);	 // ghccc0
-DEF_FIXED(MEMBASE, RBP); // ghccc1
-DEF_FIXED(SP, RSP);
+QMC_FIXED_REGS(DEF_FIXED)
 #undef DEF_FIXED
 
-static constexpr RegMask GPR_FIXED = RegMask(0)
-					 .Set(STATE)
-#ifndef CONFIG_ZERO_MMU_BASE
-					 .Set(MEMBASE)
-#endif
-					 .Set(SP);
+#define DEF_FIXED(name, reg) .Set(name)
+static constexpr RegMask GPR_FIXED = RegMask(0) QMC_FIXED_REGS(DEF_FIXED);
+#undef DEF_FIXED
 
 static constexpr RegMask GPR_CALL_CLOBBER =
     RegMask(0).Set(RAX).Set(RDI).Set(RSI).Set(RDX).Set(RCX).Set(R8).Set(R9).Set(R10).Set(R11);

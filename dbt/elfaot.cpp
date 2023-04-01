@@ -15,7 +15,8 @@ int main(int argc, char **argv)
 	bpo::options_description adesc("options");
 	adesc.add_options()("help", "help")("logs", bpo::value<std::string>())(
 	    "cache", bpo::value<std::string>()->required(),
-	    "directory for dbt cache files")("elf", bpo::value<std::string>()->required(), "elf aot target");
+	    "directory for dbt cache files")("elf", bpo::value<std::string>()->required(), "elf aot target")(
+	    "llvm", bpo::value<bool>()->default_value(false), "use llvm backend");
 	bpo::variables_map adesc_vm;
 	bpo::store(bpo::parse_command_line(argc, argv, adesc), adesc_vm);
 	bpo::notify(adesc_vm);
@@ -33,6 +34,7 @@ int main(int argc, char **argv)
 	}
 	std::string cachedir = *boost::unsafe_any_cast<std::string>(&adesc_vm["cache"].value());
 	std::string elfpath = *boost::unsafe_any_cast<std::string>(&adesc_vm["elf"].value());
+	auto use_llvm = *boost::unsafe_any_cast<bool>(&adesc_vm["llvm"].value());
 
 	dbt::objprof::Init(cachedir.c_str(), false);
 	dbt::mmu::Init();
@@ -40,7 +42,11 @@ int main(int argc, char **argv)
 	auto elf = &dbt::ukernel::exe_elf_image;
 	dbt::ukernel::ReproduceElf(elfpath.c_str(), elf);
 
-	dbt::AOTCompileELF();
+	if (use_llvm) {
+		dbt::LLVMAOTCompileELF();
+	} else {
+		dbt::AOTCompileELF();
+	}
 
 #ifndef NDEBUG
 	dbt::objprof::Destroy();

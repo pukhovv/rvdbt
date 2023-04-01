@@ -294,7 +294,7 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 	} else {
 		FrameDestroy();
 	}
-	j.jmp(asmjit::x86::rdx);
+	j.jmp(asmjit::x86::rax);
 }
 
 // set size manually

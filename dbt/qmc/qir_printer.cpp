@@ -23,16 +23,11 @@ char const *const condcode_names[to_underlying(CondCode::Count)] = {
 #undef X
 };
 
-static char const *const runtime_stub_names[to_underlying(RuntimeStubId::Count)] = {
+char const *const runtime_stub_names[to_underlying(RuntimeStubId::Count)] = {
 #define X(name) [to_underlying(RuntimeStubId::id_##name)] = #name,
     RUNTIME_STUBS(X)
 #undef X
 };
-
-static inline char const *GetRuntimeStubName(RuntimeStubId id)
-{
-	return runtime_stub_names[to_underlying(id)];
-}
 
 struct PrinterVisitor : InstVisitor<PrinterVisitor, void> {
 private:

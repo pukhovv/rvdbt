@@ -67,7 +67,7 @@ void RV32Translator::Translate(qir::Region *region, CompilerJob::IpRangesSet *ip
 	RV32Translator t(region, vmem);
 
 	for (auto const &range : *ipranges) {
-		t.loc_entries.insert({range.first, region->CreateBlock()});
+		t.ip2bb.insert({range.first, region->CreateBlock()});
 	}
 
 	for (auto const &range : *ipranges) {
@@ -84,7 +84,7 @@ void RV32Translator::TranslateIPRange(u32 ip, u32 boundary_ip)
 	cflow_dump::RecordEntry(ip);
 	assert(boundary_ip != 0);
 
-	qb = qir::Builder(loc_entries.find(ip)->second);
+	qb = qir::Builder(ip2bb.find(ip)->second);
 
 	u32 num_insns = 0;
 	control = Control::NEXT;
@@ -122,12 +122,11 @@ void RV32Translator::TranslateInsn()
 
 void RV32Translator::MakeGBr(u32 ip)
 {
-	auto it = loc_entries.find(ip);
-	if (it != loc_entries.end()) {
+	auto it = ip2bb.find(ip);
+	if (it != ip2bb.end()) {
 		qb.Create_br();
 		qb.GetBlock()->AddSucc(it->second);
 	} else {
-		PreSideeff();
 		qb.Create_gbr(vconst(ip));
 	}
 }
@@ -137,12 +136,11 @@ void RV32Translator::TranslateBrcc(rv32::insn::B i, CondCode cc)
 #if 1
 	auto make_target = [&](u32 ip) {
 		cflow_dump::RecordGBr(bb_ip, ip);
-		auto it = loc_entries.find(ip);
-		if (it != loc_entries.end()) {
+		auto it = ip2bb.find(ip);
+		if (it != ip2bb.end()) {
 			return it->second;
 		} else {
 			qb = Builder(qb.CreateBlock());
-			PreSideeff();
 			qb.Create_gbr(vconst(ip));
 			return qb.GetBlock();
 		}
@@ -335,7 +333,6 @@ TRANSLATOR(jalr)
 		cflow_dump::RecordGBrind(bb_ip);
 	}
 
-	PreSideeff();
 	qb.Create_gbrind(tgt);
 }
 TRANSLATOR_Brcc(beq, EQ);

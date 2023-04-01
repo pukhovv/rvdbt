@@ -9,19 +9,30 @@ namespace dbt::qir
 void *CompilerDoJob(CompilerJob &job)
 {
 	MemArena arena(1_MB);
-	qir::Region region(&arena, IRTranslator::state_info);
 
-	auto &iprange = job.iprange;
-	auto &cruntime = job.cruntime;
-	auto &segment = job.segment;
-	auto entry_ip = iprange[0].first;
+	auto entry_ip = job.iprange[0].first;
+	auto region = CompilerGenRegionIR(&arena, job);
 
-	IRTranslator::Translate(&region, &iprange, cruntime->GetVMemBase());
-	PrinterPass::run(log_qir, "Initial IR after IRTranslator", &region);
+	auto tcode = qcg::GenerateCode(job.cruntime, &job.segment, region, entry_ip);
+	return job.cruntime->AnnounceRegion(entry_ip, tcode);
+}
 
-	auto tcode = qcg::GenerateCode(cruntime, &segment, &region, entry_ip);
+// TODO: ArenaObjects
+static qir::Region *AllocRegion(MemArena *arena)
+{
+	auto *mem = arena->Allocate<Region>();
+	assert(mem);
+	return new (mem) qir::Region(arena, IRTranslator::state_info);
+}
 
-	return cruntime->AnnounceRegion(entry_ip, tcode);
+qir::Region *CompilerGenRegionIR(MemArena *arena, CompilerJob &job)
+{
+	auto *region = AllocRegion(arena);
+
+	IRTranslator::Translate(region, &job.iprange, job.vmem);
+	PrinterPass::run(log_qir, "Initial IR after IRTranslator", region);
+
+	return region;
 }
 
 } // namespace dbt::qir

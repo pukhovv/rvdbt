@@ -8,12 +8,14 @@
 namespace dbt
 {
 #define COMMON_RUNTIME_STUBS(X)                                                                              \
-	X(escape)                                                                                            \
+	X(escape_link)                                                                                       \
+	X(escape_brind)                                                                                      \
 	X(link_branch_jit)                                                                                   \
 	X(link_branch_aot)                                                                                   \
 	X(brind)                                                                                             \
 	X(raise)                                                                                             \
-	X(trace)
+	X(trace)                                                                                             \
+	X(nevercalled)
 
 #define RUNTIME_STUBS(X) COMMON_RUNTIME_STUBS(X) GUEST_RUNTIME_STUBS(X)
 

@@ -9,9 +9,7 @@ namespace dbt
 {
 LOG_STREAM(aot)
 
-using FilePageData = objprof::PageData;
-
-static ModuleGraph BuildModuleGraph(FilePageData const &page)
+ModuleGraph BuildModuleGraph(objprof::PageData const &page)
 {
 	u32 const page_vaddr = page.pageno << mmu::PAGE_BITS;
 	u32 const next_page_vaddr = page_vaddr + mmu::PAGE_SIZE;
@@ -23,7 +21,7 @@ static ModuleGraph BuildModuleGraph(FilePageData const &page)
 		if (!page.executed[idx]) {
 			continue;
 		}
-		u32 ip = page_vaddr + FilePageData::idx2po(idx);
+		u32 ip = page_vaddr + objprof::PageData::idx2po(idx);
 		iplist.push_back(ip);
 		mg.RecordEntry(ip);
 		if (page.brind_target[idx]) {
@@ -44,7 +42,7 @@ static ModuleGraph BuildModuleGraph(FilePageData const &page)
 	return mg;
 }
 
-static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
+static void AOTCompilePage(CompilerRuntime *aotrt, objprof::PageData const &page)
 {
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
@@ -57,7 +55,7 @@ static void AOTCompilePage(CompilerRuntime *aotrt, FilePageData const &page)
 			ipranges.push_back({n->ip, n->ip_end});
 		}
 
-		qir::CompilerJob job(aotrt, mg.segment, std::move(ipranges));
+		qir::CompilerJob job(aotrt, (uptr)mmu::base, mg.segment, std::move(ipranges));
 		qir::CompilerDoJob(job);
 	}
 #else
