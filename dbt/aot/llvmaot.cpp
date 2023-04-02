@@ -180,6 +180,7 @@ llvm::Value *LLVMGen::MakeStateEP(VType type, u32 offs)
 
 llvm::Value *LLVMGen::MakeVMemLoc(VType type, llvm::Value *addr)
 {
+	addr = lb->CreateZExt(addr, lb->getIntPtrTy(cmodule->getDataLayout()));
 	auto ep = lb->CreateGEP(lb->getInt8Ty(), membasev, addr);
 	return lb->CreateBitCast(ep, MakePtrType(type));
 }
@@ -237,11 +238,16 @@ void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
 
 	lb->CreateCondBr(cmp, MapBB(&qbb_t), MapBB(&qbb_f));
 }
+
+// llvm doesn't support tailcalls for experimental.patchpoint, actual call is not expanded until
+// MCInstLowering. The same applies to gc.statepoint
+// TODO: Seems like I can implelemnt custom MCInst to replace desired tailcalls like XRay MFPass does
+//
+// llvm corrupts ghccc Sp in MFs with stackmap, even if stackmap records no values
+// I applied this in SelectionDAGBuilder for stackmaps with no liveins:
+// + FuncInfo.MF->getFrameInfo().setHasStackMap(CI.arg_size() > 2);
 void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 {
-	// llvm doesn't support tailcalls for experimental.patchpoint, actual call is not expanded until
-	// MCInstLowering. The same applies to gc.statepoint
-	// TODO: Seems like I can implelemnt custom MCInst to replace desired tailcalls like XRay MFPass does
 #if 0
 	std::array<llvm::Value *, 6> args = {
 	    const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot)),
@@ -255,9 +261,6 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	intr->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
 #else
-	// llvm corrupts ghccc Sp in MFs with stackmap, even if stackmap records no values
-	// I applied this in SelectionDAGBuilder for stackmaps with no liveins:
-	// + FuncInfo.MF->getFrameInfo().setHasStackMap(CI.arg_size() > 2);
 	auto stackmap =
 	    lb->CreateIntrinsic(llvm::Intrinsic::experimental_stackmap, {},
 				{const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot))});
@@ -269,6 +272,7 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	call->setTailCall(true);
 	call->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
+
 #endif
 }
 void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
@@ -472,7 +476,7 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 
 		auto func = qir::LLVMGenPass::run(region, n.ip, ctx, cmodule);
 		// func->print(llvm::errs(), nullptr);
-		fpm->run(*func, *fam);
+		// fpm->run(*func, *fam);
 		cmodule->print(llvm::errs(), nullptr, true, true);
 		// func->print(llvm::errs(), nullptr);
 
