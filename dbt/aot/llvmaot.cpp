@@ -19,12 +19,12 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/TargetParser/Host.h"
 
 #include <memory>
 #include <optional>
@@ -506,7 +506,7 @@ static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filenam
 	auto Features = "";
 
 	llvm::TargetOptions opt;
-	auto RM = llvm::Optional<llvm::Reloc::Model>();
+	auto RM = std::optional<llvm::Reloc::Model>();
 	auto TargetMachine = Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
 
 	cmodule->setDataLayout(TargetMachine->createDataLayout());
