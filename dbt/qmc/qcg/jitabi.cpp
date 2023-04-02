@@ -160,11 +160,6 @@ HELPER_ASM void qcgstub_trace()
 }
 static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
 
-HELPER void qcgstub_nevercalled(CPUState *state, void *membase)
-{
-	Panic("\"nevercalled\" stub called!");
-}
-
 HELPER void qcg_DumpTrace(CPUState *state)
 {
 	state->DumpTrace("entry");

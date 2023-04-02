@@ -8,6 +8,7 @@ add_library(dbtstatic STATIC
 	aot/aot_module.cpp
 	aot/aot_file.cpp
 	aot/aot_boot.cpp
+	aot/llvmaot_stackmaps.cpp
 	aot/llvmaot.cpp
 	arena.cpp
 	mmu.cpp
@@ -34,12 +35,18 @@ add_library(dbtstatic STATIC
 	guest/rv32_interp.cpp
 	guest/rv32_qir.cpp
 )
+add_library(dbtjitshared SHARED
+	qmc/qcg/jitabi_shared.cpp
+)
+
+target_include_directories(dbtjitshared PUBLIC "${PROJECT_SOURCE_DIR}")
+target_include_directories(dbtjitshared SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/third_party/asmjit/src")
+
 target_include_directories(dbtstatic PUBLIC "${PROJECT_SOURCE_DIR}")
-
 target_include_directories(dbtstatic SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/third_party/asmjit/src")
-target_link_libraries(dbtstatic PUBLIC asmjit::asmjit ${Boost_LIBRARIES} m md)
-
 target_include_directories(dbtstatic SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/third_party/elfio")
+
+target_link_libraries(dbtstatic PUBLIC dbtjitshared asmjit::asmjit ${Boost_LIBRARIES} m md)
 
 find_package(LLVM 15 REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")

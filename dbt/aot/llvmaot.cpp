@@ -89,6 +89,7 @@ private:
 	llvm::Value *membasev{};
 	std::vector<llvm::Value *> vlocs;
 
+	llvm::FunctionType *qcg_ftype{};
 	llvm::Function *qcg_jitabi_nevercalled{};
 	llvm::ConstantPointerNull *qcgfn_null{};
 	u32 stackmap_id{1};
@@ -250,13 +251,9 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	intr->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
 #else
-	llvm::FunctionType *qcg_ftype =
-	    llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx),
-				    {llvm::Type::getInt8PtrTy(*ctx), llvm::Type::getInt8PtrTy(*ctx)}, false);
-	auto *qcgfn_null = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(qcg_ftype));
 	lb->CreateIntrinsic(llvm::Intrinsic::experimental_stackmap, {},
 			    {const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot))});
-	auto call = lb->CreateCall(qcg_ftype, qcgfn_null, {statev, membasev});
+	auto call = lb->CreateCall(qcg_jitabi_nevercalled, {statev, membasev});
 	call->addFnAttr(llvm::Attribute::NoReturn);
 	call->setCallingConv(llvm::CallingConv::GHC);
 	call->setTailCall(true);
@@ -353,7 +350,7 @@ private:
 
 llvm::Function *LLVMGen::Run()
 {
-	llvm::FunctionType *qcg_ftype =
+	qcg_ftype =
 	    llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx),
 				    {llvm::Type::getInt8PtrTy(*ctx), llvm::Type::getInt8PtrTy(*ctx)}, false);
 
@@ -399,7 +396,7 @@ llvm::Function *LLVMGen::Run()
 		}
 	}
 	// func->print(llvm::errs(), nullptr);
-	cmodule->print(llvm::errs(), nullptr, true, true);
+	// cmodule->print(llvm::errs(), nullptr, true, true);
 	assert(!verifyFunction(*func, &llvm::errs()));
 	return func;
 }
@@ -452,20 +449,6 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
 
-#if 0
-	for (auto const &r : regions) {
-		assert(r[0]->flags.region_entry);
-		qir::CompilerJob::IpRangesSet ipranges;
-		for (auto n : r) {
-			ipranges.push_back({n->ip, n->ip_end});
-		}
-
-		qir::CompilerJob job(aotrt, mg.segment, std::move(ipranges));
-		qir::CompilerDoJob(job);
-
-		aot_symbols->push_back({r[0].ip, 0});
-	}
-#else
 	for (auto const &e : mg.ip_map) {
 		auto const &n = *e.second;
 		qir::CompilerJob job(aotrt, mg.segment, {{n.ip, n.ip_end}});
@@ -474,13 +457,13 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 		auto *region = qir::CompilerGenRegionIR(&arena, job);
 
 		auto func = qir::LLVMGenPass::run(region, n.ip, ctx, cmodule);
-		fpm->run(*func, *fam);
+		func->print(llvm::errs(), nullptr);
+		// fpm->run(*func, *fam);
 		// func->print(llvm::errs(), nullptr);
 
 		aot_symbols->push_back({n.ip, 0});
 		break;
 	}
-#endif
 }
 
 static void AddAOTTabSection(llvm::LLVMContext &ctx, llvm::Module &cmodule,
@@ -493,7 +476,7 @@ static void AddAOTTabSection(llvm::LLVMContext &ctx, llvm::Module &cmodule,
 					       zeroinit, AOT_SYM_AOTTAB);
 
 	aottab->setAlignment(llvm::Align(alignof(AOTTabHeader)));
-	aottab->setSection("aottab");
+	aottab->setSection(".aottab");
 }
 
 static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filename)
@@ -572,7 +555,8 @@ void LLVMAOTCompileELF()
 
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
 	GenerateObjectFile(&cmodule, obj_path);
-	ExecuteAOTLinker(aot_symbols);
+	ProcessLLVMStackmaps(aot_symbols);
+	LinkAOTObject(aot_symbols);
 
 	// assert(0);
 }

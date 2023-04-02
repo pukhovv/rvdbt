@@ -1,9 +1,9 @@
 #include "dbt/aot/aot.h"
 #include "dbt/qmc/compile.h"
 #include "dbt/tcache/objprof.h"
+#include <sstream>
 
 #include "elfio/elfio.hpp"
-#include <sstream>
 namespace elfio = ELFIO;
 
 extern "C" {
@@ -112,10 +112,10 @@ void AOTCompileELF()
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
 	writer.save(obj_path);
 
-	ExecuteAOTLinker(aot_symbols);
+	LinkAOTObject(aot_symbols);
 }
 
-void ExecuteAOTLinker(std::vector<AOTSymbol> &aot_symbols)
+void LinkAOTObject(std::vector<AOTSymbol> &aot_symbols)
 {
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
 	auto aot_path = objprof::GetCachePath(AOT_SO_EXTENSION);

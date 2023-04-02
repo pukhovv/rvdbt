@@ -37,8 +37,10 @@ void LLVMAOTCompileELF();
 void BootAOTFile();
 
 ModuleGraph BuildModuleGraph(objprof::PageData const &page);
-void ExecuteAOTLinker(std::vector<AOTSymbol> &aot_symbols);
+void LinkAOTObject(std::vector<AOTSymbol> &aot_symbols);
 
 void AOTCompileObject(CompilerRuntime *aotrt);
+
+void ProcessLLVMStackmaps(std::vector<AOTSymbol> &aot_symbols);
 
 } // namespace dbt
