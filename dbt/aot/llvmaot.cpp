@@ -255,6 +255,9 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	intr->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
 #else
+	// llvm corrupts ghccc Sp in MFs with stackmap, even if stackmap records no values
+	// I applied this in SelectionDAGBuilder for stackmaps with no liveins:
+	// + FuncInfo.MF->getFrameInfo().setHasStackMap(CI.arg_size() > 2);
 	auto stackmap =
 	    lb->CreateIntrinsic(llvm::Intrinsic::experimental_stackmap, {},
 				{const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot))});
