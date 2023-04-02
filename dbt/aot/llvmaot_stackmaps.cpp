@@ -1,6 +1,7 @@
 #include "dbt/aot/aot.h"
 #include "dbt/aot/aot_module.h"
 
+#include "dbt/qmc/qcg/jitabi.h"
 #include "elfio/elfio.hpp"
 namespace elfio = ELFIO;
 
@@ -135,9 +136,11 @@ void ProcessLLVMStackmaps(std::vector<AOTSymbol> &aot_symbols)
 
 	elfio::section *sym_sec = nullptr;
 	elfio::section *stackmaps_sec = nullptr;
+	elfio::section *rela_stackmaps_sec = nullptr;
 
 	for (const auto &section : elf.sections) {
 		auto test_sec = [&section](elfio::section **res, elfio::Elf_Word type, char const *name) {
+			log_aot("test section %s", section->get_name().c_str());
 			if (section->get_type() == type &&
 			    std::string(section->get_name()) == std::string(name)) {
 				*res = section.get();
@@ -145,12 +148,11 @@ void ProcessLLVMStackmaps(std::vector<AOTSymbol> &aot_symbols)
 		};
 		test_sec(&sym_sec, elfio::SHT_SYMTAB, ".symtab");
 		test_sec(&stackmaps_sec, elfio::SHT_PROGBITS, ".llvm_stackmaps");
+		test_sec(&rela_stackmaps_sec, elfio::SHT_RELA, ".rela.llvm_stackmaps");
 	}
-	if (!stackmaps_sec) {
+	if (!stackmaps_sec || !rela_stackmaps_sec) {
 		Panic("stackmaps section not found");
 	}
-
-	auto sec_offs = stackmaps_sec->get_offset();
 
 	int fd = open(obj_path.c_str(), O_RDWR);
 	if (fd < 0) {
@@ -165,7 +167,25 @@ void ProcessLLVMStackmaps(std::vector<AOTSymbol> &aot_symbols)
 		Panic();
 	}
 
-	auto stkmap = Stackmap((u8 *)fmap + sec_offs);
+	{
+		// Resolve addresses in .rela.llvm_stackmaps
+		auto syma = (elfio::Elf64_Sym *)sym_sec->get_data();
+		auto rela = (elfio::Elf64_Rela *)rela_stackmaps_sec->get_data();
+		auto rela_num = rela_stackmaps_sec->get_size() / sizeof(rela[0]);
+		for (elfio::Elf_Xword i = 0; i < rela_num; ++i) {
+			auto r = &rela[i];
+			if (ELF64_R_TYPE(r->r_info) != elfio::R_X86_64_64) {
+				Panic("unexpected stackmap relocation");
+			}
+			auto s = &syma[ELF64_R_SYM(r->r_info)];
+			elfio::Elf_Xword calc =
+			    elf.sections[s->st_shndx]->get_offset() + s->st_value + r->r_addend;
+			log_aot("apply rela: %016x %016x", r->r_offset, calc);
+			*(u64 *)(stackmaps_sec->get_offset() + (uptr)fmap + r->r_offset) = calc;
+		}
+	}
+
+	auto stkmap = Stackmap((u8 *)fmap + stackmaps_sec->get_offset());
 	auto hdr = stkmap.GetHeader();
 	auto map = stkmap.GetFirstMapRecord();
 	for (u32 fn_idx = 0; fn_idx < hdr->num_functions; fn_idx++) {
@@ -173,8 +193,12 @@ void ProcessLLVMStackmaps(std::vector<AOTSymbol> &aot_symbols)
 		log_aot("stackmap func: %016x", fn_rec->fn_addr);
 
 		for (u32 idx = 0; idx < fn_rec->map_count; ++idx) {
-			log_aot("patchpoint: %u", map->patchpoint_id);
-
+			auto pp_offs = fn_rec->fn_addr + map->instr_offs;
+			log_aot("patchpoint: %u %016x", map->patchpoint_id, pp_offs);
+			auto slot = (jitabi::ppoint::BranchSlot *)((uptr)fmap + pp_offs + 1);
+			// slot->LinkLazyAOT(offsetof(CPUState, stub_tab));
+			// slot->gip = map->patchpoint_id;
+			// assert(slot->gip = map->patchpoint_id);
 			map = map->GetNext();
 		}
 	}

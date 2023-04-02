@@ -121,7 +121,7 @@ void LinkAOTObject(std::vector<AOTSymbol> &aot_symbols)
 	auto aot_path = objprof::GetCachePath(AOT_SO_EXTENSION);
 
 	if (system(
-		("/usr/bin/ld -z relro --hash-style=gnu -m elf_x86_64 -shared -o" + aot_path + " " + obj_path)
+		("/usr/bin/ld -z relro --hash-style=gnu -pie -m elf_x86_64 -shared -o" + aot_path + " " + obj_path)
 		    .c_str()) < 0) {
 		Panic();
 	}

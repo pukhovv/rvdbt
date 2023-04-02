@@ -93,7 +93,6 @@ private:
 
 	llvm::FunctionType *qcg_ftype{};
 	llvm::Function *qcg_jitabi_nevercalled{};
-	u32 stackmap_id{1};
 };
 
 llvm::Type *LLVMGen::MakeType(VType type)
@@ -261,18 +260,21 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	intr->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
 #else
+	// Relocation is not necessary, also would overwrite patchpoint data, avoid
+	auto fake_callee =
+	    lb->CreateIntToPtr(const64(ins->tpc.GetConst()), llvm::PointerType::getUnqual(qcg_ftype));
+
 	auto stackmap =
 	    lb->CreateIntrinsic(llvm::Intrinsic::experimental_stackmap, {},
-				{const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot))});
+				{const64(ins->tpc.GetConst()), const32(sizeof(jitabi::ppoint::BranchSlot))});
 	stackmap->setCallingConv(llvm::CallingConv::GHC);
 	stackmap->setTailCall(true);
-	auto call = lb->CreateCall(qcg_jitabi_nevercalled, {statev, membasev});
+	auto call = lb->CreateCall(qcg_ftype, fake_callee, {statev, membasev});
 	call->addFnAttr(llvm::Attribute::NoReturn);
 	call->setCallingConv(llvm::CallingConv::GHC);
 	call->setTailCall(true);
 	call->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
-
 #endif
 }
 void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
@@ -382,6 +384,7 @@ llvm::Function *LLVMGen::Run()
 	func->setCallingConv(llvm::CallingConv::GHC);
 	func->getArg(0)->addAttr(llvm::Attribute::NoAlias);
 	func->getArg(1)->addAttr(llvm::Attribute::NoAlias);
+	func->setDSOLocal(true);
 
 	statev = func->getArg(0);
 	membasev = func->getArg(1);
@@ -476,7 +479,7 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 
 		auto func = qir::LLVMGenPass::run(region, n.ip, ctx, cmodule);
 		// func->print(llvm::errs(), nullptr);
-		// fpm->run(*func, *fam);
+		fpm->run(*func, *fam);
 		cmodule->print(llvm::errs(), nullptr, true, true);
 		// func->print(llvm::errs(), nullptr);
 
@@ -518,6 +521,7 @@ static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filenam
 
 	cmodule->setDataLayout(TargetMachine->createDataLayout());
 	cmodule->setTargetTriple(TargetTriple);
+	cmodule->setPICLevel(llvm::PICLevel::SmallPIC);
 
 	std::error_code EC;
 	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
