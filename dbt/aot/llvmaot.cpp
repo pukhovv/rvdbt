@@ -57,6 +57,8 @@ private:
 	llvm::Value *LoadVOperand(qir::VOperand op);
 	void StoreVOperand(qir::VOperand op, llvm::Value *val);
 	llvm::Value *MakeVMemLoc(VType type, llvm::Value *offs);
+	llvm::Value *MakeStateEP(VType type, u32 offs);
+	llvm::Value *MakeVOperandEP(VOperand op);
 
 	static llvm::CmpInst::Predicate MakeCC(CondCode cc);
 
@@ -91,7 +93,6 @@ private:
 
 	llvm::FunctionType *qcg_ftype{};
 	llvm::Function *qcg_jitabi_nevercalled{};
-	llvm::ConstantPointerNull *qcgfn_null{};
 	u32 stackmap_id{1};
 };
 
@@ -129,9 +130,8 @@ void LLVMGen::CreateVGPRLocs()
 
 	for (RegN i = 0; i < n_glob; ++i) {
 		auto *info = vinfo->GetGlobalInfo(i);
-		auto name = std::string("@") + info->name;
-		auto state_ep =
-		    lb->CreateConstInBoundsGEP1_32(MakeType(info->type), statev, info->state_offs, name);
+		auto state_ep = MakeStateEP(info->type, info->state_offs);
+		state_ep->setName(std::string("@") + info->name);
 		vlocs.push_back(state_ep);
 	}
 
@@ -149,35 +149,39 @@ llvm::Value *LLVMGen::LoadVOperand(qir::VOperand op)
 	if (op.IsConst()) {
 		return const32(op.GetConst());
 	}
-	llvm::Value *state_ep;
-	if (op.IsVGPR()) {
-		state_ep = vlocs[op.GetVGPR()];
-	} else if (op.IsGSlot()) {
-		state_ep = lb->CreateConstInBoundsGEP1_32(MakeType(type), statev, op.GetSlotOffs());
-	} else {
-		unreachable("");
-	}
+	llvm::Value *state_ep = MakeVOperandEP(op);
 	return lb->CreateAlignedLoad(MakeType(type), state_ep, llvm::Align(VTypeToSize(type)));
 }
 
 void LLVMGen::StoreVOperand(qir::VOperand op, llvm::Value *val)
 {
 	auto type = op.GetType();
-	llvm::Value *state_ep;
-	// TODO: reuse
-	if (op.IsVGPR()) {
-		state_ep = vlocs[op.GetVGPR()];
-	} else if (op.IsGSlot()) {
-		state_ep = lb->CreateConstInBoundsGEP1_32(MakeType(type), statev, op.GetSlotOffs());
-	} else {
-		unreachable("");
-	}
+	llvm::Value *state_ep = MakeVOperandEP(op);
 	lb->CreateAlignedStore(val, state_ep, llvm::Align(VTypeToSize(type)));
 }
 
-llvm::Value *LLVMGen::MakeVMemLoc(VType type, llvm::Value *offs)
+llvm::Value *LLVMGen::MakeVOperandEP(VOperand op)
 {
-	return lb->CreateInBoundsGEP(MakeType(type), membasev, offs);
+	assert(!op.IsConst());
+	if (op.IsVGPR()) {
+		return vlocs[op.GetVGPR()];
+	}
+	if (op.IsGSlot()) {
+		return MakeStateEP(op.GetType(), op.GetSlotOffs());
+	}
+	unreachable("");
+}
+
+llvm::Value *LLVMGen::MakeStateEP(VType type, u32 offs)
+{
+	auto ep = lb->CreateConstInBoundsGEP1_32(lb->getInt8Ty(), statev, offs);
+	return lb->CreateBitCast(ep, MakePtrType(type));
+}
+
+llvm::Value *LLVMGen::MakeVMemLoc(VType type, llvm::Value *addr)
+{
+	auto ep = lb->CreateGEP(lb->getInt8Ty(), membasev, addr);
+	return lb->CreateBitCast(ep, MakePtrType(type));
 }
 
 llvm::CmpInst::Predicate LLVMGen::MakeCC(CondCode cc)
@@ -251,8 +255,11 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	intr->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
 #else
-	lb->CreateIntrinsic(llvm::Intrinsic::experimental_stackmap, {},
-			    {const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot))});
+	auto stackmap =
+	    lb->CreateIntrinsic(llvm::Intrinsic::experimental_stackmap, {},
+				{const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot))});
+	stackmap->setCallingConv(llvm::CallingConv::GHC);
+	stackmap->setTailCall(true);
 	auto call = lb->CreateCall(qcg_jitabi_nevercalled, {statev, membasev});
 	call->addFnAttr(llvm::Attribute::NoReturn);
 	call->setCallingConv(llvm::CallingConv::GHC);
@@ -268,8 +275,9 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)
 {
 	// TODO: resolve types mess
+	llvm::MaybeAlign align = true ? llvm::MaybeAlign{} : llvm::Align(VTypeToSize(ins->sz));
 	auto mem_ep = MakeVMemLoc(ins->sz, LoadVOperand(ins->i(0)));
-	auto val = lb->CreateAlignedLoad(MakeType(ins->sz), mem_ep, llvm::Align(VTypeToSize(ins->sz)));
+	auto val = lb->CreateAlignedLoad(MakeType(ins->sz), mem_ep, align);
 	if (ins->o(0).GetType() != ins->sz) {
 		unreachable("");
 	}
@@ -277,12 +285,13 @@ void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)
 }
 void LLVMGen::Emit_vmstore(qir::InstVMStore *ins)
 {
-	auto mem_ep = MakeVMemLoc(ins->sz, LoadVOperand(ins->i(0)));
 	auto val = LoadVOperand(ins->i(1));
 	if (ins->i(1).GetType() != ins->sz) {
 		unreachable("");
 	}
-	lb->CreateAlignedStore(val, mem_ep, llvm::Align(VTypeToSize(ins->sz)));
+	llvm::MaybeAlign align = true ? llvm::MaybeAlign{} : llvm::Align(VTypeToSize(ins->sz));
+	auto mem_ep = MakeVMemLoc(ins->sz, LoadVOperand(ins->i(0)));
+	lb->CreateAlignedStore(val, mem_ep, align);
 }
 void LLVMGen::Emit_setcc(qir::InstSetcc *ins)
 {
@@ -356,11 +365,13 @@ llvm::Function *LLVMGen::Run()
 
 	qcg_jitabi_nevercalled = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage,
 							"qcgstub_nevercalled", cmodule);
-	qcgfn_null = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(qcg_ftype));
+	qcg_jitabi_nevercalled->setCallingConv(llvm::CallingConv::GHC);
+	qcg_jitabi_nevercalled->getArg(0)->addAttr(llvm::Attribute::NoAlias);
+	qcg_jitabi_nevercalled->getArg(1)->addAttr(llvm::Attribute::NoAlias);
+	// qcgfn_null = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(qcg_ftype));
 
 	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, MakeAotSymbol(region_ip),
 				      cmodule);
-
 	func->setCallingConv(llvm::CallingConv::GHC);
 	func->getArg(0)->addAttr(llvm::Attribute::NoAlias);
 	func->getArg(1)->addAttr(llvm::Attribute::NoAlias);
@@ -457,8 +468,9 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 		auto *region = qir::CompilerGenRegionIR(&arena, job);
 
 		auto func = qir::LLVMGenPass::run(region, n.ip, ctx, cmodule);
-		func->print(llvm::errs(), nullptr);
-		// fpm->run(*func, *fam);
+		// func->print(llvm::errs(), nullptr);
+		fpm->run(*func, *fam);
+		cmodule->print(llvm::errs(), nullptr, true, true);
 		// func->print(llvm::errs(), nullptr);
 
 		aot_symbols->push_back({n.ip, 0});
