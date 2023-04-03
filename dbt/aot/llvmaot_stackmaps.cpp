@@ -195,10 +195,11 @@ void ProcessLLVMStackmaps(std::vector<AOTSymbol> &aot_symbols)
 		for (u32 idx = 0; idx < fn_rec->map_count; ++idx) {
 			auto pp_offs = fn_rec->fn_addr + map->instr_offs;
 			log_aot("patchpoint: %u %016x", map->patchpoint_id, pp_offs);
-			auto slot = (jitabi::ppoint::BranchSlot *)((uptr)fmap + pp_offs + 1);
-			// slot->LinkLazyAOT(offsetof(CPUState, stub_tab));
-			// slot->gip = map->patchpoint_id;
-			// assert(slot->gip = map->patchpoint_id);
+			*(std::array<u8, 3> *)((uptr)fmap + pp_offs) = {0x4c, 0x89, 0xe4};
+			auto slot = (jitabi::ppoint::BranchSlot *)((uptr)fmap + pp_offs + 3);
+			slot->LinkLazyAOT(offsetof(CPUState, stub_tab));
+			slot->gip = map->patchpoint_id;
+			assert(slot->gip = map->patchpoint_id);
 			map = map->GetNext();
 		}
 	}

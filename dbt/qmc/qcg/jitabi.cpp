@@ -32,6 +32,7 @@ struct _RetPair {
 static_assert((u64(QCG_SPILL_FRAME_SIZE) & 15) == 0);
 static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
 static_assert(qcg::ArchTraits::MEMBASE == asmjit::x86::Gp::kIdBp);
+static_assert(qcg::ArchTraits::SPUNWIND == asmjit::x86::Gp::kIdR12);
 
 // Build qcg spillframe and enter translated code
 HELPER_ASM ppoint::BranchSlot *trampoline_to_jit(CPUState *state, void *vmem, void *tc_ptr)
@@ -45,8 +46,9 @@ HELPER_ASM ppoint::BranchSlot *trampoline_to_jit(CPUState *state, void *vmem, vo
 	    "movq 	%rdi, %r13\n\t"	  // STATE
 	    "movq	%rsi, %rbp\n\t"); // MEMBASE
 	asm("sub     $" STRINGIFY(QCG_SPILL_FRAME_SIZE + 8) ", %rsp\n\t");
-	asm("callq	*%rdx\n\t" // tc_ptr
-	    "int	$3");	   // use escape/raise stub instead
+	asm("leaq	-8(%rsp), %r12\n\t"); // FPSP_UNWIND trick
+	asm("callq	*%rdx\n\t"	      // tc_ptr
+	    "int	$3");		      // use escape/raise stub instead
 }
 
 // Escape from translated code, forward `rax` to caller

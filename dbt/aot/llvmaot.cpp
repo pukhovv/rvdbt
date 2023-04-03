@@ -248,10 +248,12 @@ void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
 void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 {
 #if 0
-	std::array<llvm::Value *, 6> args = {
-	    const64(stackmap_id++), const32(sizeof(jitabi::ppoint::BranchSlot)),
-	    llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(*ctx)),
-	const32(2), statev, membasev};
+	std::array<llvm::Value *, 6> args = {const64(ins->tpc.GetConst()),
+					     const32(sizeof(jitabi::ppoint::BranchSlot)),
+					     llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(*ctx)),
+					     const32(2),
+					     statev,
+					     membasev};
 
 	auto intr = lb->CreateIntrinsic(llvm::Intrinsic::experimental_patchpoint_void, {}, args);
 	intr->addFnAttr(llvm::Attribute::NoReturn);
@@ -264,9 +266,9 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	auto fake_callee =
 	    lb->CreateIntToPtr(const64(ins->tpc.GetConst()), llvm::PointerType::getUnqual(qcg_ftype));
 
-	auto stackmap =
-	    lb->CreateIntrinsic(llvm::Intrinsic::experimental_stackmap, {},
-				{const64(ins->tpc.GetConst()), const32(sizeof(jitabi::ppoint::BranchSlot))});
+	auto stackmap = lb->CreateIntrinsic(
+	    llvm::Intrinsic::experimental_stackmap, {},
+	    {const64(ins->tpc.GetConst()), const32(3 + sizeof(jitabi::ppoint::BranchSlot))});
 	stackmap->setCallingConv(llvm::CallingConv::GHC);
 	stackmap->setTailCall(true);
 	auto call = lb->CreateCall(qcg_ftype, fake_callee, {statev, membasev});
