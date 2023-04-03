@@ -162,6 +162,39 @@ HELPER_ASM void qcgstub_trace()
 }
 static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
 
+struct TraceRing {
+	static constexpr u32 size = 64;
+
+	struct Record {
+		uptr hfp;
+		u32 gip;
+	};
+
+	inline void push(Record const &rec)
+	{
+		arr[head++ % size] = rec;
+	}
+
+	inline auto &at_idx(u32 i)
+	{
+		return arr[(head - 1 - i) % size];
+	}
+
+	u32 head = 0;
+	std::array<Record, size> arr{};
+};
+
+thread_local TraceRing trace_ring;
+
+extern "C" __attribute__((used)) void __log_trace_ring()
+{
+	for (u32 i = 0; i < trace_ring.size; ++i) {
+		auto const &e = trace_ring.at_idx(i);
+		log_dbt("%08x fp=%016x", e.gip, e.hfp);
+	}
+}
+
+// TODO: fix
 HELPER void qcg_DumpTrace(CPUState *state)
 {
 	state->DumpTrace("entry");

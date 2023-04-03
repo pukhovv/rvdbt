@@ -204,6 +204,21 @@ void ProcessLLVMStackmaps(std::vector<AOTSymbol> &aot_symbols)
 		}
 	}
 
+	{ // TODO: move it somewhere
+		auto *ehdr = (elfio::Elf64_Ehdr *)fmap;
+		auto *shtab = (elfio::Elf64_Shdr *)((uptr)fmap + ehdr->e_shoff);
+
+		for (size_t i = 0; i < ehdr->e_shnum; ++i) {
+			auto *shdr = &shtab[i];
+			if (shdr->sh_type != elfio::SHT_PROGBITS) {
+				continue;
+			}
+			if (shdr->sh_flags & elfio::SHF_EXECINSTR) {
+				shdr->sh_flags |= elfio::SHF_WRITE;
+			}
+		}
+	}
+
 	munmap(fmap, st.st_size);
 	close(fd);
 }
