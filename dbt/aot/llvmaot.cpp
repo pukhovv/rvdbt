@@ -11,6 +11,7 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
@@ -38,8 +39,9 @@ namespace qir
 {
 
 struct LLVMGen {
-	LLVMGen(qir::Region *region_, u32 ip_, llvm::LLVMContext *ctx_, llvm::Module *cmodule_)
-	    : region(region_), region_ip(ip_), ctx(ctx_), cmodule(cmodule_)
+	LLVMGen(qir::Region *region_, u32 ip_, CodeSegment segment_, llvm::LLVMContext *ctx_,
+		llvm::Module *cmodule_)
+	    : region(region_), region_ip(ip_), segment(segment_), ctx(ctx_), cmodule(cmodule_)
 	{
 		lb = std::make_unique<llvm::IRBuilder<>>(*ctx);
 		vinfo = region->GetVRegsInfo();
@@ -81,6 +83,7 @@ private:
 	qir::Region *region{};
 	qir::VRegsInfo *vinfo{};
 	u32 region_ip{};
+	CodeSegment segment;
 
 	Block *qbb{};
 
@@ -273,6 +276,7 @@ void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
 // I applied this in SelectionDAGBuilder for stackmaps with no liveins:
 // + FuncInfo.MF->getFrameInfo().setHasStackMap(CI.arg_size() > 2);
 // and the same for patchpoints
+#if 0
 void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 {
 	// Relocation is not necessary, also would overwrite patchpoint data, avoid
@@ -303,6 +307,51 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	// call->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	// lb->CreateRetVoid();
 }
+#else
+
+static std::string MakeAsmString(std::span<u8> const &data)
+{
+	std::string hstr;
+	hstr.reserve(data.size() * 4 + 16);
+	char const *hexdig_str = "0123456789abcdef";
+
+	for (size_t i = 0; i < data.size(); ++i) {
+		hstr += '\\';
+		hstr += 'x';
+		hstr += hexdig_str[(data[i] >> 4) & 0xf];
+		hstr += hexdig_str[data[i] & 0xf];
+	}
+	return hstr;
+}
+
+static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
+{
+	thread_local auto slot = ([]() {
+		std::array<u8, sizeof(jitabi::ppoint::BranchSlot)> fake_payload;
+		auto slot = std::bit_cast<jitabi::ppoint::BranchSlot>(fake_payload);
+		slot.LinkLazyAOT(offsetof(CPUState, stub_tab));
+		return slot;
+	})();
+	slot.gip = gip;
+	slot.flags.cross_segment = cross_segment;
+
+	std::array<u8, 3> spfixup_patch = {0x4c, 0x89, 0xe4};
+	return ".string \"" + MakeAsmString(spfixup_patch) + MakeAsmString({(u8 *)&slot, sizeof(slot)}) +
+	       "\"";
+}
+
+void LLVMGen::Emit_gbr(qir::InstGBr *ins)
+{
+	auto gip = ins->tpc.GetConst();
+	auto code_str = MakeGbrPatchpoint(gip, segment.InSegment(gip));
+	char const *constraint = "{r13},{rbp},{r12},~{memory},~{dirflag},~{fpsr},~{flags}";
+	auto asmp = llvm::InlineAsm::get(qcg_ftype, code_str, constraint, true, true);
+	auto call = lb->CreateCall(asmp, {statev, membasev, func->getArg(2)});
+	call->setTailCall(true);
+	call->setDoesNotReturn();
+	lb->CreateUnreachable();
+}
+#endif
 void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 {
 	// TODO: fastpath, cache fntype
@@ -471,20 +520,21 @@ llvm::Function *LLVMGen::Run()
 			LLVMGenVisitor(this).visit(&*iit);
 		}
 	}
-	func->print(llvm::errs(), nullptr);
+	// func->print(llvm::errs(), nullptr);
 	// cmodule->print(llvm::errs(), nullptr, true, true);
 	assert(!verifyFunction(*func, &llvm::errs()));
 	return func;
 }
 
 struct LLVMGenPass {
-	static llvm::Function *run(qir::Region *region, u32 ip, llvm::LLVMContext *ctx,
+	static llvm::Function *run(qir::Region *region, u32 ip, CodeSegment segment, llvm::LLVMContext *ctx,
 				   llvm::Module *cmodule);
 };
 
-llvm::Function *LLVMGenPass::run(qir::Region *region, u32 ip, llvm::LLVMContext *ctx, llvm::Module *cmodule)
+llvm::Function *LLVMGenPass::run(qir::Region *region, u32 ip, CodeSegment segment, llvm::LLVMContext *ctx,
+				 llvm::Module *cmodule)
 {
-	LLVMGen gen(region, ip, ctx, cmodule);
+	LLVMGen gen(region, ip, segment, ctx, cmodule);
 	return gen.Run();
 }
 
@@ -539,7 +589,7 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 		auto *region = qir::CompilerGenRegionIR(&arena, job);
 
 		auto entry_ip = r[0]->ip;
-		auto func = qir::LLVMGenPass::run(region, entry_ip, ctx, cmodule);
+		auto func = qir::LLVMGenPass::run(region, entry_ip, mg.segment, ctx, cmodule);
 		// func->print(llvm::errs(), nullptr);
 		fpm->run(*func, *fam);
 		// cmodule->print(llvm::errs(), nullptr, true, true);
@@ -582,6 +632,7 @@ static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filenam
 	auto TargetTriple = llvm::sys::getDefaultTargetTriple();
 	llvm::InitializeNativeTarget();
 	llvm::InitializeNativeTargetAsmPrinter();
+	llvm::InitializeNativeTargetAsmParser();
 	std::string Error;
 	auto Target = llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
 	if (!Target) {
@@ -649,11 +700,12 @@ void LLVMAOTCompileELF()
 	}
 	assert(!verifyModule(cmodule, &llvm::errs()));
 	mpm.run(cmodule, mam);
+	cmodule.print(llvm::errs(), nullptr, true, true);
 	AddAOTTabSection(ctx, cmodule, aot_symbols);
 
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
 	GenerateObjectFile(&cmodule, obj_path);
-	ProcessLLVMStackmaps(aot_symbols);
+	// ProcessLLVMStackmaps(aot_symbols);
 	LinkAOTObject(aot_symbols);
 }
 
