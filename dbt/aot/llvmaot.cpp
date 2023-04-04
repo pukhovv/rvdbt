@@ -471,7 +471,7 @@ llvm::Function *LLVMGen::Run()
 			LLVMGenVisitor(this).visit(&*iit);
 		}
 	}
-	// func->print(llvm::errs(), nullptr);
+	func->print(llvm::errs(), nullptr);
 	// cmodule->print(llvm::errs(), nullptr, true, true);
 	assert(!verifyFunction(*func, &llvm::errs()));
 	return func;
@@ -525,6 +525,28 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
 
+#if 1
+	for (auto const &r : regions) {
+		assert(r[0]->flags.region_entry);
+		qir::CompilerJob::IpRangesSet ipranges;
+		for (auto n : r) {
+			ipranges.push_back({n->ip, n->ip_end});
+		}
+
+		qir::CompilerJob job(aotrt, mg.segment, std::move(ipranges));
+
+		auto arena = MemArena(1_MB);
+		auto *region = qir::CompilerGenRegionIR(&arena, job);
+
+		auto entry_ip = r[0]->ip;
+		auto func = qir::LLVMGenPass::run(region, entry_ip, ctx, cmodule);
+		// func->print(llvm::errs(), nullptr);
+		fpm->run(*func, *fam);
+		// cmodule->print(llvm::errs(), nullptr, true, true);
+		// func->print(llvm::errs(), nullptr);
+		aot_symbols->push_back({entry_ip, 0});
+	}
+#else
 	for (auto const &e : mg.ip_map) {
 		auto const &n = *e.second;
 		qir::CompilerJob job(aotrt, mg.segment, {{n.ip, n.ip_end}});
@@ -539,6 +561,7 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 		func->print(llvm::errs(), nullptr);
 		aot_symbols->push_back({n.ip, 0});
 	}
+#endif
 }
 
 static void AddAOTTabSection(llvm::LLVMContext &ctx, llvm::Module &cmodule,
@@ -632,8 +655,6 @@ void LLVMAOTCompileELF()
 	GenerateObjectFile(&cmodule, obj_path);
 	ProcessLLVMStackmaps(aot_symbols);
 	LinkAOTObject(aot_symbols);
-
-	// assert(0);
 }
 
 } // namespace dbt
