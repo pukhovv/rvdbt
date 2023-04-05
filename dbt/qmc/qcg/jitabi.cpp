@@ -51,8 +51,8 @@ HELPER_ASM ppoint::BranchSlot *trampoline_to_jit(CPUState *state, void *vmem, vo
 	    "int	$3");		      // use escape/raise stub instead
 }
 
-// Escape from translated code, forward `rax` to caller
-HELPER_ASM void qcgstub_escape()
+// Escape from translated code, forward rax(slot) to caller
+HELPER_ASM void qcgstub_escape_link()
 {
 	asm("addq   $(" STRINGIFY(QCG_SPILL_FRAME_SIZE + 16) "), %rsp\n\t");
 	asm("popq	%r15\n\t"
@@ -61,6 +61,21 @@ HELPER_ASM void qcgstub_escape()
 	    "popq	%r12\n\t"
 	    "popq	%rbx\n\t"
 	    "popq	%rbp\n\t"
+	    "retq	\n\t");
+}
+
+// Escape from translated code, return nullptr(slot) to caller
+// A different stub used because llvm may overwrite rax before escaping
+HELPER_ASM void qcgstub_escape_brind()
+{
+	asm("addq   $(" STRINGIFY(QCG_SPILL_FRAME_SIZE + 16) "), %rsp\n\t");
+	asm("popq	%r15\n\t"
+	    "popq	%r14\n\t"
+	    "popq	%r13\n\t"
+	    "popq	%r12\n\t"
+	    "popq	%rbx\n\t"
+	    "popq	%rbp\n\t"
+	    "xorq	%rax, %rax\n\t"
 	    "retq	\n\t");
 }
 
@@ -74,7 +89,7 @@ static ALWAYS_INLINE _RetPair TryLinkBranch(CPUState *state, ppoint::BranchSlot 
 		return {slot, found->tcode.ptr};
 	}
 	state->ip = slot->gip;
-	return {slot, (void *)qcgstub_escape};
+	return {slot, (void *)qcgstub_escape_link};
 }
 
 // Lazy region linking, absolute call target (jit/aot mode)
@@ -108,15 +123,15 @@ HELPER _RetPair qcg_TryLinkBranchAOT(CPUState *state, void *retaddr)
 }
 
 // Indirect branch slowpath
-HELPER _RetPair qcgstub_brind(CPUState *state, u32 gip)
+HELPER void *qcgstub_brind(CPUState *state, u32 gip)
 {
 	state->ip = gip;
 	auto *found = tcache::Lookup(gip);
 	if (likely(found)) {
 		tcache::CacheBrind(found);
-		return {nullptr, (void *)found->tcode.ptr};
+		return (void *)found->tcode.ptr;
 	}
-	return {nullptr, (void *)qcgstub_escape};
+	return (void *)qcgstub_escape_brind;
 }
 
 HELPER void qcgstub_raise()

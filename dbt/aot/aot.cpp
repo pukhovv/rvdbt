@@ -55,7 +55,7 @@ static void AOTCompilePage(CompilerRuntime *aotrt, objprof::PageData const &page
 			ipranges.push_back({n->ip, n->ip_end});
 		}
 
-		qir::CompilerJob job(aotrt, mg.segment, std::move(ipranges));
+		qir::CompilerJob job(aotrt, (uptr)mmu::base, mg.segment, std::move(ipranges));
 		qir::CompilerDoJob(job);
 	}
 #else

@@ -1,4 +1,5 @@
 #include "dbt/aot/aot.h"
+#include "dbt/guest/rv32_cpu.h"
 #include "dbt/qmc/compile.h"
 #include "dbt/qmc/qcg/jitabi.h"
 #include "dbt/qmc/qir_builder.h"
@@ -97,7 +98,7 @@ private:
 	// globals
 	llvm::LLVMContext *ctx{};
 	llvm::Module *cmodule{};
-	llvm::FunctionType *qcg_ftype{}, *qcg_htype{};
+	llvm::FunctionType *qcg_ftype{}, *qcg_helper_ftype{}, *qcg_brind_ftype{};
 
 	// per segment
 	CodeSegment *segment{};
@@ -119,7 +120,9 @@ LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegmen
 	auto voidt = llvm::Type::getVoidTy(*ctx);
 	auto i8ptrt = llvm::Type::getInt8PtrTy(*ctx);
 	qcg_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i8ptrt, i8ptrt}, false);
-	qcg_htype = llvm::FunctionType::get(voidt, {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
+	qcg_helper_ftype = llvm::FunctionType::get(voidt, {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
+	qcg_brind_ftype = llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_ftype),
+						  {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
 }
 
 llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
@@ -315,8 +318,9 @@ void LLVMGen::EmitTrace()
 
 void LLVMGen::Emit_hcall(qir::InstHcall *ins)
 {
-	lb->CreateCall(qcg_htype, MakeRStub(ins->stub, qcg_htype), {statev, LoadVOperand(ins->i(0))});
-	if (--qbb->ilist.end() == ins) { // TODO: hcall-terminator
+	lb->CreateCall(qcg_helper_ftype, MakeRStub(ins->stub, qcg_helper_ftype),
+		       {statev, LoadVOperand(ins->i(0))});
+	if (--qbb->ilist.end() == ins) {
 		lb->CreateRetVoid();
 	}
 }
@@ -414,10 +418,11 @@ static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
 
 void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 {
+	// TODO(tuning): try local fn call if in segment
 	auto gip = ins->tpc.GetConst();
 	auto code_str = MakeGbrPatchpoint(gip, segment->InSegment(gip));
 	char const *constraint = "{r13},{rbp},{r12},~{memory},~{dirflag},~{fpsr},~{flags}";
-	auto asmp = llvm::InlineAsm::get(qcg_ftype, code_str, constraint, true, true);
+	auto asmp = llvm::InlineAsm::get(qcg_ftype, code_str, constraint, true, false);
 	auto call = lb->CreateCall(asmp, {statev, membasev, spunwindv});
 	call->setTailCall(true);
 	call->setDoesNotReturn();
@@ -426,15 +431,9 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 
 void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 {
-	// TODO: fastpath, cache fntype
-	auto retpair_type =
-	    llvm::StructType::create({lb->getInt8PtrTy(), llvm::PointerType::getUnqual(qcg_ftype)});
-	auto qcg_brind_fntype =
-	    llvm::FunctionType::get(retpair_type, {lb->getInt8PtrTy(), lb->getInt32Ty()}, false);
-
-	auto retpair = lb->CreateCall(qcg_brind_fntype, MakeRStub(RuntimeStubId::id_brind, qcg_brind_fntype),
-				      {statev, LoadVOperand(ins->i(0))});
-	auto target = lb->CreateExtractValue(retpair, {1});
+	// TODO(tuning): fastpath
+	auto target = lb->CreateCall(qcg_brind_ftype, MakeRStub(RuntimeStubId::id_brind, qcg_brind_ftype),
+				     {statev, LoadVOperand(ins->i(0))});
 
 	auto call = lb->CreateCall(qcg_ftype, target, {statev, membasev, spunwindv});
 	call->addFnAttr(llvm::Attribute::NoReturn);
@@ -547,12 +546,6 @@ struct LLVMAOTCompilerRuntime final : CompilerRuntime {
 		unreachable("");
 	}
 
-	// TODO: seems like it's related to segment!
-	uptr GetVMemBase() const override
-	{
-		return (uptr)mmu::base;
-	}
-
 	void *AnnounceRegion(u32 ip, std::span<u8> const &code) override
 	{
 		unreachable("");
@@ -575,7 +568,7 @@ static void LLVMAOTTranslatePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> 
 			ipranges.push_back({n->ip, n->ip_end});
 		}
 
-		qir::CompilerJob job(aotrt, mg.segment, std::move(ipranges));
+		qir::CompilerJob job(aotrt, (uptr)mmu::base, mg.segment, std::move(ipranges));
 
 		auto arena = MemArena(1_MB);
 		auto *region = qir::CompilerGenRegionIR(&arena, job);
@@ -611,7 +604,7 @@ static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filenam
 		Panic(Error);
 	}
 
-	auto CPU = "generic"; // TODO: select native
+	auto CPU = "generic"; // TODO(tuning): select native
 	auto Features = "";
 
 	llvm::TargetOptions opt;

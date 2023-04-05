@@ -40,7 +40,7 @@ private:
 	inline void TranslateHelper(insn::Base i, RuntimeStubId stub);
 
 	qir::Builder qb;
-	std::map<u32, qir::Block *> loc_entries;
+	std::map<u32, qir::Block *> ip2bb;
 
 	enum class Control { NEXT, BRANCH, TB_OVF } control{Control::NEXT};
 	uptr vmem_base{};

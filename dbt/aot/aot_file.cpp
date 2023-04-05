@@ -32,11 +32,6 @@ struct AOTCompilerRuntime final : CompilerRuntime {
 		return true;
 	}
 
-	uptr GetVMemBase() const override
-	{
-		return (uptr)mmu::base;
-	}
-
 	void *AnnounceRegion(u32 ip, std::span<u8> const &code) override
 	{
 		auto str_idx = elf_stra.add_string(MakeAotSymbol(ip));
@@ -100,9 +95,6 @@ void AOTCompileELF()
 
 	aot_sec->set_data((char const *)aotrt.code_arena.BaseAddr(), aotrt.code_arena.GetUsedSize());
 
-	// auto header = AOTTabHeader{.n_sym = aot_symbols.size()};
-	// aottab_sec->append_data((char const *)&header, sizeof(header));
-	// aottab_sec->append_data((char const *)aot_symbols.data(), sizeof(AOTSymbol) * aot_symbols.size());
 	aottab_sec->set_size(sizeof(AOTTabHeader) + sizeof(AOTSymbol) * aot_symbols.size());
 	syma.add_symbol(stra.add_string(AOT_SYM_AOTTAB), 0, aottab_sec->get_size(), elfio::STB_GLOBAL,
 			elfio::STT_OBJECT, 0, aottab_sec->get_index());
@@ -120,9 +112,9 @@ void LinkAOTObject(std::vector<AOTSymbol> &aot_symbols)
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
 	auto aot_path = objprof::GetCachePath(AOT_SO_EXTENSION);
 
-	if (system(
-		("/usr/bin/ld -N -z relro --hash-style=gnu -pie -m elf_x86_64 -shared -o" + aot_path + " " + obj_path)
-		    .c_str()) < 0) {
+	if (system(("/usr/bin/ld -z relro --hash-style=gnu -pie -m elf_x86_64 -shared -o" + aot_path + " " +
+		    obj_path)
+		       .c_str()) < 0) {
 		Panic();
 	}
 
@@ -162,7 +154,6 @@ void LinkAOTObject(std::vector<AOTSymbol> &aot_symbols)
 	{
 		auto [vaddr, shidx] = resolve_sym(AOT_SYM_AOTTAB);
 		auto section = elf.sections[shidx];
-		// stupid action to retrive loaded data
 		auto soffs = vaddr - section->get_address();
 		aottab_offs = section->get_offset() + soffs;
 		aottab = (AOTTabHeader const *)(section->get_data() + soffs);
@@ -195,7 +186,7 @@ void LinkAOTObject(std::vector<AOTSymbol> &aot_symbols)
 	}
 #endif
 
-	int fd = open(aot_path.c_str(), O_WRONLY);
+	int fd = open(aot_path.c_str(), O_RDWR);
 	if (!fd) {
 		Panic();
 	}
@@ -209,6 +200,32 @@ void LinkAOTObject(std::vector<AOTSymbol> &aot_symbols)
 	if (write(fd, aot_symbols.data(), aot_symbols_size) != aot_symbols_size) {
 		Panic();
 	}
+
+	{
+		struct stat st;
+		if (fstat(fd, &st) < 0) {
+			Panic(strerror(errno));
+		}
+		void *fmap = host_mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+		if (fmap == MAP_FAILED) {
+			Panic(strerror(errno));
+		}
+		auto *ehdr = (elfio::Elf64_Ehdr *)fmap;
+		auto *phtab = (elfio::Elf64_Phdr *)((uptr)fmap + ehdr->e_phoff);
+
+		for (size_t i = 0; i < ehdr->e_phnum; ++i) {
+			auto *phdr = &phtab[i];
+			if (phdr->p_type != elfio::PT_LOAD) {
+				continue;
+			}
+			if (phdr->p_flags & elfio::PF_X) {
+				log_aot("patch phnum %zu", i);
+				phdr->p_flags |= elfio::PF_W;
+			}
+		}
+		munmap(fmap, st.st_size);
+	}
+
 	close(fd);
 }
 

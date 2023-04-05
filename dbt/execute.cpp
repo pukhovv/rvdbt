@@ -25,11 +25,6 @@ struct JITCompilerRuntime final : CompilerRuntime {
 		return false;
 	}
 
-	uptr GetVMemBase() const override
-	{
-		return (uptr)mmu::base;
-	}
-
 	void *AnnounceRegion(u32 ip, std::span<u8> const &code) override
 	{
 		// TODO: concurrent tcache
@@ -72,7 +67,8 @@ void Execute(CPUState *state)
 		if (tb == nullptr) {
 			auto jrt = JITCompilerRuntime();
 			u32 gip_page = rounddown(state->ip, mmu::PAGE_SIZE);
-			qir::CompilerJob job(&jrt, qir::CodeSegment(gip_page, mmu::PAGE_SIZE),
+			qir::CompilerJob job(&jrt, (uptr)mmu::base,
+					     qir::CodeSegment(gip_page, mmu::PAGE_SIZE),
 					     {GetCompilationIPRange(state->ip)});
 			tb = (TBlock *)qir::CompilerDoJob(job);
 		}

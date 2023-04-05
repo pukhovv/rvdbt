@@ -1,6 +1,7 @@
 #include "dbt/aot/aot.h"
 #include "dbt/aot/aot_module.h"
 
+#include "dbt/guest/rv32_cpu.h"
 #include "dbt/qmc/qcg/jitabi.h"
 #include "elfio/elfio.hpp"
 namespace elfio = ELFIO;
@@ -201,21 +202,6 @@ void ProcessLLVMStackmaps(std::vector<AOTSymbol> &aot_symbols)
 			slot->gip = map->patchpoint_id;
 			assert(slot->gip = map->patchpoint_id);
 			map = map->GetNext();
-		}
-	}
-
-	{ // TODO: move it somewhere
-		auto *ehdr = (elfio::Elf64_Ehdr *)fmap;
-		auto *shtab = (elfio::Elf64_Shdr *)((uptr)fmap + ehdr->e_shoff);
-
-		for (size_t i = 0; i < ehdr->e_shnum; ++i) {
-			auto *shdr = &shtab[i];
-			if (shdr->sh_type != elfio::SHT_PROGBITS) {
-				continue;
-			}
-			if (shdr->sh_flags & elfio::SHF_EXECINSTR) {
-				shdr->sh_flags |= elfio::SHF_WRITE;
-			}
 		}
 	}
 

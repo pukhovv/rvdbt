@@ -29,10 +29,7 @@ qir::Region *CompilerGenRegionIR(MemArena *arena, CompilerJob &job)
 {
 	auto *region = AllocRegion(arena);
 
-	auto &iprange = job.iprange;
-	auto &cruntime = job.cruntime;
-
-	IRTranslator::Translate(region, &iprange, cruntime->GetVMemBase());
+	IRTranslator::Translate(region, &job.iprange, job.vmem);
 	PrinterPass::run(log_qir, "Initial IR after IRTranslator", region);
 
 	return region;
