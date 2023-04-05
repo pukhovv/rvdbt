@@ -25,6 +25,7 @@ private:
 extern char const *const op_names[to_underlying(Op::Count)];
 extern char const *const vtype_names[to_underlying(VType::Count)];
 extern char const *const condcode_names[to_underlying(CondCode::Count)];
+extern char const *const runtime_stub_names[to_underlying(RuntimeStubId::Count)];
 
 inline char const *GetOpNameStr(Op op)
 {
@@ -39,6 +40,11 @@ inline char const *GetVTypeNameStr(VType type)
 inline char const *GetCondCodeNameStr(CondCode cc)
 {
 	return condcode_names[to_underlying(cc)];
+}
+
+inline char const *GetRuntimeStubName(RuntimeStubId id)
+{
+	return runtime_stub_names[to_underlying(id)];
 }
 
 } // namespace dbt::qir

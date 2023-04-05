@@ -2,6 +2,7 @@
 #include "dbt/qmc/compile.h"
 #include "dbt/qmc/qcg/jitabi.h"
 #include "dbt/qmc/qir_builder.h"
+#include "dbt/qmc/qir_printer.h"
 #include "dbt/tcache/objprof.h"
 
 #include "llvm/ADT/APFloat.h"
@@ -20,12 +21,12 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Host.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Support/Host.h"
 
 #include <memory>
 #include <optional>
@@ -39,21 +40,37 @@ namespace qir
 {
 
 struct LLVMGen {
-	LLVMGen(qir::Region *region_, u32 ip_, CodeSegment segment_, llvm::LLVMContext *ctx_,
-		llvm::Module *cmodule_)
-	    : region(region_), region_ip(ip_), segment(segment_), ctx(ctx_), cmodule(cmodule_)
-	{
-		lb = std::make_unique<llvm::IRBuilder<>>(*ctx);
-		vinfo = region->GetVRegsInfo();
-	}
-	llvm::Function *Run();
+	LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegment *segment_);
+	llvm::Function *Run(qir::Region *region, u32 region_ip);
 
+private:
 #define OP(name, cls, flags) void Emit_##name(qir::cls *ins);
 	QIR_OPS_LIST(OP)
 #undef OP
 
-private:
-	void CreateVGPRLocs();
+	// TODO: make generic
+	struct Visitor : qir::InstVisitor<Visitor, void> {
+	public:
+		Visitor(LLVMGen *cg_) : cg(cg_) {}
+
+		void visitInst(qir::Inst *ins)
+		{
+			unreachable("");
+		}
+
+#define OP(name, cls, flags)                                                                                 \
+	void visit_##name(qir::cls *ins)                                                                     \
+	{                                                                                                    \
+		cg->Emit_##name(ins);                                                                        \
+	}
+		QIR_OPS_LIST(OP)
+#undef OP
+
+	private:
+		LLVMGen *cg{};
+	};
+
+	void CreateVGPRLocs(qir::VRegsInfo *vinfo);
 	llvm::Type *MakeType(VType type);
 	llvm::Type *MakePtrType(VType type);
 	llvm::Value *LoadVOperand(qir::VOperand op);
@@ -61,76 +78,98 @@ private:
 	llvm::Value *MakeVMemLoc(VType type, llvm::Value *offs);
 	llvm::Value *MakeStateEP(VType type, u32 offs);
 	llvm::Value *MakeVOperandEP(VOperand op);
+	llvm::ConstantInt *MakeConst(VType type, u64 val);
 
 	static llvm::CmpInst::Predicate MakeCC(CondCode cc);
 	llvm::Value *MakeRStub(RuntimeStubId id, llvm::FunctionType *ftype);
 
 	llvm::BasicBlock *MapBB(Block *bb);
 
-	llvm::ConstantInt *const32(u32 val)
+	template <u8 Bits>
+	llvm::ConstantInt *constv(u64 val)
 	{
-		return llvm::ConstantInt::get(*ctx, llvm::APInt(32, val));
-	}
-
-	llvm::ConstantInt *const64(u64 val)
-	{
-		return llvm::ConstantInt::get(*ctx, llvm::APInt(64, val));
+		return llvm::ConstantInt::get(*ctx, llvm::APInt(Bits, val));
 	}
 
 	void EmitBinop(llvm::Instruction::BinaryOps opc, qir::InstBinop *ins);
 	void EmitTrace();
 
-	qir::Region *region{};
-	qir::VRegsInfo *vinfo{};
-	u32 region_ip{};
-	CodeSegment segment;
-
-	Block *qbb{};
-
+	// globals
 	llvm::LLVMContext *ctx{};
 	llvm::Module *cmodule{};
+	llvm::FunctionType *qcg_ftype{}, *qcg_htype{};
+
+	// per segment
+	CodeSegment *segment{};
+
+	// translation
 	llvm::Function *func{};
-	std::unique_ptr<llvm::IRBuilder<>> lb;
-
+	llvm::IRBuilder<> *lb{};
+	Block *qbb{};
 	std::unordered_map<u32, llvm::BasicBlock *> id2bb;
-
 	llvm::Value *statev{};
 	llvm::Value *membasev{};
+	llvm::Value *spunwindv{};
 	std::vector<llvm::Value *> vlocs;
-
-	llvm::FunctionType *qcg_ftype{}, *qcg_htype{};
 };
 
-llvm::Type *LLVMGen::MakeType(VType type)
+LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegment *segment_)
+    : ctx(context_), cmodule(cmodule_), segment(segment_)
 {
-	switch (type) {
-	case VType::I8:
-		return llvm::Type::getInt8Ty(*ctx);
-	case VType::I16:
-		return llvm::Type::getInt16Ty(*ctx);
-	case VType::I32:
-		return lb->getInt32Ty();
-	default:
-		unreachable("");
-	}
+	auto voidt = llvm::Type::getVoidTy(*ctx);
+	auto i8ptrt = llvm::Type::getInt8PtrTy(*ctx);
+	qcg_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i8ptrt, i8ptrt}, false);
+	qcg_htype = llvm::FunctionType::get(voidt, {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
 }
 
-llvm::Type *LLVMGen::MakePtrType(VType type)
+llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
 {
-	switch (type) {
-	case VType::I8:
-		return lb->getInt8PtrTy();
-	case VType::I16:
-		return llvm::Type::getInt16PtrTy(*ctx);
-	case VType::I32:
-		return llvm::Type::getInt32PtrTy(*ctx);
-	default:
-		unreachable("");
+	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, MakeAotSymbol(region_ip),
+				      cmodule);
+	func->setDSOLocal(true);
+	func->setCallingConv(llvm::CallingConv::GHC);
+	func->getArg(0)->addAttr(llvm::Attribute::NoAlias);
+	func->getArg(1)->addAttr(llvm::Attribute::NoAlias);
+	func->getArg(2)->addAttr(llvm::Attribute::NoAlias);
+
+	statev = func->getArg(0);
+	membasev = func->getArg(1);
+	spunwindv = func->getArg(2);
+	statev->setName("state");
+	membasev->setName("membase");
+	spunwindv->setName("spunwind");
+
+	auto lirb = llvm::IRBuilder<>(llvm::BasicBlock::Create(*ctx, "entry", func));
+	lb = &lirb;
+	CreateVGPRLocs(region->GetVRegsInfo());
+
+	id2bb.clear();
+	for (auto &bb : region->blist) {
+		auto id = bb.GetId();
+		auto *lbb = llvm::BasicBlock::Create(*ctx, "bb." + std::to_string(bb.GetId()), func);
+		if (id == 0) { // TODO: set first bb in qir
+			lb->CreateBr(lbb);
+		}
+		id2bb.insert({id, lbb});
 	}
+
+	for (auto &bb : region->blist) {
+		auto lbb = id2bb.find(bb.GetId())->second;
+		lb->SetInsertPoint(lbb);
+		qbb = &bb;
+
+		auto &ilist = bb.ilist;
+		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
+			Visitor(this).visit(&*iit);
+		}
+	}
+	assert(!verifyFunction(*func, &llvm::errs()));
+	return func;
 }
 
-void LLVMGen::CreateVGPRLocs()
+void LLVMGen::CreateVGPRLocs(qir::VRegsInfo *vinfo)
 {
+	vlocs.clear();
 	auto n_glob = vinfo->NumGlobals();
 
 	for (RegN i = 0; i < n_glob; ++i) {
@@ -143,8 +182,36 @@ void LLVMGen::CreateVGPRLocs()
 	for (RegN i = n_glob; i < vinfo->NumAll(); ++i) {
 		auto type = vinfo->GetLocalType(i);
 		auto name = "%" + std::to_string(i);
-		auto state_ep = lb->CreateAlloca(MakeType(type), const32(VTypeToSize(type)), name);
+		auto state_ep = lb->CreateAlloca(MakeType(type), constv<32>(VTypeToSize(type)), name);
 		vlocs.push_back(state_ep);
+	}
+}
+
+llvm::Type *LLVMGen::MakeType(VType type)
+{
+	switch (type) {
+	case VType::I8:
+		return lb->getInt8Ty();
+	case VType::I16:
+		return lb->getInt16Ty();
+	case VType::I32:
+		return lb->getInt32Ty();
+	default:
+		unreachable("");
+	}
+}
+
+llvm::Type *LLVMGen::MakePtrType(VType type)
+{
+	switch (type) {
+	case VType::I8:
+		return llvm::Type::getInt8PtrTy(*ctx);
+	case VType::I16:
+		return llvm::Type::getInt16PtrTy(*ctx);
+	case VType::I32:
+		return llvm::Type::getInt32PtrTy(*ctx);
+	default:
+		unreachable("");
 	}
 }
 
@@ -156,15 +223,15 @@ llvm::Value *LLVMGen::MakeRStub(RuntimeStubId id, llvm::FunctionType *ftype)
 	auto fp_type = llvm::PointerType::getUnqual(ftype);
 
 	auto state_ep = lb->CreateBitCast(val, llvm::PointerType::getUnqual(fp_type));
-	return lb->CreateAlignedLoad(fp_type, state_ep, llvm::Align(8),
-				     "#stub"); // TODO: typesize // TODO: dump
+	return lb->CreateAlignedLoad(fp_type, state_ep, llvm::Align(alignof(uintptr_t)),
+				     GetRuntimeStubName(id));
 }
 
 llvm::Value *LLVMGen::LoadVOperand(qir::VOperand op)
 {
 	auto type = op.GetType();
 	if (op.IsConst()) {
-		return const32(op.GetConst());
+		return MakeConst(op.GetType(), op.GetConst());
 	}
 	llvm::Value *state_ep = MakeVOperandEP(op);
 	return lb->CreateAlignedLoad(MakeType(type), state_ep, llvm::Align(VTypeToSize(type)));
@@ -200,6 +267,11 @@ llvm::Value *LLVMGen::MakeVMemLoc(VType type, llvm::Value *addr)
 	addr = lb->CreateZExt(addr, lb->getIntPtrTy(cmodule->getDataLayout()));
 	auto ep = lb->CreateGEP(lb->getInt8Ty(), membasev, addr);
 	return lb->CreateBitCast(ep, MakePtrType(type));
+}
+
+llvm::ConstantInt *LLVMGen::MakeConst(VType type, u64 val)
+{
+	return llvm::ConstantInt::get(*ctx, llvm::APInt(VTypeToSize(type) * 8, val));
 }
 
 llvm::CmpInst::Predicate LLVMGen::MakeCC(CondCode cc)
@@ -248,12 +320,14 @@ void LLVMGen::Emit_hcall(qir::InstHcall *ins)
 		lb->CreateRetVoid();
 	}
 }
+
 void LLVMGen::Emit_br(qir::InstBr *ins)
 {
 	auto &qbb_s = **qbb->GetSuccs().begin();
 
 	lb->CreateBr(MapBB(&qbb_s));
 }
+
 void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
 {
 	auto lhs = LoadVOperand(ins->i(0));
@@ -267,15 +341,14 @@ void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
 	lb->CreateCondBr(cmp, MapBB(&qbb_t), MapBB(&qbb_f));
 }
 
+#if 0
 // llvm doesn't support tailcalls for experimental.patchpoint, actual call is not expanded until
 // MCInstLowering. The same applies to gc.statepoint
-// TODO: Seems like I can implelemnt custom MCInst to replace desired tailcalls like XRay MFPass does
 //
 // llvm corrupts ghccc Sp in MFs with stackmap, even if stackmap records no values
 // I applied this in SelectionDAGBuilder for stackmaps with no liveins:
 // + FuncInfo.MF->getFrameInfo().setHasStackMap(CI.arg_size() > 2);
 // and the same for patchpoints
-#if 0
 void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 {
 	// Relocation is not necessary, also would overwrite patchpoint data, avoid
@@ -284,7 +357,7 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 					     const32(3 + sizeof(jitabi::ppoint::BranchSlot)),
 					     llvm::ConstantPointerNull::get(lb->getInt8PtrTy()),
 					     // fake_callee,
-					     const32(3), statev, membasev, func->getArg(2)};
+					     const32(3), statev, membasev, spunwindv};
 
 	auto intr = lb->CreateIntrinsic(llvm::Intrinsic::experimental_patchpoint_void, {}, args);
 	intr->addFnAttr(llvm::Attribute::NoReturn);
@@ -299,14 +372,14 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	stackmap->setCallingConv(llvm::CallingConv::GHC);
 	stackmap->setTailCall(true);
 #endif
-	// auto call = lb->CreateCall(qcg_ftype, fake_callee, {statev, membasev, func->getArg(2)});
+	// auto call = lb->CreateCall(qcg_ftype, fake_callee, {statev, membasev, spunwindv});
 	// call->addFnAttr(llvm::Attribute::NoReturn);
 	// call->setCallingConv(llvm::CallingConv::GHC);
 	// call->setTailCall(true);
 	// call->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	// lb->CreateRetVoid();
 }
-#else
+#endif
 
 static std::string MakeAsmString(std::span<u8> const &data)
 {
@@ -342,15 +415,15 @@ static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
 void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 {
 	auto gip = ins->tpc.GetConst();
-	auto code_str = MakeGbrPatchpoint(gip, segment.InSegment(gip));
+	auto code_str = MakeGbrPatchpoint(gip, segment->InSegment(gip));
 	char const *constraint = "{r13},{rbp},{r12},~{memory},~{dirflag},~{fpsr},~{flags}";
 	auto asmp = llvm::InlineAsm::get(qcg_ftype, code_str, constraint, true, true);
-	auto call = lb->CreateCall(asmp, {statev, membasev, func->getArg(2)});
+	auto call = lb->CreateCall(asmp, {statev, membasev, spunwindv});
 	call->setTailCall(true);
 	call->setDoesNotReturn();
 	lb->CreateUnreachable();
 }
-#endif
+
 void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 {
 	// TODO: fastpath, cache fntype
@@ -363,16 +436,18 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 				      {statev, LoadVOperand(ins->i(0))});
 	auto target = lb->CreateExtractValue(retpair, {1});
 
-	auto call = lb->CreateCall(qcg_ftype, target, {statev, membasev, func->getArg(2)});
+	auto call = lb->CreateCall(qcg_ftype, target, {statev, membasev, spunwindv});
 	call->addFnAttr(llvm::Attribute::NoReturn);
 	call->setCallingConv(llvm::CallingConv::GHC);
 	call->setTailCall(true);
 	call->setTailCallKind(llvm::CallInst::TCK_MustTail);
 	lb->CreateRetVoid();
 }
+
 void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)
 {
 	// TODO: resolve types mess
+	// TODO: alignment in qir
 	llvm::MaybeAlign align = true ? llvm::MaybeAlign{} : llvm::Align(VTypeToSize(ins->sz));
 	auto mem_ep = MakeVMemLoc(ins->sz, LoadVOperand(ins->i(0)));
 	llvm::Value *val = lb->CreateAlignedLoad(MakeType(ins->sz), mem_ep, align);
@@ -386,6 +461,7 @@ void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)
 	}
 	StoreVOperand(ins->o(0), val);
 }
+
 void LLVMGen::Emit_vmstore(qir::InstVMStore *ins)
 {
 	auto val = LoadVOperand(ins->i(1));
@@ -397,142 +473,64 @@ void LLVMGen::Emit_vmstore(qir::InstVMStore *ins)
 	auto mem_ep = MakeVMemLoc(ins->sz, LoadVOperand(ins->i(0)));
 	lb->CreateAlignedStore(val, mem_ep, align);
 }
+
 void LLVMGen::Emit_setcc(qir::InstSetcc *ins)
 {
 	auto cmp = lb->CreateICmp(MakeCC(ins->cc), LoadVOperand(ins->i(0)), LoadVOperand(ins->i(1)));
 	StoreVOperand(ins->o(0), lb->CreateZExt(cmp, lb->getInt32Ty()));
 }
+
 void LLVMGen::Emit_mov(qir::InstUnop *ins)
 {
 	auto val = LoadVOperand(ins->i(0));
 	StoreVOperand(ins->o(0), val);
 }
+
 void LLVMGen::EmitBinop(llvm::Instruction::BinaryOps opc, qir::InstBinop *ins)
 {
 	auto res = lb->CreateBinOp(opc, LoadVOperand(ins->i(0)), LoadVOperand(ins->i(1)));
 	StoreVOperand(ins->o(0), res);
 }
+
 void LLVMGen::Emit_add(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Add, ins);
 }
+
 void LLVMGen::Emit_sub(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Sub, ins);
 }
+
 void LLVMGen::Emit_and(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::And, ins);
 }
+
 void LLVMGen::Emit_or(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Or, ins);
 }
+
 void LLVMGen::Emit_xor(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Xor, ins);
 }
+
 void LLVMGen::Emit_sra(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::AShr, ins);
 }
+
 void LLVMGen::Emit_srl(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::LShr, ins);
 }
+
 void LLVMGen::Emit_sll(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Shl, ins);
 }
-
-struct LLVMGenVisitor : qir::InstVisitor<LLVMGenVisitor, void> {
-public:
-	LLVMGenVisitor(LLVMGen *cg_) : cg(cg_) {}
-
-	void visitInst(qir::Inst *ins)
-	{
-		unreachable("");
-	}
-
-#define OP(name, cls, flags)                                                                                 \
-	void visit_##name(qir::cls *ins)                                                                     \
-	{                                                                                                    \
-		cg->Emit_##name(ins);                                                                        \
-	}
-	QIR_OPS_LIST(OP)
-#undef OP
-
-private:
-	LLVMGen *cg{};
-};
-
-llvm::Function *LLVMGen::Run()
-{
-	qcg_ftype = llvm::FunctionType::get(
-	    lb->getVoidTy(), {lb->getInt8PtrTy(), lb->getInt8PtrTy(), lb->getInt8PtrTy()}, false);
-	qcg_htype = llvm::FunctionType::get(lb->getVoidTy(), {lb->getInt8PtrTy(), lb->getInt32Ty()}, false);
-
-	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, MakeAotSymbol(region_ip),
-				      cmodule);
-	func->setCallingConv(llvm::CallingConv::GHC);
-	func->getArg(0)->addAttr(llvm::Attribute::NoAlias);
-	func->getArg(1)->addAttr(llvm::Attribute::NoAlias);
-	func->getArg(2)->addAttr(llvm::Attribute::NoAlias);
-	func->setDSOLocal(true);
-
-	statev = func->getArg(0);
-	membasev = func->getArg(1);
-	statev->setName("state");
-	membasev->setName("membase");
-	func->getArg(2)->setName("spunwind");
-
-	auto *entry_lbb = llvm::BasicBlock::Create(*ctx, "entry", func);
-	lb->SetInsertPoint(entry_lbb);
-	CreateVGPRLocs();
-
-	// EmitTrace();
-
-	auto &blist = region->blist;
-
-	for (auto &bb : blist) {
-		auto id = bb.GetId();
-		auto *lbb = llvm::BasicBlock::Create(*ctx, "bb." + std::to_string(bb.GetId()), func);
-		if (id == 0) { // TODO: set first bb in qir
-			lb->CreateBr(lbb);
-		}
-		id2bb.insert({id, lbb});
-	}
-
-	for (auto &bb : blist) {
-		auto lbb = id2bb.find(bb.GetId())->second;
-		lb->SetInsertPoint(lbb);
-		qbb = &bb;
-
-		auto &ilist = bb.ilist;
-		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
-			LLVMGenVisitor(this).visit(&*iit);
-		}
-	}
-	// func->print(llvm::errs(), nullptr);
-	// cmodule->print(llvm::errs(), nullptr, true, true);
-	assert(!verifyFunction(*func, &llvm::errs()));
-	return func;
-}
-
-struct LLVMGenPass {
-	static llvm::Function *run(qir::Region *region, u32 ip, CodeSegment segment, llvm::LLVMContext *ctx,
-				   llvm::Module *cmodule);
-};
-
-llvm::Function *LLVMGenPass::run(qir::Region *region, u32 ip, CodeSegment segment, llvm::LLVMContext *ctx,
-				 llvm::Module *cmodule)
-{
-	LLVMGen gen(region, ip, segment, ctx, cmodule);
-	return gen.Run();
-}
-
-// TODO: move this somewhere
-Region *CompilerGenRegionIR(MemArena *arena, CompilerJob &job);
 
 } // namespace qir
 
@@ -561,14 +559,15 @@ struct LLVMAOTCompilerRuntime final : CompilerRuntime {
 	}
 };
 
-static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *aot_symbols,
-			       llvm::LLVMContext *ctx, llvm::Module *cmodule, objprof::PageData const &page,
-			       llvm::FunctionPassManager *fpm, llvm::FunctionAnalysisManager *fam)
+static void LLVMAOTTranslatePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *aot_symbols,
+				 llvm::Module *cmodule, objprof::PageData const &page,
+				 llvm::FunctionPassManager *fpm, llvm::FunctionAnalysisManager *fam)
 {
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
 
-#if 1
+	qir::LLVMGen llvm_gen(&cmodule->getContext(), cmodule, &mg.segment);
+
 	for (auto const &r : regions) {
 		assert(r[0]->flags.region_entry);
 		qir::CompilerJob::IpRangesSet ipranges;
@@ -582,36 +581,16 @@ static void LLVMAOTCompilePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *a
 		auto *region = qir::CompilerGenRegionIR(&arena, job);
 
 		auto entry_ip = r[0]->ip;
-		auto func = qir::LLVMGenPass::run(region, entry_ip, mg.segment, ctx, cmodule);
-		// func->print(llvm::errs(), nullptr);
+		auto func = llvm_gen.Run(region, entry_ip);
 		fpm->run(*func, *fam);
-		// cmodule->print(llvm::errs(), nullptr, true, true);
-		// func->print(llvm::errs(), nullptr);
 		aot_symbols->push_back({entry_ip, 0});
 	}
-#else
-	for (auto const &e : mg.ip_map) {
-		auto const &n = *e.second;
-		qir::CompilerJob job(aotrt, mg.segment, {{n.ip, n.ip_end}});
-
-		auto arena = MemArena(1_MB);
-		auto *region = qir::CompilerGenRegionIR(&arena, job);
-
-		auto func = qir::LLVMGenPass::run(region, n.ip, ctx, cmodule);
-		// func->print(llvm::errs(), nullptr);
-		fpm->run(*func, *fam);
-		// cmodule->print(llvm::errs(), nullptr, true, true);
-		func->print(llvm::errs(), nullptr);
-		aot_symbols->push_back({n.ip, 0});
-	}
-#endif
 }
 
-static void AddAOTTabSection(llvm::LLVMContext &ctx, llvm::Module &cmodule,
-			     std::vector<AOTSymbol> &aot_symbols)
+static void AddAOTTabSection(llvm::Module &cmodule, std::vector<AOTSymbol> &aot_symbols)
 {
 	size_t aottab_size = sizeof(AOTTabHeader) + sizeof(aot_symbols[0]) * aot_symbols.size();
-	auto type = llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx), aottab_size);
+	auto type = llvm::ArrayType::get(llvm::Type::getInt8Ty(cmodule.getContext()), aottab_size);
 	auto zeroinit = llvm::ConstantAggregateZero::get(type);
 	auto aottab = new llvm::GlobalVariable(cmodule, type, true, llvm::GlobalVariable::ExternalLinkage,
 					       zeroinit, AOT_SYM_AOTTAB);
@@ -632,7 +611,7 @@ static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filenam
 		Panic(Error);
 	}
 
-	auto CPU = "generic";
+	auto CPU = "generic"; // TODO: select native
 	auto Features = "";
 
 	llvm::TargetOptions opt;
@@ -663,10 +642,11 @@ static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filenam
 	dest.flush();
 }
 
+static thread_local llvm::LLVMContext g_llvm_ctx;
+
 void LLVMAOTCompileELF()
 {
-	auto ctx = llvm::LLVMContext();
-	auto cmodule = llvm::Module("test_module", ctx);
+	auto cmodule = llvm::Module("test_module", g_llvm_ctx);
 
 	llvm::LoopAnalysisManager lam;
 	llvm::FunctionAnalysisManager fam;
@@ -689,12 +669,11 @@ void LLVMAOTCompileELF()
 	aot_symbols.reserve(64_KB);
 
 	for (auto const &page : objprof::GetProfile()) {
-		LLVMAOTCompilePage(&aotrt, &aot_symbols, &ctx, &cmodule, page, &fpm, &fam);
+		LLVMAOTTranslatePage(&aotrt, &aot_symbols, &cmodule, page, &fpm, &fam);
 	}
 	assert(!verifyModule(cmodule, &llvm::errs()));
 	mpm.run(cmodule, mam);
-	cmodule.print(llvm::errs(), nullptr, true, true);
-	AddAOTTabSection(ctx, cmodule, aot_symbols);
+	AddAOTTabSection(cmodule, aot_symbols);
 
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);
 	GenerateObjectFile(&cmodule, obj_path);

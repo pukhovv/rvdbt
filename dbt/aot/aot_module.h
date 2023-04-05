@@ -131,8 +131,7 @@ struct ModuleGraph {
 	std::vector<std::vector<ModuleGraphNode *>> ComputeRegionDomSets();
 
 	std::vector<std::vector<ModuleGraphNode *>> ComputeRegions();
-	void DumpRegions(std::vector<std::vector<ModuleGraphNode *>> const &regions);
-	void Dump();
+	void Dump(std::vector<std::vector<ModuleGraphNode *>> const *regions = nullptr);
 
 	qir::CodeSegment segment;
 

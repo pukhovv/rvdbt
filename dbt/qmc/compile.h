@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dbt/util/common.h"
+#include "dbt/arena.h"
 #include <span>
 #include <vector>
 
@@ -50,5 +51,9 @@ struct CompilerJob {
 
 // Now qmc operates only in synchronous mode, so returns a value from runtime.AnnounceRegion
 void *CompilerDoJob(CompilerJob &job);
+
+struct Region;
+// Only generate IR
+Region *CompilerGenRegionIR(MemArena *arena, CompilerJob &job);
 
 } // namespace dbt::qir
