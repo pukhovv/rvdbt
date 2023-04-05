@@ -25,7 +25,7 @@
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/TargetParser/Host.h"
+#include "llvm/Support/Host.h"
 
 #include <memory>
 #include <optional>
@@ -109,7 +109,7 @@ llvm::Type *LLVMGen::MakeType(VType type)
 	case VType::I16:
 		return llvm::Type::getInt16Ty(*ctx);
 	case VType::I32:
-		return llvm::Type::getInt32Ty(*ctx);
+		return lb->getInt32Ty();
 	default:
 		unreachable("");
 	}
@@ -119,7 +119,7 @@ llvm::Type *LLVMGen::MakePtrType(VType type)
 {
 	switch (type) {
 	case VType::I8:
-		return llvm::Type::getInt8PtrTy(*ctx);
+		return lb->getInt8PtrTy();
 	case VType::I16:
 		return llvm::Type::getInt16PtrTy(*ctx);
 	case VType::I32:
@@ -237,8 +237,7 @@ llvm::BasicBlock *LLVMGen::MapBB(Block *bb)
 
 void LLVMGen::EmitTrace()
 {
-	auto qcg_trace_type =
-	    llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx), {llvm::Type::getInt8PtrTy(*ctx)}, false);
+	auto qcg_trace_type = llvm::FunctionType::get(lb->getVoidTy(), {lb->getInt8PtrTy()}, false);
 	lb->CreateCall(qcg_trace_type, MakeRStub(RuntimeStubId::id_trace, qcg_trace_type), {statev});
 }
 
@@ -283,7 +282,7 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 #if 1
 	std::array<llvm::Value *, 7> args = {const64(ins->tpc.GetConst()),
 					     const32(3 + sizeof(jitabi::ppoint::BranchSlot)),
-					     llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(*ctx)),
+					     llvm::ConstantPointerNull::get(lb->getInt8PtrTy()),
 					     // fake_callee,
 					     const32(3), statev, membasev, func->getArg(2)};
 
@@ -357,8 +356,8 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 	// TODO: fastpath, cache fntype
 	auto retpair_type =
 	    llvm::StructType::create({lb->getInt8PtrTy(), llvm::PointerType::getUnqual(qcg_ftype)});
-	auto qcg_brind_fntype = llvm::FunctionType::get(
-	    retpair_type, {llvm::Type::getInt8PtrTy(*ctx), llvm::Type::getInt32Ty(*ctx)}, false);
+	auto qcg_brind_fntype =
+	    llvm::FunctionType::get(retpair_type, {lb->getInt8PtrTy(), lb->getInt32Ty()}, false);
 
 	auto retpair = lb->CreateCall(qcg_brind_fntype, MakeRStub(RuntimeStubId::id_brind, qcg_brind_fntype),
 				      {statev, LoadVOperand(ins->i(0))});
@@ -470,14 +469,8 @@ private:
 llvm::Function *LLVMGen::Run()
 {
 	qcg_ftype = llvm::FunctionType::get(
-	    llvm::Type::getVoidTy(*ctx),
-	    {llvm::Type::getInt8PtrTy(*ctx), llvm::Type::getInt8PtrTy(*ctx), llvm::Type::getInt8PtrTy(*ctx)},
-	    false);
-	qcg_htype =
-	    llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx),
-				    {llvm::Type::getInt8PtrTy(*ctx), llvm::Type::getInt32Ty(*ctx)}, false);
-
-	// qcgfn_null = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(qcg_ftype));
+	    lb->getVoidTy(), {lb->getInt8PtrTy(), lb->getInt8PtrTy(), lb->getInt8PtrTy()}, false);
+	qcg_htype = llvm::FunctionType::get(lb->getVoidTy(), {lb->getInt8PtrTy(), lb->getInt32Ty()}, false);
 
 	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, MakeAotSymbol(region_ip),
 				      cmodule);
@@ -643,7 +636,7 @@ static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filenam
 	auto Features = "";
 
 	llvm::TargetOptions opt;
-	auto RM = std::optional<llvm::Reloc::Model>();
+	auto RM = llvm::Reloc::Model();
 	auto TargetMachine = Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
 
 	cmodule->setDataLayout(TargetMachine->createDataLayout());

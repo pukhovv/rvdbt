@@ -58,8 +58,8 @@ class RVDBTExec(BaseExec):
             self.setup_ok = True
             return
         pargs = [RVDBTExec.build_dir + "/bin/elfaot",
-                 "--cache=dbtcache" +
-                 "--llvm" + ("off", "on")[self.llvm] +
+                 "--cache=dbtcache",
+                 "--llvm=" + ("off", "on")[self.llvm],
                  "--elf=" + self.root + "/" + self.args[0]]
         p = subprocess.Popen(pargs, cwd=RVDBTExec.build_dir,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -104,7 +104,7 @@ class Benchmark:
 
     def verify(self, exec: BaseExec, exec_ref: BaseExec):
         if exec_ref.rc != exec.rc:
-            return "retcode"
+            return "retcode,out=" + str(exec.err)
 
         if self.cmp_out and exec_ref.out != exec.out:
             return "stdout"
