@@ -6,6 +6,7 @@
 
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/MC/SubtargetFeature.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/FileSystem.h"
@@ -85,40 +86,50 @@ static void AddAOTTabSection(llvm::Module &cmodule, std::vector<AOTSymbol> &aot_
 
 static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filename)
 {
-	auto TargetTriple = llvm::sys::getDefaultTargetTriple();
+	auto ttriple = llvm::sys::getDefaultTargetTriple();
 	llvm::InitializeNativeTarget();
 	llvm::InitializeNativeTargetAsmPrinter();
 	llvm::InitializeNativeTargetAsmParser();
-	std::string Error;
-	auto Target = llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
-	if (!Target) {
-		Panic(Error);
+	std::string error;
+	auto target = llvm::TargetRegistry::lookupTarget(ttriple, error);
+	if (!target) {
+		Panic(error);
 	}
 
-	auto CPU = "generic"; // TODO(tuning): select native
-	auto Features = "";
+	auto host_cpu = llvm::sys::getHostCPUName();
+
+	llvm::SubtargetFeatures features;
+	{
+		llvm::StringMap<bool> features_map;
+		if (llvm::sys::getHostCPUFeatures(features_map)) {
+			for (const auto &f : features_map) {
+				features.AddFeature(f.first(), f.second);
+			}
+		}
+	}
 
 	llvm::TargetOptions opt;
-	auto RM = llvm::Reloc::Model();
-	auto TargetMachine = Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
+	auto RM = llvm::Reloc::Model(llvm::Reloc::PIC_);
+	auto tmachine = target->createTargetMachine(ttriple, host_cpu, features.getString(), opt, RM, {},
+						    llvm::CodeGenOpt::Aggressive);
 
-	cmodule->setDataLayout(TargetMachine->createDataLayout());
-	cmodule->setTargetTriple(TargetTriple);
+	cmodule->setDataLayout(tmachine->createDataLayout());
+	cmodule->setTargetTriple(ttriple);
 	cmodule->setPICLevel(llvm::PICLevel::SmallPIC);
 
-	std::error_code EC;
-	llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
+	std::error_code errc;
+	llvm::raw_fd_ostream dest(filename, errc, llvm::sys::fs::OF_None);
 
-	if (EC) {
-		llvm::errs() << "Could not open file: " << EC.message();
+	if (errc) {
+		llvm::errs() << "can't open file: " << errc.message();
 		Panic();
 	}
 
 	llvm::legacy::PassManager pass;
 	auto FileType = llvm::CGFT_ObjectFile;
 
-	if (TargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
-		llvm::errs() << "TargetMachine can't emit a file of this type";
+	if (tmachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
+		llvm::errs() << "emit objfile failed";
 		Panic();
 	}
 
