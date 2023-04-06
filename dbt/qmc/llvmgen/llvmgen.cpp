@@ -39,7 +39,7 @@ void LLVMGen::AddFunction(u32 region_ip)
 
 llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
 {
-	auto func = cmodule->getFunction(MakeAotSymbol(region_ip));
+	func = cmodule->getFunction(MakeAotSymbol(region_ip));
 	assert(func);
 	statev = func->getArg(0);
 	membasev = func->getArg(1);
@@ -123,14 +123,12 @@ llvm::Type *LLVMGen::MakePtrType(VType type)
 
 llvm::Value *LLVMGen::MakeRStub(RuntimeStubId id, llvm::FunctionType *ftype)
 {
-	auto val = lb->CreateConstInBoundsGEP1_32(lb->getInt8Ty(), statev,
-						  offsetof(CPUState, stub_tab) + RuntimeStubTab::offs(id));
-
 	auto fp_type = llvm::PointerType::getUnqual(ftype);
 
-	auto state_ep = lb->CreateBitCast(val, llvm::PointerType::getUnqual(fp_type));
-	return lb->CreateAlignedLoad(fp_type, state_ep, llvm::Align(alignof(uintptr_t)),
-				     GetRuntimeStubName(id));
+	auto state_ep = MakeStateEP(llvm::PointerType::getUnqual(fp_type),
+				    offsetof(CPUState, stub_tab) + RuntimeStubTab::offs(id));
+
+	return lb->CreateAlignedLoad(fp_type, state_ep, llvm::Align(alignof(uptr)), GetRuntimeStubName(id));
 }
 
 llvm::Value *LLVMGen::LoadVOperand(qir::VOperand op)
@@ -162,10 +160,15 @@ llvm::Value *LLVMGen::MakeVOperandEP(VOperand op)
 	unreachable("");
 }
 
-llvm::Value *LLVMGen::MakeStateEP(VType type, u32 offs)
+llvm::Value *LLVMGen::MakeStateEP(llvm::Type *type, u32 offs)
 {
 	auto ep = lb->CreateConstInBoundsGEP1_32(lb->getInt8Ty(), statev, offs);
-	return lb->CreateBitCast(ep, MakePtrType(type));
+	return lb->CreateBitCast(ep, type);
+}
+
+llvm::Value *LLVMGen::MakeStateEP(VType type, u32 offs)
+{
+	return MakeStateEP(MakePtrType(type), offs);
 }
 
 llvm::Value *LLVMGen::MakeVMemLoc(VType type, llvm::Value *addr)
@@ -334,16 +337,69 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 
 void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 {
-	// TODO(tuning): fastpath
-	auto target = lb->CreateCall(qcg_brind_ftype, MakeRStub(RuntimeStubId::id_brind, qcg_brind_ftype),
-				     {statev, LoadVOperand(ins->i(0))});
+	auto gipv = LoadVOperand(ins->i(0));
 
-	auto call = lb->CreateCall(qcg_ftype, target, {statev, membasev, spunwindv});
-	call->addFnAttr(llvm::Attribute::NoReturn);
-	call->setCallingConv(llvm::CallingConv::GHC);
-	call->setTailCall(true);
-	call->setTailCallKind(llvm::CallInst::TCK_MustTail);
-	lb->CreateRetVoid();
+	auto emit_continue = [&](llvm::Value *target) {
+		auto call = lb->CreateCall(qcg_ftype, target, {statev, membasev, spunwindv});
+		call->addFnAttr(llvm::Attribute::NoReturn);
+		call->setCallingConv(llvm::CallingConv::GHC);
+		call->setTailCall(true);
+		call->setTailCallKind(llvm::CallInst::TCK_MustTail);
+		lb->CreateRetVoid();
+	};
+
+	auto slowp_bb = llvm::BasicBlock::Create(*ctx);
+	auto fastp_bb = llvm::BasicBlock::Create(*ctx);
+	slowp_bb->insertInto(func);
+	fastp_bb->insertInto(func);
+
+	llvm::Value *cached_tb;
+	{
+		auto nonnull_bb = llvm::BasicBlock::Create(*ctx);
+		nonnull_bb->insertInto(func);
+
+		auto cache_ep = MakeStateEP(lb->getPtrTy(), offsetof(CPUState, jmp_cache_brind));
+		auto cachev = lb->CreateAlignedLoad(lb->getPtrTy(), cache_ep, llvm::Align(alignof(uptr)));
+
+		llvm::Value *hashv = lb->CreateLShr(gipv, constv<32>(2));
+		hashv = lb->CreateAnd(hashv, constv<32>((1ull << tcache::JMP_CACHE_BITS) - 1));
+
+		auto cached_tb_ep = lb->CreateInBoundsGEP(lb->getPtrTy(), cachev, hashv);
+		cached_tb = lb->CreateAlignedLoad(lb->getPtrTy(), cached_tb_ep, llvm::Align(alignof(uptr)));
+
+		// TODO(tuning): put ip in cache entry and remove check
+		auto nullcheck =
+		    lb->CreateICmpEQ(cached_tb, llvm::ConstantPointerNull::getNullValue(lb->getPtrTy()));
+		lb->CreateCondBr(nullcheck, slowp_bb, nonnull_bb);
+
+		{
+			lb->SetInsertPoint(nonnull_bb);
+			auto tb_ip_ep =
+			    lb->CreateConstInBoundsGEP1_32(lb->getInt8Ty(), cached_tb, offsetof(TBlock, ip));
+			tb_ip_ep = lb->CreateBitCast(tb_ip_ep, lb->getPtrTy());
+			auto tb_ip =
+			    lb->CreateAlignedLoad(lb->getInt32Ty(), tb_ip_ep, llvm::Align(alignof(u32)));
+			lb->CreateCondBr(lb->CreateICmpNE(tb_ip, gipv), slowp_bb, fastp_bb);
+		}
+	}
+
+	{
+		lb->SetInsertPoint(fastp_bb);
+		auto fp_type = llvm::PointerType::getUnqual(qcg_ftype);
+		auto tc_ptr_ep = lb->CreateConstInBoundsGEP1_32(
+		    lb->getInt8Ty(), cached_tb, offsetof(TBlock, tcode) + offsetof(TBlock::TCode, ptr));
+		tc_ptr_ep = lb->CreateBitCast(tc_ptr_ep, lb->getInt8PtrTy());
+		auto tc_ptr = lb->CreateAlignedLoad(fp_type, tc_ptr_ep, llvm::Align(alignof(uptr)));
+
+		emit_continue(tc_ptr);
+	}
+
+	{
+		lb->SetInsertPoint(slowp_bb);
+		auto target = lb->CreateCall(
+		    qcg_brind_ftype, MakeRStub(RuntimeStubId::id_brind, qcg_brind_ftype), {statev, gipv});
+		emit_continue(target);
+	}
 }
 
 void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)

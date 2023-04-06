@@ -54,6 +54,7 @@ private:
 	llvm::Value *LoadVOperand(qir::VOperand op);
 	void StoreVOperand(qir::VOperand op, llvm::Value *val);
 	llvm::Value *MakeVMemLoc(VType type, llvm::Value *offs);
+	llvm::Value *MakeStateEP(llvm::Type *type, u32 offs);
 	llvm::Value *MakeStateEP(VType type, u32 offs);
 	llvm::Value *MakeVOperandEP(VOperand op);
 	llvm::ConstantInt *MakeConst(VType type, u64 val);
