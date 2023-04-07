@@ -291,6 +291,16 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 }
 #endif
 
+void LLVMGen::CreateQCGFnCall(llvm::Value *fn)
+{
+	auto call = lb->CreateCall(qcg_ftype, fn, {statev, membasev, spunwindv});
+	call->addFnAttr(llvm::Attribute::NoReturn);
+	call->setCallingConv(llvm::CallingConv::GHC);
+	call->setTailCall(true);
+	call->setTailCallKind(llvm::CallInst::TCK_MustTail);
+	lb->CreateRetVoid();
+}
+
 static std::string MakeAsmString(std::span<u8> const &data)
 {
 	std::string hstr;
@@ -324,29 +334,25 @@ static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
 
 void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 {
-	// TODO(tuning): try local fn call if in segment
 	auto gip = ins->tpc.GetConst();
-	auto code_str = MakeGbrPatchpoint(gip, !segment->InSegment(gip));
-	char const *constraint = "{r13},{rbp},{r12},~{memory},~{dirflag},~{fpsr},~{flags}";
-	auto asmp = llvm::InlineAsm::get(qcg_ftype, code_str, constraint, true, false);
-	auto call = lb->CreateCall(asmp, {statev, membasev, spunwindv});
-	call->setTailCall(true);
-	call->setDoesNotReturn();
-	lb->CreateUnreachable();
+	if (auto tgtfn = cmodule->getFunction(MakeAotSymbol(gip)); tgtfn) {
+		// TODO: segment check?
+		// TODO(tuning): prevent inlining?
+		CreateQCGFnCall(tgtfn);
+	} else {
+		auto code_str = MakeGbrPatchpoint(gip, !segment->InSegment(gip));
+		char const *constraint = "{r13},{rbp},{r12},~{memory},~{dirflag},~{fpsr},~{flags}";
+		auto asmp = llvm::InlineAsm::get(qcg_ftype, code_str, constraint, true, false);
+		auto call = lb->CreateCall(asmp, {statev, membasev, spunwindv});
+		call->setTailCall(true);
+		call->setDoesNotReturn();
+		lb->CreateUnreachable();
+	}
 }
 
 void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 {
 	auto gipv = LoadVOperand(ins->i(0));
-
-	auto emit_continue = [&](llvm::Value *target) {
-		auto call = lb->CreateCall(qcg_ftype, target, {statev, membasev, spunwindv});
-		call->addFnAttr(llvm::Attribute::NoReturn);
-		call->setCallingConv(llvm::CallingConv::GHC);
-		call->setTailCall(true);
-		call->setTailCallKind(llvm::CallInst::TCK_MustTail);
-		lb->CreateRetVoid();
-	};
 
 	auto slowp_bb = llvm::BasicBlock::Create(*ctx);
 	auto fastp_bb = llvm::BasicBlock::Create(*ctx);
@@ -391,14 +397,14 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 		tc_ptr_ep = lb->CreateBitCast(tc_ptr_ep, lb->getInt8PtrTy());
 		auto tc_ptr = lb->CreateAlignedLoad(fp_type, tc_ptr_ep, llvm::Align(alignof(uptr)));
 
-		emit_continue(tc_ptr);
+		CreateQCGFnCall(tc_ptr);
 	}
 
 	{
 		lb->SetInsertPoint(slowp_bb);
 		auto target = lb->CreateCall(
 		    qcg_brind_ftype, MakeRStub(RuntimeStubId::id_brind, qcg_brind_ftype), {statev, gipv});
-		emit_continue(target);
+		CreateQCGFnCall(target);
 	}
 }
 

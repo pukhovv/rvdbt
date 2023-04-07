@@ -70,6 +70,7 @@ private:
 		return llvm::ConstantInt::get(*ctx, llvm::APInt(Bits, val));
 	}
 
+	void CreateQCGFnCall(llvm::Value *fn);
 	void EmitBinop(llvm::Instruction::BinaryOps opc, qir::InstBinop *ins);
 	void EmitTrace();
 
