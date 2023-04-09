@@ -70,7 +70,7 @@ int main(int argc, char **argv)
 
 	dbt::CPUState state{};
 	dbt::ukernel::InitThread(&state, elf);
-	uk.Execute(&state);
+	int guest_rc = uk.Execute(&state);
 
 	dbt::objprof::UpdateProfile();
 
@@ -79,5 +79,5 @@ int main(int argc, char **argv)
 	dbt::tcache::Destroy();
 	dbt::mmu::Destroy();
 #endif
-	return 0;
+	return guest_rc;
 }

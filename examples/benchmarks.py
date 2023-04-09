@@ -141,11 +141,11 @@ class Benchmark:
 def GetBenchmarks_Automotive(prebuilts_dir):
     b: list[Benchmark] = []
     root = os.path.join(prebuilts_dir + "/automotive")
-    b.append(Benchmark(root + "/basicmath", ["basicmath_small"], True))
+    # b.append(Benchmark(root + "/basicmath", ["basicmath_small"], True))
     b.append(Benchmark(root + "/basicmath", ["basicmath_large"]))
     b.append(Benchmark(root + "/bitcnts", ["bitcnts", "3125000"]))
-    b.append(Benchmark(root + "/qsort",
-             ["qsort_small", "input_small.dat"], True))
+    # b.append(Benchmark(root + "/qsort",
+    #         ["qsort_small", "input_small.dat"], True))
     b.append(Benchmark(root + "/qsort",
              ["qsort_large", "input_large.dat"], True))
     b.append(Benchmark(root + "/susan",
@@ -153,18 +153,66 @@ def GetBenchmarks_Automotive(prebuilts_dir):
     return b
 
 
-def RunTests(opts):
+# mibench.network
+def GetBenchmarks_Network(prebuilts_dir):
+    b: list[Benchmark] = []
+    root = os.path.join(prebuilts_dir + "/network")
+    # b.append(Benchmark(root + "/dijkstra",
+    #        ["dijkstra_small", "input.dat"], True))
+    b.append(Benchmark(root + "/dijkstra",
+             ["dijkstra_large", "input.dat"], True))
+    return b
+
+
+# mibench.security
+def GetBenchmarks_Security(prebuilts_dir):
+    b: list[Benchmark] = []
+    root = os.path.join(prebuilts_dir + "/security")
+    b.append(Benchmark(root + "/blowfish",
+             ["bf", "e", "myinput.asc", "_bout", "1234567890abcdeffedcba0987654321"], False, "_bout"))
+    return b
+
+
+# mibench.telecomm
+def GetBenchmarks_Telecomm(prebuilts_dir):
+    b: list[Benchmark] = []
+    root = os.path.join(prebuilts_dir + "/telecomm")
+    b.append(Benchmark(root + "/FFT", ["fft", "8", "32768"], True))
+    b.append(Benchmark(root + "/gsm",
+             ["toast", "-fps", "-c", "large.au"], True))
+    return b
+
+
+# coremark
+def GetBenchmarks_Coremark(prebuilts_dir):
+    b: list[Benchmark] = []
+    root = os.path.join(prebuilts_dir + "/coremark")
+    b.append(Benchmark(
+        root + "/", ["coremark.exe", "0x0", "0x0", "0x66", "15000", "7", "1", "2000"]))
+    return b
+
+
+def GetBenchmarks(opts):
     benchmarks: list[Benchmark] = []
     benchmarks += GetBenchmarks_Automotive(opts.prebuilts_dir)
+    benchmarks += GetBenchmarks_Network(opts.prebuilts_dir)
+    benchmarks += GetBenchmarks_Security(opts.prebuilts_dir)
+    benchmarks += GetBenchmarks_Telecomm(opts.prebuilts_dir)
+    benchmarks += GetBenchmarks_Coremark(opts.prebuilts_dir)
+    return benchmarks
+
+
+def RunTests(opts):
+    benchmarks = GetBenchmarks(opts)
 
     def get_execs(): return [QEMUExec(), RVDBTExec(
         False), RVDBTExec(True, False), RVDBTExec(True, True)]
 
-    csvtab = [["+"] + list(map(lambda e: e.name, get_execs()))]
+    csvtab = [["tab"] + list(map(lambda e: e.name, get_execs()))]
 
     for b in benchmarks:
         print(b.root + " " + " ".join(b.args))
-        scores = [b.args[0]]
+        scores = [b.root.removeprefix(opts.prebuilts_dir)]
 
         execs = get_execs()
         ref_exec = execs[0]

@@ -16,7 +16,7 @@ struct ukernel {
 	void InitAVectors(ElfImage *elf, int argv_n, char **argv);
 	static void InitThread(CPUState *state, ElfImage *elf);
 
-	void Execute(CPUState *state);
+	int Execute(CPUState *state);
 
 	static void SyscallDemo(CPUState *state);
 	void SyscallLinux(CPUState *state);

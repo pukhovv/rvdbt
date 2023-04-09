@@ -115,7 +115,7 @@ static constexpr RegMask GPR_ALL(((u32)1 << GPR_NUM) - 1);
 static constexpr RegMask GPR_POOL = GPR_ALL & ~GPR_FIXED;
 static constexpr RegMask GPR_CALL_SAVED = GPR_ALL & ~GPR_CALL_CLOBBER;
 
-#define QCG_SPILL_FRAME_SIZE 480 // TODO: reuse temps
+#define QCG_SPILL_FRAME_SIZE 1024 // TODO: reuse temps
 static constexpr u16 spillframe_size = QCG_SPILL_FRAME_SIZE;
 
 bool match_gp_const(qir::VType type, i64 val, RACtImm ct);

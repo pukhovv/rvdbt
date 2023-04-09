@@ -182,6 +182,27 @@ HANDLER(ebreak)
 }
 
 // TODO: real atomics implementation, alignment checks
+template <typename H>
+static ALWAYS_INLINE void ApplyInsnA(CPUState *s, u8 *vmem, insn::A i)
+{
+	switch (i.rlaq()) {
+	case 0b00:
+		H().template operator()<std::memory_order_relaxed>(s, vmem, i);
+		break;
+	case 0b01:
+		H().template operator()<std::memory_order_release>(s, vmem, i);
+		break;
+	case 0b10:
+		H().template operator()<std::memory_order_acquire>(s, vmem, i);
+		break;
+	case 0b11:
+		H().template operator()<std::memory_order_acq_rel>(s, vmem, i);
+		break;
+	default:
+		unreachable("");
+	}
+}
+
 HANDLER(lrw)
 {
 	s->gpr[i.rd()] = *(u32 *)(vmem + s->gpr[i.rs1()]);
@@ -193,17 +214,37 @@ HANDLER(scw)
 }
 HANDLER(amoswapw)
 {
-	s->gpr[i.rd()] = reinterpret_cast<std::atomic<u32> *>(vmem + s->gpr[i.rs1()])
-			     ->exchange(s->gpr[i.rd()], std::memory_order_seq_cst);
+	auto h = []<std::memory_order MO>(CPUState *s, u8 *vmem, insn::A i) {
+		auto a = std::atomic_ref(*(u32 *)(vmem + s->gpr[i.rs1()]));
+		s->gpr[i.rd()] = a.exchange(s->gpr[i.rs2()], MO);
+	};
+	ApplyInsnA<decltype(h)>(s, vmem, i);
 }
-HANDLER_Unimpl(amoaddw);
+HANDLER(amoaddw)
+{
+	auto h = []<std::memory_order MO>(CPUState *s, u8 *vmem, insn::A i) {
+		auto a = std::atomic_ref(*(u32 *)(vmem + s->gpr[i.rs1()]));
+		s->gpr[i.rd()] = a.fetch_add(s->gpr[i.rs2()], MO);
+	};
+	ApplyInsnA<decltype(h)>(s, vmem, i);
+}
 HANDLER_Unimpl(amoxorw);
 HANDLER_Unimpl(amoandw);
 HANDLER_Unimpl(amoorw);
 HANDLER_Unimpl(amominw);
 HANDLER_Unimpl(amomaxw);
 HANDLER_Unimpl(amominuw);
-HANDLER_Unimpl(amomaxuw);
+HANDLER(amomaxuw)
+{
+	auto h = []<std::memory_order MO>(CPUState *s, u8 *vmem, insn::A i) {
+		auto a = std::atomic_ref(*(u32 *)(vmem + s->gpr[i.rs1()]));
+		u32 cur = a.load(MO);
+		u32 rhs = s->gpr[i.rs2()];
+		while (!a.compare_exchange_weak(cur, std::max(cur, rhs), MO))
+			;
+	};
+	ApplyInsnA<decltype(h)>(s, vmem, i);
+}
 
 void Interpreter::Execute(CPUState *state)
 {

@@ -119,10 +119,12 @@ struct A : public Base {
 	INSN_FIELD(rs2)
 	INSN_FIELD(rl)
 	INSN_FIELD(aq)
+	INSN_FIELD(rlaq)
 
 protected:
 	using _rl = bf_range<u8, 25, 25>;
-	using _aq = bf_range<u8, 25, 25>;
+	using _aq = bf_range<u8, 26, 26>;
+	using _rlaq = bf_range<u8, 25, 26>;
 	static constexpr Flags::Types gen_flags = static_cast<Flags::Types>(Flags::HasRd | Flags::MayTrap);
 };
 

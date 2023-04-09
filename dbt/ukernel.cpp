@@ -31,7 +31,7 @@ struct ukernel::ElfImage {
 };
 ukernel::ElfImage ukernel::exe_elf_image{};
 
-void ukernel::Execute(CPUState *state)
+int ukernel::Execute(CPUState *state)
 {
 	CPUState::SetCurrent(state);
 	while (true) {
@@ -39,7 +39,7 @@ void ukernel::Execute(CPUState *state)
 		switch (state->trapno) {
 		case rv32::TrapCode::EBREAK:
 			log_ukernel("ebreak termiante");
-			return;
+			return 1;
 		case rv32::TrapCode::ECALL:
 			state->ip += 4;
 #ifdef CONFIG_LINUX_GUEST
@@ -47,14 +47,14 @@ void ukernel::Execute(CPUState *state)
 #else
 			ukernel::SyscallDemo(state);
 #endif
-			if (state->trapno != rv32::TrapCode::NONE) {
+			if (state->trapno == rv32::TrapCode::TERMINATED) {
 				log_ukernel("exiting...");
-				return;
+				return state->gpr[10]; // TODO: forward sys_exit* arg
 			}
 			break;
 		case rv32::TrapCode::ILLEGAL_INSN:
 			log_ukernel("illegal instruction at %08x", state->ip);
-			return;
+			return 1;
 		default:
 			unreachable("no handle for trap");
 		}
@@ -120,6 +120,18 @@ void ukernel::SyscallLinux(CPUState *state)
 			rc = close(args[0]);
 			RCERRNO(rc);
 		}
+		DEF_SYSCALL(62, lseek)
+		{
+			// asmlinkage long sys_llseek(unsigned int fd, unsigned long offset_high, unsigned
+			// long offset_low, loff_t __user *result, unsigned int whence);
+			off_t off = ((u64)args[1] << 32) | args[2];
+			rc = lseek(args[0], off, args[4]);
+			if (rc < 0) {
+				(rc) = -errno;
+			} else {
+				*(u64 *)mmu::g2h(args[3]) = rc;
+			}
+		}
 		DEF_SYSCALL(63, read)
 		{
 			rc = read(args[0], mmu::g2h(args[1]), args[2]);
@@ -148,8 +160,13 @@ void ukernel::SyscallLinux(CPUState *state)
 		}
 		DEF_SYSCALL(94, exit_group)
 		{
-			rc = 0;
+			rc = args[0];
 			state->trapno = rv32::TrapCode::TERMINATED;
+		}
+		DEF_SYSCALL(134, rt_sigaction)
+		{
+			rc = 0;
+			log_ukernel("TODO: support signals!");
 		}
 		DEF_SYSCALL(160, uname)
 		{
@@ -341,13 +358,13 @@ int ukernel::PathResolution(int dirfd, char const *path, char *resolved)
 u32 ukernel::do_sys_brk(u32 newbrk)
 {
 	if (newbrk <= brk) {
-		log_ukernel("do_sys_brk: newbrk too small: %08x %08x", newbrk, brk);
+		log_ukernel("do_sys_brk: newbrk is too small: %08x %08x", newbrk, brk);
 		return brk;
 	}
 	u32 brk_p = roundup(brk, mmu::PAGE_SIZE);
 	if (newbrk <= brk_p) {
 		if (newbrk != brk_p) {
-			memset(mmu::g2h(newbrk), 0, newbrk - brk);
+			memset(mmu::g2h(brk), 0, newbrk - brk);
 		}
 		return brk = newbrk;
 	}
