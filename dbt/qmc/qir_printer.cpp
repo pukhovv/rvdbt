@@ -194,16 +194,16 @@ std::string PrinterPass::run(Region *r)
 
 	ss << "region: n_glob=" << r->GetVRegsInfo()->NumAll() << " n_loc=" << r->GetVRegsInfo()->NumLocals();
 
-	for (auto &bb : r->blist) {
+	for (auto &bb : r->GetBlocks()) {
 		ss << "\nbb." << bb.GetId() << ":";
 
 		ss << " succs[ ";
 		for (auto const &s : bb.GetSuccs()) {
-			ss << (*s).GetId() << " ";
+			ss << s->GetId() << " ";
 		}
 		ss << "] preds[ ";
 		for (auto const &p : bb.GetPreds()) {
-			ss << (*p).GetId() << " ";
+			ss << p->GetId() << " ";
 		}
 		ss << "]";
 

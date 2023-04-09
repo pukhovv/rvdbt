@@ -153,8 +153,7 @@ private:
 
 void QSel::Run()
 {
-	auto &blist = region->blist;
-	for (auto &bb : blist) {
+	for (auto &bb : region->GetBlocks()) {
 		auto &ilist = bb.ilist;
 
 		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {

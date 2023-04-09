@@ -50,7 +50,7 @@ llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
 	CreateVGPRLocs(region->GetVRegsInfo());
 
 	id2bb.clear();
-	for (auto &bb : region->blist) {
+	for (auto &bb : region->GetBlocks()) {
 		auto id = bb.GetId();
 		auto *lbb = llvm::BasicBlock::Create(*ctx, "bb." + std::to_string(bb.GetId()), func);
 		if (id == 0) { // TODO: set first bb in qir
@@ -59,7 +59,7 @@ llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
 		id2bb.insert({id, lbb});
 	}
 
-	for (auto &bb : region->blist) {
+	for (auto &bb : region->GetBlocks()) {
 		auto lbb = id2bb.find(bb.GetId())->second;
 		lb->SetInsertPoint(lbb);
 		qbb = &bb;
@@ -233,9 +233,9 @@ void LLVMGen::Emit_hcall(qir::InstHcall *ins)
 
 void LLVMGen::Emit_br(qir::InstBr *ins)
 {
-	auto &qbb_s = **qbb->GetSuccs().begin();
+	auto qbb_s = qbb->GetSuccs().at(0);
 
-	lb->CreateBr(MapBB(&qbb_s));
+	lb->CreateBr(MapBB(qbb_s));
 }
 
 void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
@@ -244,11 +244,10 @@ void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
 	auto rhs = LoadVOperand(ins->i(1));
 	auto cmp = lb->CreateCmp(MakeCC(ins->cc), lhs, rhs);
 
-	auto sit = qbb->GetSuccs().begin();
-	auto &qbb_t = **sit;
-	auto &qbb_f = **++sit;
+	auto qbb_t = qbb->GetSuccs().at(0);
+	auto qbb_f = qbb->GetSuccs().at(1);
 
-	lb->CreateCondBr(cmp, MapBB(&qbb_t), MapBB(&qbb_f));
+	lb->CreateCondBr(cmp, MapBB(qbb_t), MapBB(qbb_f));
 }
 
 #if 0

@@ -65,7 +65,7 @@ void QCodegen::Run(u32 ip)
 	ce->Prologue(ip);
 	QCodegenVisitor vis(this);
 
-	for (auto &bb : region->blist) {
+	for (auto &bb : region->GetBlocks()) {
 		ce->SetBlock(&bb);
 		auto &ilist = bb.ilist;
 		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {

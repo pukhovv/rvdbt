@@ -6,6 +6,18 @@ extern "C" {
 #include <sys/mman.h>
 };
 
+struct InArena {
+	void *operator new(size_t asz, void *aptr)
+	{
+		return aptr;
+	}
+
+	void operator delete(void *aptr, size_t asz)
+	{
+		unreachable("");
+	}
+};
+
 struct MemArena {
 	MemArena() = default;
 	MemArena(size_t size, int prot = PROT_READ | PROT_WRITE)
@@ -19,13 +31,34 @@ struct MemArena {
 
 	void Init(size_t size, int prot = PROT_READ | PROT_WRITE);
 	void Destroy();
-	void Reset();
-	void *Allocate(size_t alloc_sz, size_t align);
+	void Reset()
+	{
+		used = 0;
+	}
+
+	void *Allocate(size_t alloc_sz, size_t align)
+	{
+		size_t alloc_start = roundup(used, align);
+		if (unlikely(alloc_start + alloc_sz > pool_sz)) {
+			assert(0); // TODO: expand
+			return nullptr;
+		}
+		used = alloc_start + alloc_sz;
+		return (void *)(pool + alloc_start);
+	}
 
 	template <typename T>
 	inline T *Allocate(size_t num = 1)
 	{
 		return (T *)Allocate(sizeof(T) * num, alignof(T));
+	}
+
+	template <typename T, typename... Args>
+	T *New(Args &&...args)
+	{
+		static_assert(std::is_base_of_v<InArena, T>);
+		auto mem = Allocate<T>(1);
+		return new (mem) T(std::forward<Args>(args)...);
 	}
 
 	size_t GetUsedSize() const
@@ -43,54 +76,3 @@ private:
 	size_t pool_sz{0};
 	size_t used{0};
 };
-
-template <typename T>
-struct MemArenaSTL {
-	using value_type = T;
-	using pointer = T *;
-	using size_type = std::size_t;
-	using difference_type = std::ptrdiff_t;
-
-	pointer allocate(size_type n)
-	{
-		return arena->Allocate<T>(n);
-	}
-
-	void deallocate(pointer p, size_type n) {}
-
-	bool operator==(MemArenaSTL const &rhs)
-	{
-		return this->arena == rhs.arena;
-	}
-
-	bool operator!=(MemArenaSTL const &rhs)
-	{
-		return !operator==(rhs);
-	}
-
-	explicit MemArenaSTL(MemArena *arena_) : arena(arena_) {}
-
-	MemArenaSTL(MemArenaSTL const &rhs) : arena(rhs.arena) {}
-
-	template <typename U>
-	MemArenaSTL(MemArenaSTL<U> const &rhs) : arena(rhs.arena)
-	{
-	}
-
-	MemArenaSTL(MemArenaSTL &&rhs) : arena(rhs.arena)
-	{
-		rhs.arena = nullptr;
-	}
-
-	template <typename U>
-	MemArenaSTL(MemArenaSTL<U> &&rhs) : arena(rhs.arena)
-	{
-		rhs.arena = nullptr;
-	}
-
-private:
-	MemArena *arena{};
-};
-
-template <typename T>
-using AArena = MemArenaSTL<T>;

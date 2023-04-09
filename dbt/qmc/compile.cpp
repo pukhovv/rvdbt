@@ -17,17 +17,9 @@ void *CompilerDoJob(CompilerJob &job)
 	return job.cruntime->AnnounceRegion(entry_ip, tcode);
 }
 
-// TODO: ArenaObjects
-static qir::Region *AllocRegion(MemArena *arena)
-{
-	auto *mem = arena->Allocate<Region>();
-	assert(mem);
-	return new (mem) qir::Region(arena, IRTranslator::state_info);
-}
-
 qir::Region *CompilerGenRegionIR(MemArena *arena, CompilerJob &job)
 {
-	auto *region = AllocRegion(arena);
+	auto *region = arena->New<Region>(arena, IRTranslator::state_info);
 
 	IRTranslator::Translate(region, &job.iprange, job.vmem);
 	PrinterPass::run(log_qir, "Initial IR after IRTranslator", region);

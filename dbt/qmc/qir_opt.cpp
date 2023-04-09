@@ -19,9 +19,9 @@ struct FolderVisitor : qir::InstVisitor<FolderVisitor, bool> {
 		if (likely(!visit(ins))) {
 			return ins;
 		}
-		auto last_ins = &*--qb.GetIterator();
+		auto last_ins = --qb.GetIterator();
 		qb.GetBlock()->ilist.erase(ins);
-		return last_ins;
+		return &*last_ins;
 	}
 
 	inline bool visitInst(Inst *ins)

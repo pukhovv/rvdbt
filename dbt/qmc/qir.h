@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dbt/arena.h"
+#include "dbt/arena_objects.h"
 #include "dbt/qmc/ilist.h"
 #include "dbt/qmc/qir_ops.h"
 #include "dbt/qmc/runtime_stubs.h"
@@ -60,7 +60,6 @@ struct OpInfo {
 
 extern OpInfo op_info[to_underlying(qir::Op::Count)];
 
-// TODO: return ptr
 ALWAYS_INLINE OpInfo const &GetOpInfo(qir::Op op)
 {
 	return op_info[to_underlying(op)];
@@ -299,7 +298,7 @@ private:
 	}
 };
 
-struct alignas(alignof(VOperand)) Inst : IListNode<Inst>, InstOperandAccessMixin<Inst> {
+struct alignas(alignof(VOperand)) Inst : IListNode<Inst>, InstOperandAccessMixin<Inst>, InArena {
 	friend struct InstOperandAccessMixin<Inst>;
 
 	enum Flags { // TODO: enum class
@@ -316,11 +315,6 @@ struct alignas(alignof(VOperand)) Inst : IListNode<Inst>, InstOperandAccessMixin
 	inline u32 GetId() const
 	{
 		return id;
-	}
-
-	inline void SetId(u32 id_)
-	{
-		id = id_;
 	}
 
 	inline Flags GetFlags() const
@@ -352,6 +346,19 @@ protected:
 	}
 
 private:
+	template <typename T, typename... Args>
+	requires std::is_base_of_v<Inst, T>
+	static T *New(MemArena *arena, u32 id, Flags flags, Args &&...args)
+	{
+		size_t n_ops = T::OutputCount() + T::InputCount();
+		size_t ops_size = sizeof(VOperand) * n_ops;
+		auto *mem = arena->Allocate(ops_size + sizeof(T), alignof(VOperand));
+		auto res = new ((u8 *)mem + ops_size) T(std::forward<Args>(args)...);
+		res->id = id;
+		res->flags = flags;
+		return res;
+	}
+
 	NO_COPY(Inst)
 	NO_MOVE(Inst)
 
@@ -606,9 +613,10 @@ struct InstSetcc : InstWithOperands<1, 2> {
 
 struct Block;
 struct Region;
+inline MemArena *ArenaOf(Region *rn);
 
-struct Block : IListNode<Block> {
-	Block(Region *rn_) : rn(rn_) {}
+struct Block : IListNode<Block>, InArena {
+	Block(Region *rn_, u32 id_) : rn(rn_), succs(ArenaOf(rn)), preds(ArenaOf(rn)), id(id_) {}
 
 	IList<Inst> ilist;
 
@@ -622,29 +630,10 @@ struct Block : IListNode<Block> {
 		return id;
 	}
 
-	inline void SetId(u32 id_)
-	{
-		id = id_;
-	}
-
-	struct Link : IListNode<Link> {
-		static Link *Create(Region *rn_, Block *to);
-
-		Block &operator*() const
-		{
-			return *ptr;
-		}
-
-	private:
-		Link(Block *bb) : ptr(bb) {}
-
-		Block *ptr;
-	};
-
 	void AddSucc(Block *succ)
 	{
-		succs.push_back(Link::Create(rn, succ));
-		succ->preds.push_back(Link::Create(rn, this));
+		succs.push_back(succ);
+		succ->preds.push_back(this);
 	}
 
 	auto &GetSuccs()
@@ -658,7 +647,7 @@ struct Block : IListNode<Block> {
 
 private:
 	Region *rn;
-	IList<Link> succs, preds;
+	ArenaVector<Block *> succs, preds;
 	u32 id{(u32)-1};
 };
 
@@ -733,30 +722,28 @@ private:
 	std::vector<VType> loc_info{};
 };
 
-struct Region {
-	Region(MemArena *arena_, StateInfo const *state_info_) : arena(arena_), vregs_info(state_info_) {}
+struct Region : InArena {
+	explicit Region(MemArena *arena_, StateInfo const *state_info_)
+	    : arena(arena_), vregs_info(state_info_)
+	{
+	}
 
-	IList<Block> blist;
+	auto &GetBlocks()
+	{
+		return blist;
+	}
 
 	Block *CreateBlock()
 	{
-		auto res = CreateInArena<Block>(this);
-		res->SetId(bb_id_counter++);
-		blist.insert(blist.end(), *res);
-		return res;
+		auto bb = arena->New<Block>(this, bb_id_counter++);
+		blist.push_back(bb);
+		return bb;
 	}
 
 	template <typename T, typename... Args>
-	requires std::is_base_of_v<Inst, T> T *_Create(Args &&...args)
+	requires std::is_base_of_v<Inst, T> T *Create(Inst::Flags flags, Args &&...args)
 	{
-		// TODO: move to node itself
-		size_t n_ops = T::OutputCount() + T::InputCount();
-		size_t ops_size = sizeof(VOperand) * n_ops;
-		auto *mem = arena->Allocate(ops_size + sizeof(T), alignof(VOperand));
-		assert(mem);
-		auto res = new ((u8 *)mem + ops_size) T(std::forward<Args>(args)...);
-		res->SetId(inst_id_counter++);
-		return res;
+		return Inst::New<T>(arena, inst_id_counter++, flags, std::forward<Args>(args)...);
 	}
 
 	u32 GetNumBlocks() const
@@ -775,15 +762,8 @@ struct Region {
 	}
 
 private:
-	template <typename T, typename... Args>
-	T *CreateInArena(Args &&...args)
-	{
-		auto *mem = arena->Allocate<T>();
-		assert(mem);
-		return new (mem) T(std::forward<Args>(args)...);
-	}
-
 	MemArena *arena;
+	IList<Block> blist;
 
 	VRegsInfo vregs_info;
 
@@ -791,11 +771,9 @@ private:
 	u32 bb_id_counter{0};
 };
 
-inline Block::Link *Block::Link::Create(Region *rn_, Block *to)
+inline MemArena *ArenaOf(Region *rn)
 {
-	auto *mem = rn_->GetArena()->Allocate<Block::Link>();
-	assert(mem);
-	return new (mem) Block::Link(to);
+	return rn->GetArena();
 }
 
 template <typename Derived, typename RT>

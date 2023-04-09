@@ -41,9 +41,7 @@ public:
 	template <typename... Args>                                                                          \
 	Inst *Create_##name(Args &&...args)                                                                  \
 	{                                                                                                    \
-		auto ins = Create<cls>(Op::_##name, std::forward<Args>(args)...);                            \
-		ins->SetFlags(Flags(flags));                                                                 \
-		return ins;                                                                                  \
+		return Create<cls>(Flags(flags), Op::_##name, std::forward<Args>(args)...);                  \
 	}
 	QIR_LEAF_OPS_LIST(OP)
 #undef OP
@@ -52,9 +50,7 @@ public:
 	template <typename... Args>                                                                          \
 	Inst *Create_##name(Args &&...args)                                                                  \
 	{                                                                                                    \
-		auto ins = Create<cls>(std::forward<Args>(args)...);                                         \
-		ins->SetFlags(Flags(flags));                                                                 \
-		return ins;                                                                                  \
+		return Create<cls>(Flags(flags), std::forward<Args>(args)...);                               \
 	}
 	QIR_BASE_OPS_LIST(OP)
 #undef OP
@@ -63,9 +59,7 @@ public:
 	template <typename... Args>                                                                          \
 	Inst *Create##cls(Op op, Args &&...args)                                                             \
 	{                                                                                                    \
-		auto ins = Create<cls>(std::forward<Args>(args)...);                                         \
-		ins->SetFlags(GetOpFlags(op));                                                               \
-		return ins;                                                                                  \
+		return Create<cls>(GetOpFlags(op), std::forward<Args>(args)...);                             \
 	}
 	QIR_CLASS_LIST(CLASS)
 #undef CLASS
@@ -74,7 +68,7 @@ private:
 	template <typename T, typename... Args>
 	requires std::is_base_of_v<Inst, T> Inst *Create(Args &&...args)
 	{
-		auto *ins = bb->GetRegion()->_Create<T>(std::forward<Args>(args)...);
+		auto *ins = bb->GetRegion()->Create<T>(std::forward<Args>(args)...);
 		bb->ilist.insert(it, *ins);
 		return ApplyFolder(bb, ins);
 	}

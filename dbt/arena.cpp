@@ -22,18 +22,3 @@ void MemArena::Destroy()
 	}
 	pool = nullptr;
 }
-
-void MemArena::Reset()
-{
-	used = 0;
-}
-
-void *MemArena::Allocate(size_t alloc_sz, size_t align)
-{
-	size_t alloc_start = roundup(used, align);
-	if (alloc_start + alloc_sz > pool_sz) {
-		return nullptr;
-	}
-	used = alloc_start + alloc_sz;
-	return (void *)(pool + alloc_start);
-}

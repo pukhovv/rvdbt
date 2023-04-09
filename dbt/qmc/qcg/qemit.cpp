@@ -197,19 +197,18 @@ void QEmit::Emit_hcall(qir::InstHcall *ins)
 
 void QEmit::Emit_br(qir::InstBr *ins)
 {
-	auto &bb_s = **bb->GetSuccs().begin();
-	auto &bb_ff = *++bb->getIter();
-	if (&bb_s != &bb_ff) {
-		j.jmp(labels[bb_s.GetId()]);
+	auto bb_s = bb->GetSuccs().at(0);
+	auto bb_ff = &*++bb->getIter();
+	if (bb_s != bb_ff) {
+		j.jmp(labels[bb_s->GetId()]);
 	}
 }
 
 void QEmit::Emit_brcc(qir::InstBrcc *ins)
 {
-	auto sit = bb->GetSuccs().begin();
-	auto &bb_t = **sit;
-	auto &bb_f = **++sit;
-	auto &bb_ff = *++bb->getIter();
+	auto bb_t = bb->GetSuccs().at(0);
+	auto bb_f = bb->GetSuccs().at(1);
+	auto bb_ff = &*++bb->getIter();
 
 	auto &vs0 = ins->i(0);
 	auto &vs1 = ins->i(1);
@@ -223,10 +222,10 @@ void QEmit::Emit_brcc(qir::InstBrcc *ins)
 
 	j.emit(asmjit::x86::Inst::kIdCmp, make_operand(vs0), make_operand(vs1));
 	auto jcc = asmjit::x86::Inst::jccFromCond(make_cc(cc));
-	j.emit(jcc, labels[bb_t.GetId()]);
+	j.emit(jcc, labels[bb_t->GetId()]);
 
-	if (&bb_f != &bb_ff) {
-		j.jmp(labels[bb_f.GetId()]);
+	if (bb_f != bb_ff) {
+		j.jmp(labels[bb_f->GetId()]);
 	}
 }
 
