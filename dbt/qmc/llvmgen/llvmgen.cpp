@@ -20,6 +20,10 @@ LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegmen
 	qcg_helper_ftype = llvm::FunctionType::get(voidt, {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
 	qcg_brind_ftype = llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_ftype),
 						  {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
+
+	md_unlikely = llvm::MDTuple::get(*ctx, {llvm::MDString::get(*ctx, "md_likely"),
+						llvm::ValueAsMetadata::get(constv<32>(1)),
+						llvm::ValueAsMetadata::get(constv<32>(64))});
 }
 
 void LLVMGen::AddFunction(u32 region_ip)
@@ -244,10 +248,10 @@ void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
 	auto rhs = LoadVOperand(ins->i(1));
 	auto cmp = lb->CreateCmp(MakeCC(ins->cc), lhs, rhs);
 
-	auto qbb_t = qbb->GetSuccs().at(0);
-	auto qbb_f = qbb->GetSuccs().at(1);
+	auto bb_t = MapBB(qbb->GetSuccs().at(0));
+	auto bb_f = MapBB(qbb->GetSuccs().at(1));
 
-	lb->CreateCondBr(cmp, MapBB(qbb_t), MapBB(qbb_f));
+	lb->CreateCondBr(cmp, bb_t, bb_f, md_unlikely);
 }
 
 #if 0
@@ -375,7 +379,7 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 		// TODO(tuning): put ip in cache entry and remove check
 		auto nullcheck =
 		    lb->CreateICmpEQ(cached_tb, llvm::ConstantPointerNull::getNullValue(lb->getPtrTy()));
-		lb->CreateCondBr(nullcheck, slowp_bb, nonnull_bb);
+		lb->CreateCondBr(nullcheck, slowp_bb, nonnull_bb, md_unlikely);
 
 		{
 			lb->SetInsertPoint(nonnull_bb);
@@ -384,7 +388,7 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 			tb_ip_ep = lb->CreateBitCast(tb_ip_ep, lb->getPtrTy());
 			auto tb_ip =
 			    lb->CreateAlignedLoad(lb->getInt32Ty(), tb_ip_ep, llvm::Align(alignof(u32)));
-			lb->CreateCondBr(lb->CreateICmpNE(tb_ip, gipv), slowp_bb, fastp_bb);
+			lb->CreateCondBr(lb->CreateICmpNE(tb_ip, gipv), slowp_bb, fastp_bb, md_unlikely);
 		}
 	}
 

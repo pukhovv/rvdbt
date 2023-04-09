@@ -78,6 +78,7 @@ private:
 	llvm::LLVMContext *ctx{};
 	llvm::Module *cmodule{};
 	llvm::FunctionType *qcg_ftype{}, *qcg_helper_ftype{}, *qcg_brind_ftype{};
+	llvm::MDNode *md_unlikely{};
 
 	// per segment
 	CodeSegment *segment{};
