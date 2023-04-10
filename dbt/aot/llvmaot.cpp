@@ -40,9 +40,28 @@ struct LLVMAOTCompilerRuntime final : CompilerRuntime {
 	}
 };
 
-static void LLVMAOTTranslatePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> *aot_symbols,
-				 llvm::Module *cmodule, objprof::PageData const &page,
-				 llvm::FunctionPassManager *fpm, llvm::FunctionAnalysisManager *fam)
+// Pre-analysis data for inlining
+static void DeclareKnownRegionEntries(llvm::Module *cmodule, objprof::PageData const &page)
+{
+	u32 const page_vaddr = page.pageno << mmu::PAGE_BITS;
+
+	auto segment = qir::CodeSegment(page_vaddr, mmu::PAGE_SIZE);
+	qir::LLVMGen llvm_gen(&cmodule->getContext(), cmodule, &segment);
+
+	for (u32 idx = 0; idx < page.executed.size(); ++idx) {
+		if (!page.executed[idx]) {
+			continue;
+		}
+		if (page.brind_target[idx] || page.segment_entry[idx]) {
+			u32 ip = page_vaddr + objprof::PageData::idx2po(idx);
+			llvm_gen.AddFunction(ip);
+		}
+	}
+}
+
+static void LLVMAOTTranslatePage(std::vector<AOTSymbol> *aot_symbols, llvm::Module *cmodule,
+				 objprof::PageData const &page, llvm::FunctionPassManager *fpm,
+				 llvm::FunctionAnalysisManager *fam)
 {
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
@@ -60,7 +79,9 @@ static void LLVMAOTTranslatePage(CompilerRuntime *aotrt, std::vector<AOTSymbol> 
 			ipranges.push_back({n->ip, n->ip_end});
 		}
 
-		qir::CompilerJob job(aotrt, (uptr)mmu::base, mg.segment, std::move(ipranges));
+		auto aotrt = LLVMAOTCompilerRuntime{};
+
+		qir::CompilerJob job(&aotrt, (uptr)mmu::base, mg.segment, std::move(ipranges));
 
 		auto arena = MemArena(1_MB);
 		auto *region = qir::CompilerGenRegionIR(&arena, job);
@@ -161,12 +182,14 @@ void LLVMAOTCompileELF()
 	    pb.buildFunctionSimplificationPipeline(optlevel, llvm::ThinOrFullLTOPhase::None);
 	llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(optlevel);
 
-	auto aotrt = LLVMAOTCompilerRuntime{};
 	std::vector<AOTSymbol> aot_symbols;
 	aot_symbols.reserve(64_KB);
 
 	for (auto const &page : objprof::GetProfile()) {
-		LLVMAOTTranslatePage(&aotrt, &aot_symbols, &cmodule, page, &fpm, &fam);
+		DeclareKnownRegionEntries(&cmodule, page);
+	}
+	for (auto const &page : objprof::GetProfile()) {
+		LLVMAOTTranslatePage(&aot_symbols, &cmodule, page, &fpm, &fam);
 	}
 	assert(!verifyModule(cmodule, &llvm::errs()));
 	mpm.run(cmodule, mam);

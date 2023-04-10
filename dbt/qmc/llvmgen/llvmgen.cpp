@@ -33,8 +33,13 @@ LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegmen
 
 void LLVMGen::AddFunction(u32 region_ip)
 {
-	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, MakeAotSymbol(region_ip),
-				      cmodule);
+	auto name = MakeAotSymbol(region_ip);
+	func = cmodule->getFunction(name);
+	if (func) {
+		return;
+	}
+
+	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, name, cmodule);
 	func->setDSOLocal(true);
 	func->setCallingConv(llvm::CallingConv::GHC);
 	func->getArg(0)->addAttr(llvm::Attribute::NoAlias);
