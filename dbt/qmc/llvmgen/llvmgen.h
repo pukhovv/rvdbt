@@ -77,7 +77,10 @@ private:
 	// globals
 	llvm::LLVMContext *ctx{};
 	llvm::Module *cmodule{};
-	llvm::FunctionType *qcg_ftype{}, *qcg_helper_ftype{}, *qcg_brind_ftype{};
+	llvm::FunctionType *qcg_ftype{};
+	llvm::FunctionType *qcg_gbr_patchpoint_ftype{};
+	llvm::FunctionType *qcg_stub_brind_ftype{};
+	llvm::FunctionType *qcg_helper_ftype{};
 	llvm::MDNode *md_unlikely{};
 
 	// per segment

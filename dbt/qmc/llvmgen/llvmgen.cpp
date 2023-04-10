@@ -15,11 +15,16 @@ LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegmen
     : ctx(context_), cmodule(cmodule_), segment(segment_)
 {
 	auto voidt = llvm::Type::getVoidTy(*ctx);
+	auto ptrt = llvm::PointerType::get(*ctx, 0);
 	auto i8ptrt = llvm::Type::getInt8PtrTy(*ctx);
+	auto i32t = llvm::Type::getInt32Ty(*ctx);
+
 	qcg_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i8ptrt}, false);
-	qcg_helper_ftype = llvm::FunctionType::get(voidt, {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
-	qcg_brind_ftype = llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_ftype),
-						  {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
+	qcg_gbr_patchpoint_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i8ptrt, ptrt}, false);
+	qcg_stub_brind_ftype =
+	    llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_ftype), {i8ptrt, i32t}, false);
+
+	qcg_helper_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i32t}, false);
 
 	md_unlikely = llvm::MDTuple::get(*ctx, {llvm::MDString::get(*ctx, "md_likely"),
 						llvm::ValueAsMetadata::get(constv<32>(1)),
@@ -328,12 +333,8 @@ static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
 	})();
 	slot.gip = gip;
 	slot.flags.cross_segment = cross_segment;
-	slot.flags.need_spfixup = true;
 
-	std::array<u8, jitabi::ppoint::spfixup_patch_size> spfixup_patch;
-	spfixup_patch.fill(0x90);
-	return ".string \"" + MakeAsmString(spfixup_patch) + MakeAsmString({(u8 *)&slot, sizeof(slot)}) +
-	       "\"";
+	return ".string \"" + MakeAsmString({(u8 *)&slot, sizeof(slot)}) + "\"";
 }
 
 void LLVMGen::Emit_gbr(qir::InstGBr *ins)
@@ -344,10 +345,15 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 		// TODO(tuning): prevent inlining?
 		CreateQCGFnCall(tgtfn);
 	} else {
+		// llvm.sponentry - crashes with my llvm build
+		// llvm.frameaddress - enforces frame creation in contradiction to ghccc
+		auto entrysp =
+		    lb->CreateIntrinsic(llvm::Intrinsic::addressofreturnaddress, {lb->getPtrTy()}, {});
+
 		auto code_str = MakeGbrPatchpoint(gip, !segment->InSegment(gip));
-		char const *constraint = "{r13},{rbp},~{memory},~{dirflag},~{fpsr},~{flags}";
-		auto asmp = llvm::InlineAsm::get(qcg_ftype, code_str, constraint, true, false);
-		auto call = lb->CreateCall(asmp, {statev, membasev});
+		char const *constraint = "{r13},{rbp},{rsp},~{memory},~{dirflag},~{fpsr},~{flags}";
+		auto asmp = llvm::InlineAsm::get(qcg_gbr_patchpoint_ftype, code_str, constraint, true, false);
+		auto call = lb->CreateCall(asmp, {statev, membasev, entrysp});
 		call->setTailCall(true);
 		call->setDoesNotReturn();
 		lb->CreateRetVoid();
@@ -406,8 +412,9 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 
 	{
 		lb->SetInsertPoint(slowp_bb);
-		auto target = lb->CreateCall(
-		    qcg_brind_ftype, MakeRStub(RuntimeStubId::id_brind, qcg_brind_ftype), {statev, gipv});
+		auto target =
+		    lb->CreateCall(qcg_stub_brind_ftype,
+				   MakeRStub(RuntimeStubId::id_brind, qcg_stub_brind_ftype), {statev, gipv});
 		CreateQCGFnCall(target);
 	}
 }

@@ -74,7 +74,6 @@ public:
 	u32 gip;
 	struct {
 		bool cross_segment : 1 {false};
-		bool need_spfixup : 1 {false};
 	} flags;
 } __attribute__((packed));
 
@@ -88,8 +87,6 @@ inline void BranchSlot::LinkLazyAOT(u16 stub_tab_offs)
 {
 	CreatePatch<CallTab>()->imm = stub_tab_offs + RuntimeStubTab::offs(RuntimeStubId::id_link_branch_aot);
 }
-
-static constexpr size_t spfixup_patch_size = 7; // amd64
 
 inline void BranchSlot::LinkLazyLLVMAOT(u16 stub_tab_offs)
 {
