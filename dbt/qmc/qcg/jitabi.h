@@ -74,6 +74,7 @@ public:
 	u32 gip;
 	struct {
 		bool cross_segment : 1 {false};
+		bool need_spfixup : 1 {false};
 	} flags;
 } __attribute__((packed));
 

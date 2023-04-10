@@ -135,16 +135,49 @@ HELPER _RetPair qcg_TryLinkBranchAOT(CPUState *state, void *retaddr)
 	return TryLinkBranch(state, ppoint::BranchSlot::FromCallRuntimeStubRetaddr(retaddr));
 }
 
+static ALWAYS_INLINE ppoint::BranchSlot *ApplySPFixupPatch(ppoint::BranchSlot *slot, uptr sp_delta)
+{
+	auto spfixup = (void *)((uptr)slot - ppoint::spfixup_patch_size);
+
+	auto apply_spfixup = [&]<typename P>(P const &p) {
+		memcpy(spfixup, &p, sizeof(p));
+		auto newslot = (ppoint::BranchSlot *)((uptr)spfixup + sizeof(p));
+		memmove(newslot, slot, sizeof(*slot));
+		slot = newslot;
+	};
+
+	if (sp_delta == 0) {
+		auto newslot = (ppoint::BranchSlot *)spfixup;
+		memmove(newslot, slot, sizeof(*slot));
+		slot = newslot;
+	} else if (likely(sp_delta == 8)) {
+		apply_spfixup((u8)0x58); // popq %rax
+	} else if (sp_delta < 128) {
+		struct sub_rsp_i8 {
+			u64 op_jmp_imm : 24 = 0xc48348;
+			i8 imm : 8;
+		} __attribute__((packed)) patch;
+		patch.imm = sp_delta;
+		apply_spfixup(patch);
+	} else {
+		struct sub_rsp_i32 {
+			u64 op_jmp_imm : 24 = 0xc48148;
+			i32 imm : 32;
+		} __attribute__((packed)) patch;
+		patch.imm = sp_delta;
+		apply_spfixup(patch);
+	}
+
+	slot->flags.need_spfixup = false;
+	return slot;
+}
+
 HELPER _RetPair qcg_TryLinkBranchLLVMAOT(CPUState *state, void *retaddr, uptr in_sp)
 {
-	auto slot = ppoint::BranchSlot::FromCallRuntimeStubRetaddr(retaddr);
-	auto &spfixup =
-	    *(std::array<u8, ppoint::spfixup_patch_size> *)((uptr)slot - ppoint::spfixup_patch_size);
-	uptr spdelta = state->sp_unwindptr - in_sp;
-	spfixup[0] = 0x48;
-	spfixup[1] = 0x81;
-	spfixup[2] = 0xc4;
-	*(u32 *)&spfixup[3] = spdelta;
+	auto *slot = ppoint::BranchSlot::FromCallRuntimeStubRetaddr(retaddr);
+	if (slot->flags.need_spfixup) {
+		slot = ApplySPFixupPatch(slot, state->sp_unwindptr - in_sp);
+	}
 	return TryLinkBranch(state, slot);
 }
 

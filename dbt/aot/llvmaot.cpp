@@ -155,9 +155,11 @@ void LLVMAOTCompileELF()
 	pb.registerLoopAnalyses(lam);
 	pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-	llvm::FunctionPassManager fpm = pb.buildFunctionSimplificationPipeline(
-	    llvm::OptimizationLevel::O3, llvm::ThinOrFullLTOPhase::None);
-	llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+	auto optlevel = llvm::OptimizationLevel::O3;
+
+	llvm::FunctionPassManager fpm =
+	    pb.buildFunctionSimplificationPipeline(optlevel, llvm::ThinOrFullLTOPhase::None);
+	llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(optlevel);
 
 	auto aotrt = LLVMAOTCompilerRuntime{};
 	std::vector<AOTSymbol> aot_symbols;

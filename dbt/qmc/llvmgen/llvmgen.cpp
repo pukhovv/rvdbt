@@ -49,6 +49,7 @@ llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
 	auto lirb = llvm::IRBuilder<>(llvm::BasicBlock::Create(*ctx, "entry", func));
 	lb = &lirb;
 	// EmitTrace();
+
 	CreateVGPRLocs(region->GetVRegsInfo());
 
 	id2bb.clear();
@@ -327,6 +328,7 @@ static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
 	})();
 	slot.gip = gip;
 	slot.flags.cross_segment = cross_segment;
+	slot.flags.need_spfixup = true;
 
 	std::array<u8, jitabi::ppoint::spfixup_patch_size> spfixup_patch;
 	spfixup_patch.fill(0x90);
@@ -348,7 +350,7 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 		auto call = lb->CreateCall(asmp, {statev, membasev});
 		call->setTailCall(true);
 		call->setDoesNotReturn();
-		lb->CreateUnreachable();
+		lb->CreateRetVoid();
 	}
 }
 
