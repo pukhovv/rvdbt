@@ -12,6 +12,7 @@ namespace dbt
 	X(escape_brind)                                                                                      \
 	X(link_branch_jit)                                                                                   \
 	X(link_branch_aot)                                                                                   \
+	X(link_branch_llvmaot)                                                                               \
 	X(brind)                                                                                             \
 	X(raise)                                                                                             \
 	X(trace)                                                                                             \

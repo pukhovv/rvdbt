@@ -57,6 +57,7 @@ public:
 	void Link(void *to);
 	void LinkLazyJIT();
 	void LinkLazyAOT(u16 stub_tab_offs);
+	void LinkLazyLLVMAOT(u16 stub_tab_offs);
 
 	// Calculate BranchSlot* from retaddr if call by ptr was used
 	static inline BranchSlot *FromCallPtrRetaddr(void *ra)
@@ -85,6 +86,14 @@ inline void BranchSlot::LinkLazyJIT()
 inline void BranchSlot::LinkLazyAOT(u16 stub_tab_offs)
 {
 	CreatePatch<CallTab>()->imm = stub_tab_offs + RuntimeStubTab::offs(RuntimeStubId::id_link_branch_aot);
+}
+
+static constexpr size_t spfixup_patch_size = 7; // amd64
+
+inline void BranchSlot::LinkLazyLLVMAOT(u16 stub_tab_offs)
+{
+	CreatePatch<CallTab>()->imm =
+	    stub_tab_offs + RuntimeStubTab::offs(RuntimeStubId::id_link_branch_llvmaot);
 }
 
 inline void BranchSlot::Link(void *to)

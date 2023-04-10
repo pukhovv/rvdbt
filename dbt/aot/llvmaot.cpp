@@ -168,6 +168,7 @@ void LLVMAOTCompileELF()
 	}
 	assert(!verifyModule(cmodule, &llvm::errs()));
 	mpm.run(cmodule, mam);
+	// cmodule.print(llvm::errs(), nullptr);
 	AddAOTTabSection(cmodule, aot_symbols);
 
 	auto obj_path = objprof::GetCachePath(AOT_O_EXTENSION);

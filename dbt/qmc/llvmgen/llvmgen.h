@@ -90,7 +90,6 @@ private:
 	std::unordered_map<u32, llvm::BasicBlock *> id2bb;
 	llvm::Value *statev{};
 	llvm::Value *membasev{};
-	llvm::Value *spunwindv{};
 	std::vector<llvm::Value *> vlocs;
 };
 

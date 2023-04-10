@@ -95,9 +95,8 @@ DEF_GPR(R15, R15);
 #undef DEF_GPR
 
 #define QMC_FIXED_REGS(X)                                                                                    \
-	X(STATE, R13)	 /* ghccc0 */                                                                        \
-	X(MEMBASE, RBP)	 /* ghccc1 */                                                                        \
-	X(SPUNWIND, R12) /* ghccc2 // Release after fixing llvm.patchpoint */                                \
+	X(STATE, R13)	/* ghccc0 */                                                                         \
+	X(MEMBASE, RBP) /* ghccc1 */                                                                         \
 	X(SP, RSP)
 
 #define DEF_FIXED(name, reg) [[maybe_unused]] static constexpr auto name = reg;
@@ -115,8 +114,7 @@ static constexpr RegMask GPR_ALL(((u32)1 << GPR_NUM) - 1);
 static constexpr RegMask GPR_POOL = GPR_ALL & ~GPR_FIXED;
 static constexpr RegMask GPR_CALL_SAVED = GPR_ALL & ~GPR_CALL_CLOBBER;
 
-#define QCG_SPILL_FRAME_SIZE 1024 // TODO: reuse temps
-static constexpr u16 spillframe_size = QCG_SPILL_FRAME_SIZE;
+static constexpr u16 spillframe_size = 1024; // TODO: reuse temps
 
 bool match_gp_const(qir::VType type, i64 val, RACtImm ct);
 

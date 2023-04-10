@@ -37,6 +37,8 @@ struct CPUStateImpl {
 
 	tcache::JMPCache *jmp_cache_brind{&tcache::jmp_cache_brind};
 	RuntimeStubTab stub_tab{};
+
+	uptr sp_unwindptr{};
 };
 
 // qmc config, also used to synchronize int/jit debug tracing

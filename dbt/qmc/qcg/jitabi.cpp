@@ -29,10 +29,9 @@ struct _RetPair {
  *			| ....		|  qcgstub_* frame
  */
 
-static_assert((u64(QCG_SPILL_FRAME_SIZE) & 15) == 0);
+static_assert((qcg::ArchTraits::spillframe_size & 15) == 0);
 static_assert(qcg::ArchTraits::STATE == asmjit::x86::Gp::kIdR13);
 static_assert(qcg::ArchTraits::MEMBASE == asmjit::x86::Gp::kIdBp);
-static_assert(qcg::ArchTraits::SPUNWIND == asmjit::x86::Gp::kIdR12);
 
 // Build qcg spillframe and enter translated code
 HELPER_ASM ppoint::BranchSlot *trampoline_to_jit(CPUState *state, void *vmem, void *tc_ptr)
@@ -45,16 +44,17 @@ HELPER_ASM ppoint::BranchSlot *trampoline_to_jit(CPUState *state, void *vmem, vo
 	    "pushq	%r15\n\t"
 	    "movq 	%rdi, %r13\n\t"	  // STATE
 	    "movq	%rsi, %rbp\n\t"); // MEMBASE
-	asm("sub     $" STRINGIFY(QCG_SPILL_FRAME_SIZE + 8) ", %rsp\n\t");
-	asm("leaq	-8(%rsp), %r12\n\t"); // FPSP_UNWIND trick
-	asm("callq	*%rdx\n\t"	      // tc_ptr
-	    "int	$3");		      // use escape/raise stub instead
+	asm("sub     	$%c0, %%rsp\n\t" : : "i"(qcg::ArchTraits::spillframe_size + 8));
+	asm("leaq	-8(%rsp), %rsi\n\t"); // sp of qcg tailcall frame
+	asm("movq	%%rsi, %c0(%%r13)\n\t" : : "i"(offsetof(CPUState, sp_unwindptr)));
+	asm("callq	*%rdx\n\t" // tc_ptr
+	    "int	$3");	   // use escape/raise stub instead
 }
 
 // Escape from translated code, forward rax(slot) to caller
 HELPER_ASM void qcgstub_escape_link()
 {
-	asm("addq   $(" STRINGIFY(QCG_SPILL_FRAME_SIZE + 16) "), %rsp\n\t");
+	asm("addq   	$%c0, %%rsp" : : "i"(qcg::ArchTraits::spillframe_size + 16));
 	asm("popq	%r15\n\t"
 	    "popq	%r14\n\t"
 	    "popq	%r13\n\t"
@@ -68,7 +68,7 @@ HELPER_ASM void qcgstub_escape_link()
 // A different stub used because llvm may overwrite rax before escaping
 HELPER_ASM void qcgstub_escape_brind()
 {
-	asm("addq   $(" STRINGIFY(QCG_SPILL_FRAME_SIZE + 16) "), %rsp\n\t");
+	asm("addq   	$%c0, %%rsp" : : "i"(qcg::ArchTraits::spillframe_size + 16));
 	asm("popq	%r15\n\t"
 	    "popq	%r14\n\t"
 	    "popq	%r13\n\t"
@@ -112,6 +112,19 @@ HELPER_ASM void qcgstub_link_branch_aot()
 	    "jmpq	*%rdx\n\t");
 }
 
+// Lazy region linking, qcg-relocation call target with stack check (llvm aot mode)
+HELPER_ASM void qcgstub_link_branch_llvmaot()
+{
+	asm("leaq	8(%rsp), %rdx\n\t" // sp in patchpoint
+	    "movq	0(%rsp), %rsi\n\t"
+	    "movq	%r13, %rdi\n\t");
+	asm("movq	%c0(%%r13), %%rsp\n\t" ::"i"(offsetof(CPUState, sp_unwindptr))); // rewind
+	asm("pushq	%rax\n\t"							 // align stack
+	    "callq	qcg_TryLinkBranchLLVMAOT@plt\n\t"
+	    "popq	%rdi\n\t" // pop somewhere
+	    "jmpq	*%rdx\n\t");
+}
+
 HELPER _RetPair qcg_TryLinkBranchJIT(CPUState *state, void *retaddr)
 {
 	return TryLinkBranch(state, ppoint::BranchSlot::FromCallPtrRetaddr(retaddr));
@@ -120,6 +133,19 @@ HELPER _RetPair qcg_TryLinkBranchJIT(CPUState *state, void *retaddr)
 HELPER _RetPair qcg_TryLinkBranchAOT(CPUState *state, void *retaddr)
 {
 	return TryLinkBranch(state, ppoint::BranchSlot::FromCallRuntimeStubRetaddr(retaddr));
+}
+
+HELPER _RetPair qcg_TryLinkBranchLLVMAOT(CPUState *state, void *retaddr, uptr in_sp)
+{
+	auto slot = ppoint::BranchSlot::FromCallRuntimeStubRetaddr(retaddr);
+	auto &spfixup =
+	    *(std::array<u8, ppoint::spfixup_patch_size> *)((uptr)slot - ppoint::spfixup_patch_size);
+	uptr spdelta = state->sp_unwindptr - in_sp;
+	spfixup[0] = 0x48;
+	spfixup[1] = 0x81;
+	spfixup[2] = 0xc4;
+	*(u32 *)&spfixup[3] = spdelta;
+	return TryLinkBranch(state, slot);
 }
 
 // Indirect branch slowpath

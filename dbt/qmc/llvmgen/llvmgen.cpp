@@ -16,7 +16,7 @@ LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegmen
 {
 	auto voidt = llvm::Type::getVoidTy(*ctx);
 	auto i8ptrt = llvm::Type::getInt8PtrTy(*ctx);
-	qcg_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i8ptrt, i8ptrt}, false);
+	qcg_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i8ptrt}, false);
 	qcg_helper_ftype = llvm::FunctionType::get(voidt, {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
 	qcg_brind_ftype = llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_ftype),
 						  {i8ptrt, llvm::Type::getInt32Ty(*ctx)}, false);
@@ -34,11 +34,9 @@ void LLVMGen::AddFunction(u32 region_ip)
 	func->setCallingConv(llvm::CallingConv::GHC);
 	func->getArg(0)->addAttr(llvm::Attribute::NoAlias);
 	func->getArg(1)->addAttr(llvm::Attribute::NoAlias);
-	func->getArg(2)->addAttr(llvm::Attribute::NoAlias);
 
 	func->getArg(0)->setName("state");
 	func->getArg(1)->setName("membase");
-	func->getArg(2)->setName("spunwind");
 }
 
 llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
@@ -47,10 +45,10 @@ llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
 	assert(func);
 	statev = func->getArg(0);
 	membasev = func->getArg(1);
-	spunwindv = func->getArg(2);
 
 	auto lirb = llvm::IRBuilder<>(llvm::BasicBlock::Create(*ctx, "entry", func));
 	lb = &lirb;
+	// EmitTrace();
 	CreateVGPRLocs(region->GetVRegsInfo());
 
 	id2bb.clear();
@@ -270,7 +268,7 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 					     const32(3 + sizeof(jitabi::ppoint::BranchSlot)),
 					     llvm::ConstantPointerNull::get(lb->getInt8PtrTy()),
 					     // fake_callee,
-					     const32(3), statev, membasev, spunwindv};
+					     const32(3), statev, membasev};
 
 	auto intr = lb->CreateIntrinsic(llvm::Intrinsic::experimental_patchpoint_void, {}, args);
 	intr->addFnAttr(llvm::Attribute::NoReturn);
@@ -285,7 +283,7 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 	stackmap->setCallingConv(llvm::CallingConv::GHC);
 	stackmap->setTailCall(true);
 #endif
-	// auto call = lb->CreateCall(qcg_ftype, fake_callee, {statev, membasev, spunwindv});
+	// auto call = lb->CreateCall(qcg_ftype, fake_callee, {statev, membasev});
 	// call->addFnAttr(llvm::Attribute::NoReturn);
 	// call->setCallingConv(llvm::CallingConv::GHC);
 	// call->setTailCall(true);
@@ -296,7 +294,7 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 
 void LLVMGen::CreateQCGFnCall(llvm::Value *fn)
 {
-	auto call = lb->CreateCall(qcg_ftype, fn, {statev, membasev, spunwindv});
+	auto call = lb->CreateCall(qcg_ftype, fn, {statev, membasev});
 	call->addFnAttr(llvm::Attribute::NoReturn);
 	call->setCallingConv(llvm::CallingConv::GHC);
 	call->setTailCall(true);
@@ -324,13 +322,14 @@ static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
 	thread_local auto slot = ([]() {
 		std::array<u8, sizeof(jitabi::ppoint::BranchSlot)> fake_payload;
 		auto slot = std::bit_cast<jitabi::ppoint::BranchSlot>(fake_payload);
-		slot.LinkLazyAOT(offsetof(CPUState, stub_tab));
+		slot.LinkLazyLLVMAOT(offsetof(CPUState, stub_tab));
 		return slot;
 	})();
 	slot.gip = gip;
 	slot.flags.cross_segment = cross_segment;
 
-	std::array<u8, 3> spfixup_patch = {0x4c, 0x89, 0xe4};
+	std::array<u8, jitabi::ppoint::spfixup_patch_size> spfixup_patch;
+	spfixup_patch.fill(0x90);
 	return ".string \"" + MakeAsmString(spfixup_patch) + MakeAsmString({(u8 *)&slot, sizeof(slot)}) +
 	       "\"";
 }
@@ -344,9 +343,9 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 		CreateQCGFnCall(tgtfn);
 	} else {
 		auto code_str = MakeGbrPatchpoint(gip, !segment->InSegment(gip));
-		char const *constraint = "{r13},{rbp},{r12},~{memory},~{dirflag},~{fpsr},~{flags}";
+		char const *constraint = "{r13},{rbp},~{memory},~{dirflag},~{fpsr},~{flags}";
 		auto asmp = llvm::InlineAsm::get(qcg_ftype, code_str, constraint, true, false);
-		auto call = lb->CreateCall(asmp, {statev, membasev, spunwindv});
+		auto call = lb->CreateCall(asmp, {statev, membasev});
 		call->setTailCall(true);
 		call->setDoesNotReturn();
 		lb->CreateUnreachable();
