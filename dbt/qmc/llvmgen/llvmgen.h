@@ -51,12 +51,16 @@ private:
 	void CreateVGPRLocs(qir::VRegsInfo *vinfo);
 	llvm::Type *MakeType(VType type);
 	llvm::Type *MakePtrType(VType type);
+	llvm::Instruction *AScopeState(llvm::Instruction *inst);
+	llvm::Instruction *AScopeVMem(llvm::Instruction *inst);
+	llvm::Instruction *AScopeOther(llvm::Instruction *inst);
+
 	llvm::Value *LoadVOperand(qir::VOperand op);
 	void StoreVOperand(qir::VOperand op, llvm::Value *val);
 	llvm::Value *MakeVMemLoc(VType type, llvm::Value *offs);
 	llvm::Value *MakeStateEP(llvm::Type *type, u32 offs);
 	llvm::Value *MakeStateEP(VType type, u32 offs);
-	llvm::Value *MakeVOperandEP(VOperand op);
+	std::pair<llvm::Value *, bool> MakeVOperandEP(VOperand op);
 	llvm::ConstantInt *MakeConst(VType type, u64 val);
 
 	static llvm::CmpInst::Predicate MakeCC(CondCode cc);
@@ -82,6 +86,9 @@ private:
 	llvm::FunctionType *qcg_stub_brind_ftype{};
 	llvm::FunctionType *qcg_helper_ftype{};
 	llvm::MDNode *md_unlikely{};
+	llvm::MDNode *md_astate{};
+	llvm::MDNode *md_avmem{};
+	llvm::MDNode *md_aother{};
 
 	// per segment
 	CodeSegment *segment{};
@@ -94,6 +101,7 @@ private:
 	llvm::Value *statev{};
 	llvm::Value *membasev{};
 	std::vector<llvm::Value *> vlocs;
+	RegN vlocs_nglobals{};
 };
 
 } // namespace dbt::qir

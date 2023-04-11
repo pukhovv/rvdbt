@@ -143,7 +143,7 @@ def GetBenchmarks_Automotive(prebuilts_dir):
     root = os.path.join(prebuilts_dir + "/automotive")
     # b.append(Benchmark(root + "/basicmath", ["basicmath_small"], True))
     b.append(Benchmark(root + "/basicmath", ["basicmath_large"]))
-    b.append(Benchmark(root + "/bitcnts", ["bitcnts", "3125000"]))
+    b.append(Benchmark(root + "/bitcnts", ["bitcnts", "10000000"]))
     # b.append(Benchmark(root + "/qsort",
     #         ["qsort_small", "input_small.dat"], True))
     b.append(Benchmark(root + "/qsort",
@@ -195,7 +195,7 @@ def GetBenchmarks_Coremark(prebuilts_dir):
 def GetBenchmarks(opts):
     benchmarks: list[Benchmark] = []
     benchmarks += GetBenchmarks_Automotive(opts.prebuilts_dir)
-    benchmarks += GetBenchmarks_Network(opts.prebuilts_dir)
+    # benchmarks += GetBenchmarks_Network(opts.prebuilts_dir)
     benchmarks += GetBenchmarks_Security(opts.prebuilts_dir)
     benchmarks += GetBenchmarks_Telecomm(opts.prebuilts_dir)
     benchmarks += GetBenchmarks_Coremark(opts.prebuilts_dir)

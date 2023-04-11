@@ -6,7 +6,9 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Verifier.h"
+#include <llvm-15/llvm/IR/IntrinsicInst.h>
 
 namespace dbt::qir
 {
@@ -26,9 +28,14 @@ LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegmen
 
 	qcg_helper_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i32t}, false);
 
-	md_unlikely = llvm::MDTuple::get(*ctx, {llvm::MDString::get(*ctx, "md_likely"),
-						llvm::ValueAsMetadata::get(constv<32>(1)),
-						llvm::ValueAsMetadata::get(constv<32>(64))});
+	auto mdb = llvm::MDBuilder(*ctx);
+
+	md_unlikely = mdb.createBranchWeights(1, 12);
+
+	auto md_adomain = mdb.createAliasScopeDomain("alias_global_domain");
+	md_astate = mdb.createAliasScope("alias_state", md_adomain);
+	md_avmem = mdb.createAliasScope("alias_vmem", md_adomain);
+	md_aother = mdb.createAliasScope("alias_other", md_adomain);
 }
 
 void LLVMGen::AddFunction(u32 region_ip)
@@ -89,16 +96,16 @@ llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
 void LLVMGen::CreateVGPRLocs(qir::VRegsInfo *vinfo)
 {
 	vlocs.clear();
-	auto n_glob = vinfo->NumGlobals();
+	vlocs_nglobals = vinfo->NumGlobals();
 
-	for (RegN i = 0; i < n_glob; ++i) {
+	for (RegN i = 0; i < vlocs_nglobals; ++i) {
 		auto *info = vinfo->GetGlobalInfo(i);
 		auto state_ep = MakeStateEP(info->type, info->state_offs);
 		state_ep->setName(std::string("@") + info->name);
 		vlocs.push_back(state_ep);
 	}
 
-	for (RegN i = n_glob; i < vinfo->NumAll(); ++i) {
+	for (RegN i = vlocs_nglobals; i < vinfo->NumAll(); ++i) {
 		auto type = vinfo->GetLocalType(i);
 		auto name = "%" + std::to_string(i);
 		auto state_ep = lb->CreateAlloca(MakeType(type), constv<32>(VTypeToSize(type)), name);
@@ -134,6 +141,36 @@ llvm::Type *LLVMGen::MakePtrType(VType type)
 	}
 }
 
+llvm::Instruction *LLVMGen::AScopeState(llvm::Instruction *inst)
+{
+	auto scope = llvm::MDNode::get(*ctx, md_astate);
+	auto noalias = llvm::MDNode::get(*ctx, {md_avmem, md_aother});
+
+	inst->setMetadata(llvm::LLVMContext::MD_alias_scope, scope);
+	inst->setMetadata(llvm::LLVMContext::MD_noalias, noalias);
+	return inst;
+}
+
+llvm::Instruction *LLVMGen::AScopeVMem(llvm::Instruction *inst)
+{
+	auto scope = llvm::MDNode::get(*ctx, md_avmem);
+	auto noalias = llvm::MDNode::get(*ctx, {md_astate, md_aother});
+
+	inst->setMetadata(llvm::LLVMContext::MD_alias_scope, scope);
+	inst->setMetadata(llvm::LLVMContext::MD_noalias, noalias);
+	return inst;
+}
+
+llvm::Instruction *LLVMGen::AScopeOther(llvm::Instruction *inst)
+{
+	auto scope = llvm::MDNode::get(*ctx, md_aother);
+	auto noalias = llvm::MDNode::get(*ctx, {md_astate, md_avmem});
+
+	inst->setMetadata(llvm::LLVMContext::MD_alias_scope, scope);
+	inst->setMetadata(llvm::LLVMContext::MD_noalias, noalias);
+	return inst;
+}
+
 llvm::Value *LLVMGen::MakeRStub(RuntimeStubId id, llvm::FunctionType *ftype)
 {
 	auto fp_type = llvm::PointerType::getUnqual(ftype);
@@ -141,7 +178,8 @@ llvm::Value *LLVMGen::MakeRStub(RuntimeStubId id, llvm::FunctionType *ftype)
 	auto state_ep = MakeStateEP(llvm::PointerType::getUnqual(fp_type),
 				    offsetof(CPUState, stub_tab) + RuntimeStubTab::offs(id));
 
-	return lb->CreateAlignedLoad(fp_type, state_ep, llvm::Align(alignof(uptr)), GetRuntimeStubName(id));
+	return AScopeState(
+	    lb->CreateAlignedLoad(fp_type, state_ep, llvm::Align(alignof(uptr)), GetRuntimeStubName(id)));
 }
 
 llvm::Value *LLVMGen::LoadVOperand(qir::VOperand op)
@@ -150,25 +188,32 @@ llvm::Value *LLVMGen::LoadVOperand(qir::VOperand op)
 	if (op.IsConst()) {
 		return MakeConst(op.GetType(), op.GetConst());
 	}
-	llvm::Value *state_ep = MakeVOperandEP(op);
-	return lb->CreateAlignedLoad(MakeType(type), state_ep, llvm::Align(VTypeToSize(type)));
+	auto [state_ep, is_global] = MakeVOperandEP(op);
+	auto load = lb->CreateAlignedLoad(MakeType(type), state_ep, llvm::Align(VTypeToSize(type)));
+	if (is_global) {
+		AScopeState(load);
+	}
+	return load;
 }
 
 void LLVMGen::StoreVOperand(qir::VOperand op, llvm::Value *val)
 {
 	auto type = op.GetType();
-	llvm::Value *state_ep = MakeVOperandEP(op);
-	lb->CreateAlignedStore(val, state_ep, llvm::Align(VTypeToSize(type)));
+	auto [state_ep, is_global] = MakeVOperandEP(op);
+	auto store = lb->CreateAlignedStore(val, state_ep, llvm::Align(VTypeToSize(type)));
+	if (is_global) {
+		AScopeState(store);
+	}
 }
 
-llvm::Value *LLVMGen::MakeVOperandEP(VOperand op)
+std::pair<llvm::Value *, bool> LLVMGen::MakeVOperandEP(VOperand op)
 {
 	assert(!op.IsConst());
 	if (op.IsVGPR()) {
-		return vlocs[op.GetVGPR()];
+		return std::make_pair(vlocs[op.GetVGPR()], op.GetVGPR() < vlocs_nglobals);
 	}
 	if (op.IsGSlot()) {
-		return MakeStateEP(op.GetType(), op.GetSlotOffs());
+		return std::make_pair(MakeStateEP(op.GetType(), op.GetSlotOffs()), true);
 	}
 	unreachable("");
 }
@@ -187,8 +232,13 @@ llvm::Value *LLVMGen::MakeStateEP(VType type, u32 offs)
 llvm::Value *LLVMGen::MakeVMemLoc(VType type, llvm::Value *addr)
 {
 	addr = lb->CreateZExt(addr, lb->getIntPtrTy(cmodule->getDataLayout()));
-	auto ep = lb->CreateGEP(lb->getInt8Ty(), membasev, addr);
-	return lb->CreateBitCast(ep, MakePtrType(type));
+	llvm::Value *ep;
+	if constexpr (config::zero_membase) {
+		return lb->CreateIntToPtr(addr, MakePtrType(type));
+	} else {
+		ep = lb->CreateGEP(lb->getInt8Ty(), membasev, addr);
+		return lb->CreateBitCast(ep, MakePtrType(type));
+	}
 }
 
 llvm::ConstantInt *LLVMGen::MakeConst(VType type, u64 val)
@@ -264,6 +314,7 @@ void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
 }
 
 #if 0
+// Experiments with llvm.patchpoint-like intrinsics as qcg gbrind patchpoint
 // llvm doesn't support tailcalls for experimental.patchpoint, actual call is not expanded until
 // MCInstLowering. The same applies to gc.statepoint
 //
@@ -374,19 +425,21 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 	slowp_bb->insertInto(func);
 	fastp_bb->insertInto(func);
 
-	llvm::Value *cached_tb;
+	llvm::LoadInst *cached_tb;
 	{
 		auto nonnull_bb = llvm::BasicBlock::Create(*ctx);
 		nonnull_bb->insertInto(func);
 
 		auto cache_ep = MakeStateEP(lb->getPtrTy(), offsetof(CPUState, jmp_cache_brind));
 		auto cachev = lb->CreateAlignedLoad(lb->getPtrTy(), cache_ep, llvm::Align(alignof(uptr)));
+		AScopeOther(cachev);
 
 		llvm::Value *hashv = lb->CreateLShr(gipv, constv<32>(2));
 		hashv = lb->CreateAnd(hashv, constv<32>((1ull << tcache::JMP_CACHE_BITS) - 1));
 
 		auto cached_tb_ep = lb->CreateInBoundsGEP(lb->getPtrTy(), cachev, hashv);
 		cached_tb = lb->CreateAlignedLoad(lb->getPtrTy(), cached_tb_ep, llvm::Align(alignof(uptr)));
+		AScopeOther(cached_tb);
 
 		// TODO(tuning): put ip in cache entry and remove check
 		auto nullcheck =
@@ -400,6 +453,7 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 			tb_ip_ep = lb->CreateBitCast(tb_ip_ep, lb->getPtrTy());
 			auto tb_ip =
 			    lb->CreateAlignedLoad(lb->getInt32Ty(), tb_ip_ep, llvm::Align(alignof(u32)));
+			AScopeOther(tb_ip);
 			lb->CreateCondBr(lb->CreateICmpNE(tb_ip, gipv), slowp_bb, fastp_bb, md_unlikely);
 		}
 	}
@@ -411,6 +465,7 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 		    lb->getInt8Ty(), cached_tb, offsetof(TBlock, tcode) + offsetof(TBlock::TCode, ptr));
 		tc_ptr_ep = lb->CreateBitCast(tc_ptr_ep, lb->getInt8PtrTy());
 		auto tc_ptr = lb->CreateAlignedLoad(fp_type, tc_ptr_ep, llvm::Align(alignof(uptr)));
+		AScopeOther(tc_ptr);
 
 		CreateQCGFnCall(tc_ptr);
 	}
@@ -430,7 +485,7 @@ void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)
 	// TODO: alignment in qir
 	llvm::MaybeAlign align = true ? llvm::MaybeAlign{} : llvm::Align(VTypeToSize(ins->sz));
 	auto mem_ep = MakeVMemLoc(ins->sz, LoadVOperand(ins->i(0)));
-	llvm::Value *val = lb->CreateAlignedLoad(MakeType(ins->sz), mem_ep, align);
+	llvm::Value *val = AScopeVMem(lb->CreateAlignedLoad(MakeType(ins->sz), mem_ep, align));
 	auto type = ins->o(0).GetType();
 	if (type != ins->sz) {
 		if (ins->sgn == VSign::S) {
@@ -451,7 +506,7 @@ void LLVMGen::Emit_vmstore(qir::InstVMStore *ins)
 	}
 	llvm::MaybeAlign align = true ? llvm::MaybeAlign{} : llvm::Align(VTypeToSize(ins->sz));
 	auto mem_ep = MakeVMemLoc(ins->sz, LoadVOperand(ins->i(0)));
-	lb->CreateAlignedStore(val, mem_ep, align);
+	AScopeVMem(lb->CreateAlignedStore(val, mem_ep, align));
 }
 
 void LLVMGen::Emit_setcc(qir::InstSetcc *ins)
