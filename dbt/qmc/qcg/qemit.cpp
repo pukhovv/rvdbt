@@ -251,30 +251,27 @@ void QEmit::Emit_gbrind(qir::InstGBrind *ins)
 
 	auto slowpath = j.newLabel();
 	{
-		// Inlined jmp_cache lookup
+		// Inlined l1_brind_cache lookup
 		auto tmp0 = asmjit::x86::rdi;
 		auto tmp1 = asmjit::x86::rdx;
 		if (jit_mode) {
-			j.mov(tmp1.r64(), (uptr)tcache::jmp_cache_brind.data());
+			j.mov(tmp1.r64(), (uptr)tcache::l1_brind_cache.data());
 		} else {
-			j.mov(tmp1.r64(), asmjit::x86::Mem(R_STATE, offsetof(CPUState, jmp_cache_brind)));
+			j.mov(tmp1.r64(), asmjit::x86::Mem(R_STATE, offsetof(CPUState, l1_brind_cache)));
 		}
 
-		j.mov(tmp0.r32(), ptgt.r32());
-		j.shr(tmp0.r32(), 2);
-		j.and_(tmp0.r32(), (1ull << tcache::JMP_CACHE_BITS) - 1);
+		static_assert(sizeof(tcache::BrindCacheEntry) == 1u << 4);
+		static_assert(offsetof(tcache::BrindCacheEntry, gip) == 0);
 
-		j.mov(tmp0.r64(), asmjit::x86::ptr(tmp1.r64(), tmp0.r64(), 3));
-		j.test(tmp0.r64(), tmp0.r64());
-		j.je(slowpath);
+		j.lea(tmp0.r32(), asmjit::x86::ptr(0, ptgt.r64(), 2));
+		j.and_(tmp0.r32(), ((1ull << tcache::L1_CACHE_BITS) - 1) << 4);
 
-		j.cmp(ptgt.r32(), asmjit::x86::ptr(tmp0.r64(), offsetof(dbt::TBlock, ip)));
+		j.cmp(asmjit::x86::ptr(tmp1.r64(), tmp0.r64(), 0, 0, sizeof(u32)), ptgt.r32());
 		j.jne(slowpath);
 
-		j.mov(tmp0.r64(), asmjit::x86::ptr(tmp0.r64(), offsetof(dbt::TBlock, tcode) +
-								   offsetof(dbt::TBlock::TCode, ptr)));
 		FrameDestroy();
-		j.jmp(tmp0.r64());
+		j.jmp(asmjit::x86::ptr(tmp1.r64(), tmp0.r64(), 0, offsetof(tcache::BrindCacheEntry, code),
+				       sizeof(u64)));
 	}
 
 	j.bind(slowpath);

@@ -16,17 +16,19 @@ namespace dbt::qir
 LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegment *segment_)
     : ctx(context_), cmodule(cmodule_), segment(segment_)
 {
-	auto voidt = llvm::Type::getVoidTy(*ctx);
-	auto ptrt = llvm::PointerType::get(*ctx, 0);
-	auto i8ptrt = llvm::Type::getInt8PtrTy(*ctx);
-	auto i32t = llvm::Type::getInt32Ty(*ctx);
+	auto voidty = llvm::Type::getVoidTy(*ctx);
+	auto ptrty = llvm::PointerType::get(*ctx, 0);
+	auto i8ptrty = llvm::Type::getInt8PtrTy(*ctx);
+	auto i32ty = llvm::Type::getInt32Ty(*ctx);
 
-	qcg_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i8ptrt}, false);
-	qcg_gbr_patchpoint_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i8ptrt, ptrt}, false);
+	qcg_ftype = llvm::FunctionType::get(voidty, {i8ptrty, i8ptrty}, false);
+	qcg_gbr_patchpoint_ftype = llvm::FunctionType::get(voidty, {i8ptrty, i8ptrty, ptrty}, false);
 	qcg_stub_brind_ftype =
-	    llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_ftype), {i8ptrt, i32t}, false);
+	    llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_ftype), {i8ptrty, i32ty}, false);
 
-	qcg_helper_ftype = llvm::FunctionType::get(voidt, {i8ptrt, i32t}, false);
+	qcg_helper_ftype = llvm::FunctionType::get(voidty, {i8ptrty, i32ty}, false);
+
+	brind_cache_entry_ty = llvm::StructType::create(*ctx, {i32ty, ptrty}, "BrindCacheEntry");
 
 	auto mdb = llvm::MDBuilder(*ctx);
 
@@ -425,49 +427,33 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 	slowp_bb->insertInto(func);
 	fastp_bb->insertInto(func);
 
-	llvm::LoadInst *cached_tb;
+	llvm::Value *entry_ep;
 	{
-		auto nonnull_bb = llvm::BasicBlock::Create(*ctx);
-		nonnull_bb->insertInto(func);
-
-		auto cache_ep = MakeStateEP(lb->getPtrTy(), offsetof(CPUState, jmp_cache_brind));
+		auto cache_ep = MakeStateEP(lb->getPtrTy(), offsetof(CPUState, l1_brind_cache));
 		auto cachev = lb->CreateAlignedLoad(lb->getPtrTy(), cache_ep, llvm::Align(alignof(uptr)));
-		AScopeOther(cachev);
+		AScopeState(cachev);
 
 		llvm::Value *hashv = lb->CreateLShr(gipv, constv<32>(2));
-		hashv = lb->CreateAnd(hashv, constv<32>((1ull << tcache::JMP_CACHE_BITS) - 1));
+		hashv = lb->CreateAnd(hashv, constv<32>((1ull << tcache::L1_CACHE_BITS) - 1));
 
-		auto cached_tb_ep = lb->CreateInBoundsGEP(lb->getPtrTy(), cachev, hashv);
-		cached_tb = lb->CreateAlignedLoad(lb->getPtrTy(), cached_tb_ep, llvm::Align(alignof(uptr)));
-		AScopeOther(cached_tb);
+		entry_ep = lb->CreateInBoundsGEP(brind_cache_entry_ty, cachev, hashv);
+		auto entry_gip_ep = lb->CreateStructGEP(brind_cache_entry_ty, entry_ep, 0);
+		auto entry_gipv =
+		    lb->CreateAlignedLoad(lb->getInt32Ty(), entry_gip_ep, llvm::Align(alignof(u32)));
+		AScopeOther(entry_gipv);
 
-		// TODO(tuning): put ip in cache entry and remove check
-		auto nullcheck =
-		    lb->CreateICmpEQ(cached_tb, llvm::ConstantPointerNull::getNullValue(lb->getPtrTy()));
-		lb->CreateCondBr(nullcheck, slowp_bb, nonnull_bb, md_unlikely);
-
-		{
-			lb->SetInsertPoint(nonnull_bb);
-			auto tb_ip_ep =
-			    lb->CreateConstInBoundsGEP1_32(lb->getInt8Ty(), cached_tb, offsetof(TBlock, ip));
-			tb_ip_ep = lb->CreateBitCast(tb_ip_ep, lb->getPtrTy());
-			auto tb_ip =
-			    lb->CreateAlignedLoad(lb->getInt32Ty(), tb_ip_ep, llvm::Align(alignof(u32)));
-			AScopeOther(tb_ip);
-			lb->CreateCondBr(lb->CreateICmpNE(tb_ip, gipv), slowp_bb, fastp_bb, md_unlikely);
-		}
+		lb->CreateCondBr(lb->CreateICmpNE(entry_gipv, gipv), slowp_bb, fastp_bb, md_unlikely);
 	}
 
 	{
 		lb->SetInsertPoint(fastp_bb);
-		auto fp_type = llvm::PointerType::getUnqual(qcg_ftype);
-		auto tc_ptr_ep = lb->CreateConstInBoundsGEP1_32(
-		    lb->getInt8Ty(), cached_tb, offsetof(TBlock, tcode) + offsetof(TBlock::TCode, ptr));
-		tc_ptr_ep = lb->CreateBitCast(tc_ptr_ep, lb->getInt8PtrTy());
-		auto tc_ptr = lb->CreateAlignedLoad(fp_type, tc_ptr_ep, llvm::Align(alignof(uptr)));
-		AScopeOther(tc_ptr);
 
-		CreateQCGFnCall(tc_ptr);
+		auto entry_code_ep = lb->CreateStructGEP(brind_cache_entry_ty, entry_ep, 1);
+		auto entry_codev =
+		    lb->CreateAlignedLoad(lb->getPtrTy(), entry_code_ep, llvm::Align(alignof(uptr)));
+		AScopeOther(entry_codev);
+
+		CreateQCGFnCall(entry_codev);
 	}
 
 	{

@@ -40,19 +40,19 @@ struct tcache {
 
 	static ALWAYS_INLINE TBlock *LookupFast(u32 ip)
 	{
-		auto *tb = jmp_cache_generic[jmp_hash(ip)];
+		auto *tb = l1_cache[l1hash(ip)];
 		return (tb->ip == ip) ? tb : nullptr;
 	}
 
 	static inline TBlock *Lookup(u32 ip)
 	{
-		auto hash = jmp_hash(ip);
-		auto *tb = jmp_cache_generic[hash];
+		auto hash = l1hash(ip);
+		auto *tb = l1_cache[hash];
 		if (tb != nullptr && tb->ip == ip)
 			return tb;
 		tb = LookupFull(ip);
 		if (tb != nullptr)
-			jmp_cache_generic[hash] = tb;
+			l1_cache[hash] = tb;
 		return tb;
 	}
 
@@ -60,8 +60,8 @@ struct tcache {
 
 	static inline void CacheBrind(TBlock *tb)
 	{
-		jmp_cache_brind[jmp_hash(tb->ip)] = tb;
-		if (!unlikely(tb->flags.is_brind_target)) {
+		l1_brind_cache[l1hash(tb->ip)] = {tb->ip, tb->tcode.ptr};
+		if (unlikely(!tb->flags.is_brind_target)) {
 			cflow_dump::RecordBrindEntry(tb->ip);
 		}
 		tb->flags.is_brind_target = true;
@@ -76,14 +76,20 @@ struct tcache {
 	static void *AllocateCode(size_t sz, u16 align);
 	static TBlock *AllocateTBlock();
 
-	static constexpr u32 JMP_CACHE_BITS = 12;
-	using JMPCache = std::array<TBlock *, 1u << JMP_CACHE_BITS>;
-	static JMPCache jmp_cache_generic;
-	static JMPCache jmp_cache_brind;
+	static constexpr u32 L1_CACHE_BITS = 12;
+	using L1Cache = std::array<TBlock *, 1u << L1_CACHE_BITS>;
+	static L1Cache l1_cache;
 
-	static ALWAYS_INLINE u32 jmp_hash(u32 ip)
+	struct BrindCacheEntry {
+		u32 gip;
+		void *code;
+	};
+	using L1BrindCache = std::array<BrindCacheEntry, 1u << L1_CACHE_BITS>;
+	static L1BrindCache l1_brind_cache;
+
+	static ALWAYS_INLINE u32 l1hash(u32 ip)
 	{
-		return (ip >> 2) & ((1ull << JMP_CACHE_BITS) - 1);
+		return (ip >> 2) & ((1ull << L1_CACHE_BITS) - 1);
 	}
 
 private:

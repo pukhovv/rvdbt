@@ -85,6 +85,8 @@ private:
 	llvm::FunctionType *qcg_gbr_patchpoint_ftype{};
 	llvm::FunctionType *qcg_stub_brind_ftype{};
 	llvm::FunctionType *qcg_helper_ftype{};
+	llvm::StructType *brind_cache_entry_ty{};
+
 	llvm::MDNode *md_unlikely{};
 	llvm::MDNode *md_astate{};
 	llvm::MDNode *md_avmem{};

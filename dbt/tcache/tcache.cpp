@@ -3,16 +3,16 @@
 namespace dbt
 {
 
-tcache::JMPCache tcache::jmp_cache_generic{};
-tcache::JMPCache tcache::jmp_cache_brind{};
+tcache::L1Cache tcache::l1_cache{};
+tcache::L1BrindCache tcache::l1_brind_cache{};
 tcache::MapType tcache::tcache_map{};
 MemArena tcache::code_pool{};
 MemArena tcache::tb_pool{};
 
 void tcache::Init()
 {
-	jmp_cache_generic.fill(nullptr);
-	jmp_cache_brind.fill(nullptr);
+	l1_cache.fill(nullptr);
+	l1_brind_cache.fill({0, nullptr});
 	tcache_map.clear();
 	tb_pool.Init(TB_POOL_SIZE, PROT_READ | PROT_WRITE);
 	code_pool.Init(CODE_POOL_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -22,8 +22,8 @@ void tcache::Destroy()
 {
 	log_tcache("Destroy tcache, code_pool size: %zu", code_pool.GetUsedSize());
 
-	jmp_cache_generic.fill(nullptr);
-	jmp_cache_brind.fill(nullptr);
+	l1_cache.fill(nullptr);
+	l1_brind_cache.fill({0, nullptr});
 	tcache_map.clear();
 	tb_pool.Destroy();
 	code_pool.Destroy();
@@ -32,8 +32,8 @@ void tcache::Destroy()
 void tcache::Invalidate()
 {
 	unreachable("tcache invalidation is not supported");
-	jmp_cache_generic.fill(nullptr);
-	jmp_cache_brind.fill(nullptr);
+	l1_cache.fill(nullptr);
+	l1_brind_cache.fill({0, nullptr});
 	tcache_map.clear();
 	tb_pool.Reset();
 	code_pool.Reset();
@@ -42,7 +42,7 @@ void tcache::Invalidate()
 void tcache::Insert(TBlock *tb)
 {
 	tcache_map.insert({tb->ip, tb});
-	jmp_cache_generic[jmp_hash(tb->ip)] = tb;
+	l1_cache[l1hash(tb->ip)] = tb;
 }
 
 TBlock *tcache::LookupUpperBound(u32 gip)

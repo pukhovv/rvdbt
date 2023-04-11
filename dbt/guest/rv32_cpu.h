@@ -35,7 +35,7 @@ struct CPUStateImpl {
 	gpr_t ip;
 	TrapCode trapno;
 
-	tcache::JMPCache *jmp_cache_brind{&tcache::jmp_cache_brind};
+	tcache::L1BrindCache *l1_brind_cache{&tcache::l1_brind_cache};
 	RuntimeStubTab stub_tab{};
 
 	uptr sp_unwindptr{};
