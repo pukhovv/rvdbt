@@ -60,8 +60,7 @@ static void DeclareKnownRegionEntries(llvm::Module *cmodule, objprof::PageData c
 }
 
 static void LLVMAOTTranslatePage(std::vector<AOTSymbol> *aot_symbols, llvm::Module *cmodule,
-				 objprof::PageData const &page, llvm::FunctionPassManager *fpm,
-				 llvm::FunctionAnalysisManager *fam)
+				 objprof::PageData const &page)
 {
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
@@ -87,10 +86,30 @@ static void LLVMAOTTranslatePage(std::vector<AOTSymbol> *aot_symbols, llvm::Modu
 		auto *region = qir::CompilerGenRegionIR(&arena, job);
 
 		auto entry_ip = r[0]->ip;
-		auto func = llvm_gen.Run(region, entry_ip);
-		fpm->run(*func, *fam);
+		llvm_gen.Run(region, entry_ip);
 		aot_symbols->push_back({entry_ip, 0});
 	}
+}
+
+struct IntrinExpansionPass : public llvm::PassInfoMixin<IntrinExpansionPass> {
+
+	IntrinExpansionPass(bool is_final_) : is_final(is_final_) {}
+
+	llvm::PreservedAnalyses run(llvm::Function &fn, llvm::FunctionAnalysisManager &fam);
+
+private:
+	bool is_final{};
+};
+
+llvm::PreservedAnalyses IntrinExpansionPass::run(llvm::Function &fn, llvm::FunctionAnalysisManager &fam)
+{
+	auto segment = qir::CodeSegment{0, 0}; // TODO
+	qir::LLVMGen llvm_gen(&fn.getContext(), fn.getParent(), &segment);
+	llvm_gen.final_expand = is_final;
+
+	llvm_gen.ExpandIntr(&fn);
+
+	return llvm::PreservedAnalyses::none();
 }
 
 static void AddAOTTabSection(llvm::Module &cmodule, std::vector<AOTSymbol> &aot_symbols)
@@ -164,6 +183,17 @@ void LLVMAOTCompileELF()
 {
 	auto cmodule = llvm::Module("test_module", g_llvm_ctx);
 
+	std::vector<AOTSymbol> aot_symbols;
+	aot_symbols.reserve(64_KB);
+
+	for (auto const &page : objprof::GetProfile()) {
+		DeclareKnownRegionEntries(&cmodule, page);
+	}
+	for (auto const &page : objprof::GetProfile()) {
+		LLVMAOTTranslatePage(&aot_symbols, &cmodule, page);
+	}
+	assert(!verifyModule(cmodule, &llvm::errs()));
+
 	llvm::LoopAnalysisManager lam;
 	llvm::FunctionAnalysisManager fam;
 	llvm::CGSCCAnalysisManager cgam;
@@ -178,21 +208,32 @@ void LLVMAOTCompileELF()
 
 	auto optlevel = llvm::OptimizationLevel::O3;
 
-	llvm::FunctionPassManager fpm =
-	    pb.buildFunctionSimplificationPipeline(optlevel, llvm::ThinOrFullLTOPhase::None);
-	llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(optlevel);
-
-	std::vector<AOTSymbol> aot_symbols;
-	aot_symbols.reserve(64_KB);
-
-	for (auto const &page : objprof::GetProfile()) {
-		DeclareKnownRegionEntries(&cmodule, page);
+	llvm::ModulePassManager mpm_final_expand;
+	mpm_final_expand.addPass(llvm::createModuleToFunctionPassAdaptor(IntrinExpansionPass(true)));
+	if constexpr (config::debug) {
+		mpm_final_expand.addPass(llvm::VerifierPass());
 	}
-	for (auto const &page : objprof::GetProfile()) {
-		LLVMAOTTranslatePage(&aot_symbols, &cmodule, page, &fpm, &fam);
+
+	pb.registerOptimizerEarlyEPCallback([](llvm::ModulePassManager &mpm, llvm::OptimizationLevel optl) {
+		mpm.addPass(llvm::createModuleToFunctionPassAdaptor(IntrinExpansionPass(false)));
+		if constexpr (config::debug) {
+			mpm.addPass(llvm::VerifierPass());
+		}
+	});
+
+	static constexpr uint n_expands = 4;
+
+	for (int i = 0; i < n_expands; ++i) {
+		if (i == n_expands - 1) {
+			log_aot("Run final expansion pipeline");
+			mpm_final_expand.run(cmodule, mam);
+		}
+		log_aot("Run optimize+expand pipeline");
+		// TODO: something breaks, invalidating all analyses dont help, create pipeline again
+		llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(optlevel);
+		mpm.run(cmodule, mam);
 	}
-	assert(!verifyModule(cmodule, &llvm::errs()));
-	mpm.run(cmodule, mam);
+
 	// cmodule.print(llvm::errs(), nullptr);
 	AddAOTTabSection(cmodule, aot_symbols);
 

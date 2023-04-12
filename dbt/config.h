@@ -19,6 +19,11 @@
 
 namespace config
 {
+#ifndef NDEBUG
+static constexpr bool debug = true;
+#else
+static constexpr bool debug = false;
+#endif
 #ifdef CONFIG_USE_INTERP
 static constexpr bool use_interp = true;
 #else

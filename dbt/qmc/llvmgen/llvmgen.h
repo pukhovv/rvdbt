@@ -17,9 +17,13 @@ namespace dbt::qir
 struct LLVMGen {
 	LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegment *segment_);
 
+	// TODO: split registering and adding a function
 	void AddFunction(u32 region_ip);
 
 	llvm::Function *Run(qir::Region *region, u32 region_ip);
+	void ExpandIntr(llvm::Function *fn);
+
+	bool final_expand = false;
 
 private:
 #define OP(name, cls, flags) void Emit_##name(qir::cls *ins);
@@ -75,6 +79,7 @@ private:
 	}
 
 	void CreateQCGFnCall(llvm::Value *fn);
+	void CreateQCGGbr(u32 gipv);
 	void EmitBinop(llvm::Instruction::BinaryOps opc, qir::InstBinop *ins);
 	void EmitTrace();
 
@@ -91,6 +96,9 @@ private:
 	llvm::MDNode *md_astate{};
 	llvm::MDNode *md_avmem{};
 	llvm::MDNode *md_aother{};
+
+	llvm::Function *intr_gbrind{};
+	bool ExpandIntr_gbrind(llvm::CallInst *call);
 
 	// per segment
 	CodeSegment *segment{};

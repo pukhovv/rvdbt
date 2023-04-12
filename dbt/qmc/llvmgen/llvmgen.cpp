@@ -38,6 +38,14 @@ LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegmen
 	md_astate = mdb.createAliasScope("alias_state", md_adomain);
 	md_avmem = mdb.createAliasScope("alias_vmem", md_adomain);
 	md_aother = mdb.createAliasScope("alias_other", md_adomain);
+
+	if (intr_gbrind = cmodule->getFunction("intr_gbrind"); !intr_gbrind) {
+		auto ftype = llvm::FunctionType::get(voidty, {i8ptrty, i8ptrty, i32ty}, false);
+		intr_gbrind =
+		    llvm::Function::Create(ftype, llvm::Function::ExternalLinkage, "intr_gbrind", cmodule);
+		intr_gbrind->setCallingConv(llvm::CallingConv::GHC);
+		intr_gbrind->addFnAttr(llvm::Attribute::NoMerge);
+	}
 }
 
 void LLVMGen::AddFunction(u32 region_ip)
@@ -51,6 +59,7 @@ void LLVMGen::AddFunction(u32 region_ip)
 	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, name, cmodule);
 	func->setDSOLocal(true);
 	func->setCallingConv(llvm::CallingConv::GHC);
+	func->setDoesNotThrow();
 	func->getArg(0)->addAttr(llvm::Attribute::NoAlias);
 	func->getArg(1)->addAttr(llvm::Attribute::NoAlias);
 
@@ -91,6 +100,7 @@ llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
 			Visitor(this).visit(&*iit);
 		}
 	}
+
 	assert(!verifyFunction(*func, &llvm::errs()));
 	return func;
 }
@@ -381,7 +391,7 @@ static std::string MakeAsmString(std::span<u8> const &data)
 	return hstr;
 }
 
-static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
+static std::string MakeGbrAsmString(u32 gip, bool cross_segment)
 {
 	thread_local auto slot = ([]() {
 		std::array<u8, sizeof(jitabi::ppoint::BranchSlot)> fake_payload;
@@ -395,9 +405,8 @@ static std::string MakeGbrPatchpoint(u32 gip, bool cross_segment)
 	return ".string \"" + MakeAsmString({(u8 *)&slot, sizeof(slot)}) + "\"";
 }
 
-void LLVMGen::Emit_gbr(qir::InstGBr *ins)
+void LLVMGen::CreateQCGGbr(u32 gip)
 {
-	auto gip = ins->tpc.GetConst();
 	if (auto tgtfn = cmodule->getFunction(MakeAotSymbol(gip)); tgtfn) {
 		// TODO: segment check?
 		// TODO(tuning): prevent inlining?
@@ -408,19 +417,69 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 		auto entrysp =
 		    lb->CreateIntrinsic(llvm::Intrinsic::addressofreturnaddress, {lb->getPtrTy()}, {});
 
-		auto code_str = MakeGbrPatchpoint(gip, !segment->InSegment(gip));
+		auto code_str = MakeGbrAsmString(gip, !segment->InSegment(gip));
 		char const *constraint = "{r13},{rbp},{rsp},~{memory},~{dirflag},~{fpsr},~{flags}";
 		auto asmp = llvm::InlineAsm::get(qcg_gbr_patchpoint_ftype, code_str, constraint, true, false);
 		auto call = lb->CreateCall(asmp, {statev, membasev, entrysp});
 		call->setTailCall(true);
 		call->setDoesNotReturn();
+		call->setDoesNotThrow();
 		lb->CreateRetVoid();
 	}
 }
 
-void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
+void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 {
-	auto gipv = LoadVOperand(ins->i(0));
+	auto gip = ins->tpc.GetConst();
+	CreateQCGGbr(gip);
+}
+
+void LLVMGen::ExpandIntr(llvm::Function *fn)
+{
+	auto lirb = llvm::IRBuilder<>(*ctx);
+	lb = &lirb;
+
+	for (auto &bb : fn->getBasicBlockList()) {
+		for (auto iit = bb.begin(); iit != bb.end(); ++iit) {
+			if (!llvm::isa<llvm::CallInst>(&*iit)) {
+				continue;
+			}
+			llvm::CallInst *call = llvm::cast<llvm::CallInst>(*&iit);
+
+			auto callee = call->getCalledFunction();
+			if (!callee) {
+				continue;
+			}
+
+			if (callee->getName() == intr_gbrind->getName()) {
+				lb->SetInsertPoint(call);
+				if (!ExpandIntr_gbrind(call)) {
+					continue;
+				}
+				bb.getTerminator()->eraseFromParent();
+				iit = call->eraseFromParent();
+				--iit;
+			}
+		}
+	}
+}
+
+bool LLVMGen::ExpandIntr_gbrind(llvm::CallInst *call)
+{
+	// TODO: hide per-function data
+	func = call->getParent()->getParent();
+	statev = call->getArgOperand(0);
+	membasev = call->getArgOperand(1);
+	auto gipv = call->getArgOperand(2);
+
+	if (auto const_gipv = llvm::dyn_cast<llvm::Constant>(gipv)) {
+		CreateQCGGbr(llvm::cast<llvm::ConstantInt>(const_gipv)->getZExtValue());
+		return true;
+	}
+
+	if (!final_expand) {
+		return false;
+	}
 
 	auto slowp_bb = llvm::BasicBlock::Create(*ctx);
 	auto fastp_bb = llvm::BasicBlock::Create(*ctx);
@@ -463,6 +522,19 @@ void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
 				   MakeRStub(RuntimeStubId::id_brind, qcg_stub_brind_ftype), {statev, gipv});
 		CreateQCGFnCall(target);
 	}
+
+	return true;
+}
+
+void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
+{
+	auto gipv = LoadVOperand(ins->i(0));
+
+	auto call = lb->CreateCall(intr_gbrind, {statev, membasev, gipv});
+	call->setCallingConv(llvm::CallingConv::GHC);
+	call->setTailCall();
+	call->setDoesNotReturn();
+	lb->CreateUnreachable();
 }
 
 void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)
