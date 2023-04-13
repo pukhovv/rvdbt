@@ -13,24 +13,25 @@
 namespace dbt::qir
 {
 
-LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegment *segment_)
-    : ctx(context_), cmodule(cmodule_), segment(segment_)
+thread_local llvm::LLVMContext g_llvm_ctx;
+
+LLVMGenCtx::LLVMGenCtx(llvm::Module *cmodule_) : ctx(g_llvm_ctx), cmodule(*cmodule_)
 {
-	auto voidty = llvm::Type::getVoidTy(*ctx);
-	auto ptrty = llvm::PointerType::get(*ctx, 0);
-	auto i8ptrty = llvm::Type::getInt8PtrTy(*ctx);
-	auto i32ty = llvm::Type::getInt32Ty(*ctx);
+	auto voidty = llvm::Type::getVoidTy(ctx);
+	auto ptrty = llvm::PointerType::get(ctx, 0);
+	auto i8ptrty = llvm::Type::getInt8PtrTy(ctx);
+	auto i32ty = llvm::Type::getInt32Ty(ctx);
 
-	qcg_ftype = llvm::FunctionType::get(voidty, {i8ptrty, i8ptrty}, false);
-	qcg_gbr_patchpoint_ftype = llvm::FunctionType::get(voidty, {i8ptrty, i8ptrty, ptrty}, false);
-	qcg_stub_brind_ftype =
-	    llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_ftype), {i8ptrty, i32ty}, false);
+	qcg_fnty = llvm::FunctionType::get(voidty, {i8ptrty, i8ptrty}, false);
+	qcg_gbr_patch_fnty = llvm::FunctionType::get(voidty, {i8ptrty, i8ptrty, ptrty}, false);
+	qcg_stub_brind_fnty =
+	    llvm::FunctionType::get(llvm::PointerType::getUnqual(qcg_fnty), {i8ptrty, i32ty}, false);
 
-	qcg_helper_ftype = llvm::FunctionType::get(voidty, {i8ptrty, i32ty}, false);
+	qcg_helper_fnty = llvm::FunctionType::get(voidty, {i8ptrty, i32ty}, false);
 
-	brind_cache_entry_ty = llvm::StructType::create(*ctx, {i32ty, ptrty}, "BrindCacheEntry");
+	brind_cache_entry_ty = llvm::StructType::create(ctx, {i32ty, ptrty}, "BrindCacheEntry");
 
-	auto mdb = llvm::MDBuilder(*ctx);
+	auto mdb = llvm::MDBuilder(ctx);
 
 	md_unlikely = mdb.createBranchWeights(1, 12);
 
@@ -38,25 +39,17 @@ LLVMGen::LLVMGen(llvm::LLVMContext *context_, llvm::Module *cmodule_, CodeSegmen
 	md_astate = mdb.createAliasScope("alias_state", md_adomain);
 	md_avmem = mdb.createAliasScope("alias_vmem", md_adomain);
 	md_aother = mdb.createAliasScope("alias_other", md_adomain);
-
-	if (intr_gbrind = cmodule->getFunction("intr_gbrind"); !intr_gbrind) {
-		auto ftype = llvm::FunctionType::get(voidty, {i8ptrty, i8ptrty, i32ty}, false);
-		intr_gbrind =
-		    llvm::Function::Create(ftype, llvm::Function::ExternalLinkage, "intr_gbrind", cmodule);
-		intr_gbrind->setCallingConv(llvm::CallingConv::GHC);
-		intr_gbrind->addFnAttr(llvm::Attribute::NoMerge);
-	}
 }
 
-void LLVMGen::AddFunction(u32 region_ip)
+void LLVMGenCtx::AddFunction(u32 region_ip, CodeSegment segment)
 {
 	auto name = MakeAotSymbol(region_ip);
-	func = cmodule->getFunction(name);
+	auto func = cmodule.getFunction(name);
 	if (func) {
 		return;
 	}
 
-	func = llvm::Function::Create(qcg_ftype, llvm::Function::ExternalLinkage, name, cmodule);
+	func = llvm::Function::Create(qcg_fnty, llvm::Function::ExternalLinkage, name, cmodule);
 	func->setDSOLocal(true);
 	func->setCallingConv(llvm::CallingConv::GHC);
 	func->setDoesNotThrow();
@@ -65,98 +58,60 @@ void LLVMGen::AddFunction(u32 region_ip)
 
 	func->getArg(0)->setName("state");
 	func->getArg(1)->setName("membase");
+
+	// TODO: add segment id as MD_annotation
+	fn2seg.insert({name, segment});
 }
 
-llvm::Function *LLVMGen::Run(qir::Region *region, u32 region_ip)
+void LLVMGen::ExpandIntrinsics(bool is_final)
 {
-	func = cmodule->getFunction(MakeAotSymbol(region_ip));
+	auto lirb = llvm::IRBuilder<>(lctx);
+	lb = &lirb;
+
+	for (auto &bb : func->getBasicBlockList()) {
+		for (auto iit = bb.begin(); iit != bb.end(); ++iit) {
+			if (!llvm::isa<llvm::CallInst>(&*iit)) {
+				continue;
+			}
+			llvm::CallInst *call = llvm::cast<llvm::CallInst>(*&iit);
+
+			auto callee = call->getCalledFunction();
+			if (!callee) {
+				continue;
+			}
+
+			if (auto it = g.intrin_fns.find(callee->getName()); it != g.intrin_fns.end()) {
+				lb->SetInsertPoint(call);
+				if (!it->second(*this, call, is_final)) {
+					continue;
+				}
+				iit = call->eraseFromParent();
+				--iit;
+			}
+		}
+	}
+}
+
+llvm::PreservedAnalyses IntrinsicExpansionPass::run(llvm::Function &fn, llvm::FunctionAnalysisManager &fam)
+{
+	LLVMGen(ctx, &fn).ExpandIntrinsics(is_final);
+	return llvm::PreservedAnalyses::none();
+}
+
+LLVMGen::LLVMGen(LLVMGenCtx &ctx_, llvm::Function *func_)
+    : g(ctx_), lctx(g.ctx), cmodule(g.cmodule), func(func_)
+{
 	assert(func);
+	segment = &g.fn2seg.find(std::string(func->getName()))->second;
+
 	statev = func->getArg(0);
 	membasev = func->getArg(1);
-
-	auto lirb = llvm::IRBuilder<>(llvm::BasicBlock::Create(*ctx, "entry", func));
-	lb = &lirb;
-	// EmitTrace();
-
-	CreateVGPRLocs(region->GetVRegsInfo());
-
-	id2bb.clear();
-	for (auto &bb : region->GetBlocks()) {
-		auto id = bb.GetId();
-		auto *lbb = llvm::BasicBlock::Create(*ctx, "bb." + std::to_string(bb.GetId()), func);
-		if (id == 0) { // TODO: set first bb in qir
-			lb->CreateBr(lbb);
-		}
-		id2bb.insert({id, lbb});
-	}
-
-	for (auto &bb : region->GetBlocks()) {
-		auto lbb = id2bb.find(bb.GetId())->second;
-		lb->SetInsertPoint(lbb);
-		qbb = &bb;
-
-		auto &ilist = bb.ilist;
-		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
-			Visitor(this).visit(&*iit);
-		}
-	}
-
-	assert(!verifyFunction(*func, &llvm::errs()));
-	return func;
-}
-
-void LLVMGen::CreateVGPRLocs(qir::VRegsInfo *vinfo)
-{
-	vlocs.clear();
-	vlocs_nglobals = vinfo->NumGlobals();
-
-	for (RegN i = 0; i < vlocs_nglobals; ++i) {
-		auto *info = vinfo->GetGlobalInfo(i);
-		auto state_ep = MakeStateEP(info->type, info->state_offs);
-		state_ep->setName(std::string("@") + info->name);
-		vlocs.push_back(state_ep);
-	}
-
-	for (RegN i = vlocs_nglobals; i < vinfo->NumAll(); ++i) {
-		auto type = vinfo->GetLocalType(i);
-		auto name = "%" + std::to_string(i);
-		auto state_ep = lb->CreateAlloca(MakeType(type), constv<32>(VTypeToSize(type)), name);
-		vlocs.push_back(state_ep);
-	}
-}
-
-llvm::Type *LLVMGen::MakeType(VType type)
-{
-	switch (type) {
-	case VType::I8:
-		return lb->getInt8Ty();
-	case VType::I16:
-		return lb->getInt16Ty();
-	case VType::I32:
-		return lb->getInt32Ty();
-	default:
-		unreachable("");
-	}
-}
-
-llvm::Type *LLVMGen::MakePtrType(VType type)
-{
-	switch (type) {
-	case VType::I8:
-		return llvm::Type::getInt8PtrTy(*ctx);
-	case VType::I16:
-		return llvm::Type::getInt16PtrTy(*ctx);
-	case VType::I32:
-		return llvm::Type::getInt32PtrTy(*ctx);
-	default:
-		unreachable("");
-	}
 }
 
 llvm::Instruction *LLVMGen::AScopeState(llvm::Instruction *inst)
 {
-	auto scope = llvm::MDNode::get(*ctx, md_astate);
-	auto noalias = llvm::MDNode::get(*ctx, {md_avmem, md_aother});
+	auto scope = llvm::MDNode::get(lctx, g.md_astate);
+	auto noalias = llvm::MDNode::get(lctx, {g.md_avmem, g.md_aother});
 
 	inst->setMetadata(llvm::LLVMContext::MD_alias_scope, scope);
 	inst->setMetadata(llvm::LLVMContext::MD_noalias, noalias);
@@ -165,8 +120,8 @@ llvm::Instruction *LLVMGen::AScopeState(llvm::Instruction *inst)
 
 llvm::Instruction *LLVMGen::AScopeVMem(llvm::Instruction *inst)
 {
-	auto scope = llvm::MDNode::get(*ctx, md_avmem);
-	auto noalias = llvm::MDNode::get(*ctx, {md_astate, md_aother});
+	auto scope = llvm::MDNode::get(lctx, g.md_avmem);
+	auto noalias = llvm::MDNode::get(lctx, {g.md_astate, g.md_aother});
 
 	inst->setMetadata(llvm::LLVMContext::MD_alias_scope, scope);
 	inst->setMetadata(llvm::LLVMContext::MD_noalias, noalias);
@@ -175,12 +130,30 @@ llvm::Instruction *LLVMGen::AScopeVMem(llvm::Instruction *inst)
 
 llvm::Instruction *LLVMGen::AScopeOther(llvm::Instruction *inst)
 {
-	auto scope = llvm::MDNode::get(*ctx, md_aother);
-	auto noalias = llvm::MDNode::get(*ctx, {md_astate, md_avmem});
+	auto scope = llvm::MDNode::get(lctx, g.md_aother);
+	auto noalias = llvm::MDNode::get(lctx, {g.md_astate, g.md_avmem});
 
 	inst->setMetadata(llvm::LLVMContext::MD_alias_scope, scope);
 	inst->setMetadata(llvm::LLVMContext::MD_noalias, noalias);
 	return inst;
+}
+
+llvm::Value *LLVMGen::MakeStateEP(llvm::PointerType *type, u32 offs)
+{
+	auto ep = lb->CreateConstInBoundsGEP1_32(lb->getInt8Ty(), statev, offs);
+	return lb->CreateBitCast(ep, type);
+}
+
+llvm::Value *LLVMGen::MakeVMemLoc(llvm::PointerType *ptype, llvm::Value *addr)
+{
+	addr = lb->CreateZExt(addr, lb->getIntPtrTy(cmodule.getDataLayout()));
+	llvm::Value *ep;
+	if constexpr (config::zero_membase) {
+		return lb->CreateIntToPtr(addr, ptype);
+	} else {
+		ep = lb->CreateGEP(lb->getInt8Ty(), membasev, addr);
+		return lb->CreateBitCast(ep, ptype);
+	}
 }
 
 llvm::Value *LLVMGen::MakeRStub(RuntimeStubId id, llvm::FunctionType *ftype)
@@ -192,137 +165,6 @@ llvm::Value *LLVMGen::MakeRStub(RuntimeStubId id, llvm::FunctionType *ftype)
 
 	return AScopeState(
 	    lb->CreateAlignedLoad(fp_type, state_ep, llvm::Align(alignof(uptr)), GetRuntimeStubName(id)));
-}
-
-llvm::Value *LLVMGen::LoadVOperand(qir::VOperand op)
-{
-	auto type = op.GetType();
-	if (op.IsConst()) {
-		return MakeConst(op.GetType(), op.GetConst());
-	}
-	auto [state_ep, is_global] = MakeVOperandEP(op);
-	auto load = lb->CreateAlignedLoad(MakeType(type), state_ep, llvm::Align(VTypeToSize(type)));
-	if (is_global) {
-		AScopeState(load);
-	}
-	return load;
-}
-
-void LLVMGen::StoreVOperand(qir::VOperand op, llvm::Value *val)
-{
-	auto type = op.GetType();
-	auto [state_ep, is_global] = MakeVOperandEP(op);
-	auto store = lb->CreateAlignedStore(val, state_ep, llvm::Align(VTypeToSize(type)));
-	if (is_global) {
-		AScopeState(store);
-	}
-}
-
-std::pair<llvm::Value *, bool> LLVMGen::MakeVOperandEP(VOperand op)
-{
-	assert(!op.IsConst());
-	if (op.IsVGPR()) {
-		return std::make_pair(vlocs[op.GetVGPR()], op.GetVGPR() < vlocs_nglobals);
-	}
-	if (op.IsGSlot()) {
-		return std::make_pair(MakeStateEP(op.GetType(), op.GetSlotOffs()), true);
-	}
-	unreachable("");
-}
-
-llvm::Value *LLVMGen::MakeStateEP(llvm::Type *type, u32 offs)
-{
-	auto ep = lb->CreateConstInBoundsGEP1_32(lb->getInt8Ty(), statev, offs);
-	return lb->CreateBitCast(ep, type);
-}
-
-llvm::Value *LLVMGen::MakeStateEP(VType type, u32 offs)
-{
-	return MakeStateEP(MakePtrType(type), offs);
-}
-
-llvm::Value *LLVMGen::MakeVMemLoc(VType type, llvm::Value *addr)
-{
-	addr = lb->CreateZExt(addr, lb->getIntPtrTy(cmodule->getDataLayout()));
-	llvm::Value *ep;
-	if constexpr (config::zero_membase) {
-		return lb->CreateIntToPtr(addr, MakePtrType(type));
-	} else {
-		ep = lb->CreateGEP(lb->getInt8Ty(), membasev, addr);
-		return lb->CreateBitCast(ep, MakePtrType(type));
-	}
-}
-
-llvm::ConstantInt *LLVMGen::MakeConst(VType type, u64 val)
-{
-	return llvm::ConstantInt::get(*ctx, llvm::APInt(VTypeToSize(type) * 8, val));
-}
-
-llvm::CmpInst::Predicate LLVMGen::MakeCC(CondCode cc)
-{
-	switch (cc) {
-	case CondCode::EQ:
-		return llvm::CmpInst::Predicate::ICMP_EQ;
-	case CondCode::NE:
-		return llvm::CmpInst::Predicate::ICMP_NE;
-	case CondCode::LE:
-		return llvm::CmpInst::Predicate::ICMP_SLE;
-	case CondCode::LT:
-		return llvm::CmpInst::Predicate::ICMP_SLT;
-	case CondCode::GE:
-		return llvm::CmpInst::Predicate::ICMP_SGE;
-	case CondCode::GT:
-		return llvm::CmpInst::Predicate::ICMP_SGT;
-	case CondCode::LEU:
-		return llvm::CmpInst::Predicate::ICMP_ULE;
-	case CondCode::LTU:
-		return llvm::CmpInst::Predicate::ICMP_ULT;
-	case CondCode::GEU:
-		return llvm::CmpInst::Predicate::ICMP_UGE;
-	case CondCode::GTU:
-		return llvm::CmpInst::Predicate::ICMP_UGT;
-	default:
-		unreachable("");
-	}
-}
-
-llvm::BasicBlock *LLVMGen::MapBB(Block *bb)
-{
-	return id2bb.find(bb->GetId())->second;
-}
-
-void LLVMGen::EmitTrace()
-{
-	auto qcg_trace_type = llvm::FunctionType::get(lb->getVoidTy(), {lb->getInt8PtrTy()}, false);
-	lb->CreateCall(qcg_trace_type, MakeRStub(RuntimeStubId::id_trace, qcg_trace_type), {statev});
-}
-
-void LLVMGen::Emit_hcall(qir::InstHcall *ins)
-{
-	lb->CreateCall(qcg_helper_ftype, MakeRStub(ins->stub, qcg_helper_ftype),
-		       {statev, LoadVOperand(ins->i(0))});
-	if (--qbb->ilist.end() == ins) {
-		lb->CreateRetVoid();
-	}
-}
-
-void LLVMGen::Emit_br(qir::InstBr *ins)
-{
-	auto qbb_s = qbb->GetSuccs().at(0);
-
-	lb->CreateBr(MapBB(qbb_s));
-}
-
-void LLVMGen::Emit_brcc(qir::InstBrcc *ins)
-{
-	auto lhs = LoadVOperand(ins->i(0));
-	auto rhs = LoadVOperand(ins->i(1));
-	auto cmp = lb->CreateCmp(MakeCC(ins->cc), lhs, rhs);
-
-	auto bb_t = MapBB(qbb->GetSuccs().at(0));
-	auto bb_f = MapBB(qbb->GetSuccs().at(1));
-
-	lb->CreateCondBr(cmp, bb_t, bb_f, md_unlikely);
 }
 
 #if 0
@@ -368,7 +210,7 @@ void LLVMGen::Emit_gbr(qir::InstGBr *ins)
 
 void LLVMGen::CreateQCGFnCall(llvm::Value *fn)
 {
-	auto call = lb->CreateCall(qcg_ftype, fn, {statev, membasev});
+	auto call = lb->CreateCall(g.qcg_fnty, fn, {statev, membasev});
 	call->addFnAttr(llvm::Attribute::NoReturn);
 	call->setCallingConv(llvm::CallingConv::GHC);
 	call->setTailCall(true);
@@ -407,9 +249,9 @@ static std::string MakeGbrAsmString(u32 gip, bool cross_segment)
 
 void LLVMGen::CreateQCGGbr(u32 gip)
 {
-	if (auto tgtfn = cmodule->getFunction(MakeAotSymbol(gip)); tgtfn) {
+	if (auto tgtfn = cmodule.getFunction(MakeAotSymbol(gip)); tgtfn) {
 		// TODO: segment check?
-		// TODO(tuning): prevent inlining?
+		// TODO(tuning): inlining heuristics
 		CreateQCGFnCall(tgtfn);
 	} else {
 		// llvm.sponentry - crashes with my llvm build
@@ -419,7 +261,7 @@ void LLVMGen::CreateQCGGbr(u32 gip)
 
 		auto code_str = MakeGbrAsmString(gip, !segment->InSegment(gip));
 		char const *constraint = "{r13},{rbp},{rsp},~{memory},~{dirflag},~{fpsr},~{flags}";
-		auto asmp = llvm::InlineAsm::get(qcg_gbr_patchpoint_ftype, code_str, constraint, true, false);
+		auto asmp = llvm::InlineAsm::get(g.qcg_gbr_patch_fnty, code_str, constraint, true, false);
 		auto call = lb->CreateCall(asmp, {statev, membasev, entrysp});
 		call->setTailCall(true);
 		call->setDoesNotReturn();
@@ -428,118 +270,304 @@ void LLVMGen::CreateQCGGbr(u32 gip)
 	}
 }
 
-void LLVMGen::Emit_gbr(qir::InstGBr *ins)
+QIRToLLVM::QIRToLLVM(LLVMGenCtx &ctx_, CodeSegment *segment_, qir::Region *region_, u32 region_ip)
+    : LLVMGen(ctx_, ctx_.cmodule.getFunction(MakeAotSymbol(region_ip))), region(region_)
+{
+}
+
+llvm::Function *QIRToLLVM::Run()
+{
+	auto lirb = llvm::IRBuilder<>(llvm::BasicBlock::Create(lctx, "entry", func));
+	lb = &lirb;
+	// EmitTrace();
+
+	CreateVGPRLocs(region->GetVRegsInfo());
+
+	id2bb.clear();
+	for (auto &bb : region->GetBlocks()) {
+		auto id = bb.GetId();
+		auto *lbb = llvm::BasicBlock::Create(lctx, "bb." + std::to_string(bb.GetId()), func);
+		if (id == 0) { // TODO: start bb in qir
+			lb->CreateBr(lbb);
+		}
+		id2bb.insert({id, lbb});
+	}
+
+	for (auto &bb : region->GetBlocks()) {
+		auto lbb = id2bb.find(bb.GetId())->second;
+		lb->SetInsertPoint(lbb);
+		qbb = &bb;
+
+		auto &ilist = bb.ilist;
+		for (auto iit = ilist.begin(); iit != ilist.end(); ++iit) {
+			Visitor(this).visit(&*iit);
+		}
+	}
+
+	assert(!verifyFunction(*func, &llvm::errs()));
+	return func;
+}
+
+void QIRToLLVM::CreateVGPRLocs(qir::VRegsInfo *vinfo)
+{
+	vlocs.clear();
+	vlocs_nglobals = vinfo->NumGlobals();
+
+	for (RegN i = 0; i < vlocs_nglobals; ++i) {
+		auto *info = vinfo->GetGlobalInfo(i);
+		auto state_ep = MakeStateEP(info->type, info->state_offs);
+		state_ep->setName(std::string("@") + info->name);
+		vlocs.push_back(state_ep);
+	}
+
+	for (RegN i = vlocs_nglobals; i < vinfo->NumAll(); ++i) {
+		auto type = vinfo->GetLocalType(i);
+		auto name = "%" + std::to_string(i);
+		auto state_ep = lb->CreateAlloca(MakeType(type), constv<32>(VTypeToSize(type)), name);
+		vlocs.push_back(state_ep);
+	}
+}
+
+llvm::Type *QIRToLLVM::MakeType(VType type)
+{
+	switch (type) {
+	case VType::I8:
+		return lb->getInt8Ty();
+	case VType::I16:
+		return lb->getInt16Ty();
+	case VType::I32:
+		return lb->getInt32Ty();
+	default:
+		unreachable("");
+	}
+}
+
+llvm::PointerType *QIRToLLVM::MakePtrType(VType type)
+{
+	switch (type) {
+	case VType::I8:
+		return llvm::Type::getInt8PtrTy(lctx);
+	case VType::I16:
+		return llvm::Type::getInt16PtrTy(lctx);
+	case VType::I32:
+		return llvm::Type::getInt32PtrTy(lctx);
+	default:
+		unreachable("");
+	}
+}
+
+llvm::Value *QIRToLLVM::LoadVOperand(qir::VOperand op)
+{
+	auto type = op.GetType();
+	if (op.IsConst()) {
+		return MakeConst(op.GetType(), op.GetConst());
+	}
+	auto [state_ep, is_global] = MakeVOperandEP(op);
+	auto load = lb->CreateAlignedLoad(MakeType(type), state_ep, llvm::Align(VTypeToSize(type)));
+	if (is_global) {
+		AScopeState(load);
+	}
+	return load;
+}
+
+void QIRToLLVM::StoreVOperand(qir::VOperand op, llvm::Value *val)
+{
+	auto type = op.GetType();
+	auto [state_ep, is_global] = MakeVOperandEP(op);
+	auto store = lb->CreateAlignedStore(val, state_ep, llvm::Align(VTypeToSize(type)));
+	if (is_global) {
+		AScopeState(store);
+	}
+}
+
+std::pair<llvm::Value *, bool> QIRToLLVM::MakeVOperandEP(VOperand op)
+{
+	assert(!op.IsConst());
+	if (op.IsVGPR()) {
+		return std::make_pair(vlocs[op.GetVGPR()], op.GetVGPR() < vlocs_nglobals);
+	}
+	if (op.IsGSlot()) {
+		return std::make_pair(MakeStateEP(op.GetType(), op.GetSlotOffs()), true);
+	}
+	unreachable("");
+}
+
+llvm::Value *QIRToLLVM::MakeStateEP(VType type, u32 offs)
+{
+	return LLVMGen::MakeStateEP(MakePtrType(type), offs);
+}
+
+llvm::Value *QIRToLLVM::MakeVMemLoc(VType type, llvm::Value *addr)
+{
+	return LLVMGen::MakeVMemLoc(MakePtrType(type), addr);
+}
+
+llvm::ConstantInt *QIRToLLVM::MakeConst(VType type, u64 val)
+{
+	return llvm::ConstantInt::get(lctx, llvm::APInt(VTypeToSize(type) * 8, val));
+}
+
+llvm::CmpInst::Predicate QIRToLLVM::MakeCC(CondCode cc)
+{
+	switch (cc) {
+	case CondCode::EQ:
+		return llvm::CmpInst::Predicate::ICMP_EQ;
+	case CondCode::NE:
+		return llvm::CmpInst::Predicate::ICMP_NE;
+	case CondCode::LE:
+		return llvm::CmpInst::Predicate::ICMP_SLE;
+	case CondCode::LT:
+		return llvm::CmpInst::Predicate::ICMP_SLT;
+	case CondCode::GE:
+		return llvm::CmpInst::Predicate::ICMP_SGE;
+	case CondCode::GT:
+		return llvm::CmpInst::Predicate::ICMP_SGT;
+	case CondCode::LEU:
+		return llvm::CmpInst::Predicate::ICMP_ULE;
+	case CondCode::LTU:
+		return llvm::CmpInst::Predicate::ICMP_ULT;
+	case CondCode::GEU:
+		return llvm::CmpInst::Predicate::ICMP_UGE;
+	case CondCode::GTU:
+		return llvm::CmpInst::Predicate::ICMP_UGT;
+	default:
+		unreachable("");
+	}
+}
+
+llvm::BasicBlock *QIRToLLVM::MapBB(Block *bb)
+{
+	return id2bb.find(bb->GetId())->second;
+}
+
+void QIRToLLVM::EmitTrace()
+{
+	auto qcg_trace_type = llvm::FunctionType::get(lb->getVoidTy(), {lb->getInt8PtrTy()}, false);
+	lb->CreateCall(qcg_trace_type, MakeRStub(RuntimeStubId::id_trace, qcg_trace_type), {statev});
+}
+
+void QIRToLLVM::Emit_hcall(qir::InstHcall *ins)
+{
+	lb->CreateCall(g.qcg_helper_fnty, MakeRStub(ins->stub, g.qcg_helper_fnty),
+		       {statev, LoadVOperand(ins->i(0))});
+	if (--qbb->ilist.end() == ins) {
+		lb->CreateRetVoid();
+	}
+}
+
+void QIRToLLVM::Emit_br(qir::InstBr *ins)
+{
+	auto qbb_s = qbb->GetSuccs().at(0);
+
+	lb->CreateBr(MapBB(qbb_s));
+}
+
+void QIRToLLVM::Emit_brcc(qir::InstBrcc *ins)
+{
+	auto lhs = LoadVOperand(ins->i(0));
+	auto rhs = LoadVOperand(ins->i(1));
+	auto cmp = lb->CreateCmp(MakeCC(ins->cc), lhs, rhs);
+
+	auto bb_t = MapBB(qbb->GetSuccs().at(0));
+	auto bb_f = MapBB(qbb->GetSuccs().at(1));
+
+	lb->CreateCondBr(cmp, bb_t, bb_f, g.md_unlikely);
+}
+
+void QIRToLLVM::Emit_gbr(qir::InstGBr *ins)
 {
 	auto gip = ins->tpc.GetConst();
 	CreateQCGGbr(gip);
 }
 
-void LLVMGen::ExpandIntr(llvm::Function *fn)
+static bool Expand_gbrind(LLVMGen &gen, llvm::CallInst *call, bool must_expand)
 {
-	auto lirb = llvm::IRBuilder<>(*ctx);
-	lb = &lirb;
-
-	for (auto &bb : fn->getBasicBlockList()) {
-		for (auto iit = bb.begin(); iit != bb.end(); ++iit) {
-			if (!llvm::isa<llvm::CallInst>(&*iit)) {
-				continue;
-			}
-			llvm::CallInst *call = llvm::cast<llvm::CallInst>(*&iit);
-
-			auto callee = call->getCalledFunction();
-			if (!callee) {
-				continue;
-			}
-
-			if (callee->getName() == intr_gbrind->getName()) {
-				lb->SetInsertPoint(call);
-				if (!ExpandIntr_gbrind(call)) {
-					continue;
-				}
-				bb.getTerminator()->eraseFromParent();
-				iit = call->eraseFromParent();
-				--iit;
-			}
-		}
-	}
-}
-
-bool LLVMGen::ExpandIntr_gbrind(llvm::CallInst *call)
-{
-	// TODO: hide per-function data
-	func = call->getParent()->getParent();
-	statev = call->getArgOperand(0);
-	membasev = call->getArgOperand(1);
 	auto gipv = call->getArgOperand(2);
+	auto *lb = gen.lb;
 
 	if (auto const_gipv = llvm::dyn_cast<llvm::Constant>(gipv)) {
-		CreateQCGGbr(llvm::cast<llvm::ConstantInt>(const_gipv)->getZExtValue());
+		lb->GetInsertBlock()->getTerminator()->eraseFromParent();
+		gen.CreateQCGGbr(llvm::cast<llvm::ConstantInt>(const_gipv)->getZExtValue());
 		return true;
 	}
 
-	if (!final_expand) {
+	if (!must_expand) {
 		return false;
 	}
+	lb->GetInsertBlock()->getTerminator()->eraseFromParent();
 
-	auto slowp_bb = llvm::BasicBlock::Create(*ctx);
-	auto fastp_bb = llvm::BasicBlock::Create(*ctx);
-	slowp_bb->insertInto(func);
-	fastp_bb->insertInto(func);
+	auto slowp_bb = llvm::BasicBlock::Create(gen.lctx);
+	auto fastp_bb = llvm::BasicBlock::Create(gen.lctx);
+	slowp_bb->insertInto(gen.func);
+	fastp_bb->insertInto(gen.func);
 
 	llvm::Value *entry_ep;
 	{
-		auto cache_ep = MakeStateEP(lb->getPtrTy(), offsetof(CPUState, l1_brind_cache));
+		auto cache_ep = gen.MakeStateEP(lb->getPtrTy(), offsetof(CPUState, l1_brind_cache));
 		auto cachev = lb->CreateAlignedLoad(lb->getPtrTy(), cache_ep, llvm::Align(alignof(uptr)));
-		AScopeState(cachev);
+		gen.AScopeState(cachev);
 
-		llvm::Value *hashv = lb->CreateLShr(gipv, constv<32>(2));
-		hashv = lb->CreateAnd(hashv, constv<32>((1ull << tcache::L1_CACHE_BITS) - 1));
+		llvm::Value *hashv = lb->CreateLShr(gipv, gen.constv<32>(2));
+		hashv = lb->CreateAnd(hashv, gen.constv<32>((1ull << tcache::L1_CACHE_BITS) - 1));
 
-		entry_ep = lb->CreateInBoundsGEP(brind_cache_entry_ty, cachev, hashv);
-		auto entry_gip_ep = lb->CreateStructGEP(brind_cache_entry_ty, entry_ep, 0);
+		entry_ep = lb->CreateInBoundsGEP(gen.g.brind_cache_entry_ty, cachev, hashv);
+		auto entry_gip_ep = lb->CreateStructGEP(gen.g.brind_cache_entry_ty, entry_ep, 0);
 		auto entry_gipv =
 		    lb->CreateAlignedLoad(lb->getInt32Ty(), entry_gip_ep, llvm::Align(alignof(u32)));
-		AScopeOther(entry_gipv);
+		gen.AScopeOther(entry_gipv);
 
-		lb->CreateCondBr(lb->CreateICmpNE(entry_gipv, gipv), slowp_bb, fastp_bb, md_unlikely);
+		lb->CreateCondBr(lb->CreateICmpNE(entry_gipv, gipv), slowp_bb, fastp_bb, gen.g.md_unlikely);
 	}
 
 	{
 		lb->SetInsertPoint(fastp_bb);
 
-		auto entry_code_ep = lb->CreateStructGEP(brind_cache_entry_ty, entry_ep, 1);
+		auto entry_code_ep = lb->CreateStructGEP(gen.g.brind_cache_entry_ty, entry_ep, 1);
 		auto entry_codev =
 		    lb->CreateAlignedLoad(lb->getPtrTy(), entry_code_ep, llvm::Align(alignof(uptr)));
-		AScopeOther(entry_codev);
+		gen.AScopeOther(entry_codev);
 
-		CreateQCGFnCall(entry_codev);
+		gen.CreateQCGFnCall(entry_codev);
 	}
 
 	{
 		lb->SetInsertPoint(slowp_bb);
-		auto target =
-		    lb->CreateCall(qcg_stub_brind_ftype,
-				   MakeRStub(RuntimeStubId::id_brind, qcg_stub_brind_ftype), {statev, gipv});
-		CreateQCGFnCall(target);
+		auto target = lb->CreateCall(
+		    gen.g.qcg_stub_brind_fnty,
+		    gen.MakeRStub(RuntimeStubId::id_brind, gen.g.qcg_stub_brind_fnty), {gen.statev, gipv});
+		gen.CreateQCGFnCall(target);
 	}
 
 	return true;
 }
 
-void LLVMGen::Emit_gbrind(qir::InstGBrind *ins)
+void QIRToLLVM::Emit_gbrind(qir::InstGBrind *ins)
 {
 	auto gipv = LoadVOperand(ins->i(0));
+
+	constexpr std::string_view intrin_name = "intr_gbrind";
+
+	llvm::Function *intr_gbrind = cmodule.getFunction(intrin_name);
+	if (!intr_gbrind) {
+		auto ftype = llvm::FunctionType::get(
+		    lb->getVoidTy(), {lb->getPtrTy(), lb->getPtrTy(), lb->getInt32Ty()}, false);
+		intr_gbrind =
+		    llvm::Function::Create(ftype, llvm::Function::ExternalLinkage, intrin_name, cmodule);
+		intr_gbrind->setCallingConv(llvm::CallingConv::GHC);
+		intr_gbrind->setDoesNotReturn();
+		intr_gbrind->addFnAttr(llvm::Attribute::NoMerge);
+
+		g.intrin_fns.insert({intrin_name, Expand_gbrind});
+	}
 
 	auto call = lb->CreateCall(intr_gbrind, {statev, membasev, gipv});
 	call->setCallingConv(llvm::CallingConv::GHC);
 	call->setTailCall();
-	call->setDoesNotReturn();
 	lb->CreateUnreachable();
 }
 
-void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)
+void QIRToLLVM::Emit_vmload(qir::InstVMLoad *ins)
 {
-	// TODO: resolve types mess
 	// TODO: alignment in qir
 	llvm::MaybeAlign align = true ? llvm::MaybeAlign{} : llvm::Align(VTypeToSize(ins->sz));
 	auto mem_ep = MakeVMemLoc(ins->sz, LoadVOperand(ins->i(0)));
@@ -555,7 +583,7 @@ void LLVMGen::Emit_vmload(qir::InstVMLoad *ins)
 	StoreVOperand(ins->o(0), val);
 }
 
-void LLVMGen::Emit_vmstore(qir::InstVMStore *ins)
+void QIRToLLVM::Emit_vmstore(qir::InstVMStore *ins)
 {
 	auto val = LoadVOperand(ins->i(1));
 	auto type = ins->i(1).GetType();
@@ -567,60 +595,60 @@ void LLVMGen::Emit_vmstore(qir::InstVMStore *ins)
 	AScopeVMem(lb->CreateAlignedStore(val, mem_ep, align));
 }
 
-void LLVMGen::Emit_setcc(qir::InstSetcc *ins)
+void QIRToLLVM::Emit_setcc(qir::InstSetcc *ins)
 {
 	auto cmp = lb->CreateICmp(MakeCC(ins->cc), LoadVOperand(ins->i(0)), LoadVOperand(ins->i(1)));
 	StoreVOperand(ins->o(0), lb->CreateZExt(cmp, lb->getInt32Ty()));
 }
 
-void LLVMGen::Emit_mov(qir::InstUnop *ins)
+void QIRToLLVM::Emit_mov(qir::InstUnop *ins)
 {
 	auto val = LoadVOperand(ins->i(0));
 	StoreVOperand(ins->o(0), val);
 }
 
-void LLVMGen::EmitBinop(llvm::Instruction::BinaryOps opc, qir::InstBinop *ins)
+void QIRToLLVM::EmitBinop(llvm::Instruction::BinaryOps opc, qir::InstBinop *ins)
 {
 	auto res = lb->CreateBinOp(opc, LoadVOperand(ins->i(0)), LoadVOperand(ins->i(1)));
 	StoreVOperand(ins->o(0), res);
 }
 
-void LLVMGen::Emit_add(qir::InstBinop *ins)
+void QIRToLLVM::Emit_add(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Add, ins);
 }
 
-void LLVMGen::Emit_sub(qir::InstBinop *ins)
+void QIRToLLVM::Emit_sub(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Sub, ins);
 }
 
-void LLVMGen::Emit_and(qir::InstBinop *ins)
+void QIRToLLVM::Emit_and(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::And, ins);
 }
 
-void LLVMGen::Emit_or(qir::InstBinop *ins)
+void QIRToLLVM::Emit_or(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Or, ins);
 }
 
-void LLVMGen::Emit_xor(qir::InstBinop *ins)
+void QIRToLLVM::Emit_xor(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Xor, ins);
 }
 
-void LLVMGen::Emit_sra(qir::InstBinop *ins)
+void QIRToLLVM::Emit_sra(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::AShr, ins);
 }
 
-void LLVMGen::Emit_srl(qir::InstBinop *ins)
+void QIRToLLVM::Emit_srl(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::LShr, ins);
 }
 
-void LLVMGen::Emit_sll(qir::InstBinop *ins)
+void QIRToLLVM::Emit_sll(qir::InstBinop *ins)
 {
 	EmitBinop(llvm::Instruction::BinaryOps::Shl, ins);
 }

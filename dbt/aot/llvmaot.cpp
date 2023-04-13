@@ -40,13 +40,10 @@ struct LLVMAOTCompilerRuntime final : CompilerRuntime {
 	}
 };
 
-// Pre-analysis data for inlining
-static void DeclareKnownRegionEntries(llvm::Module *cmodule, objprof::PageData const &page)
+static void DeclareKnownRegionEntries(qir::LLVMGenCtx *ctx, objprof::PageData const &page)
 {
 	u32 const page_vaddr = page.pageno << mmu::PAGE_BITS;
-
-	auto segment = qir::CodeSegment(page_vaddr, mmu::PAGE_SIZE);
-	qir::LLVMGen llvm_gen(&cmodule->getContext(), cmodule, &segment);
+	qir::CodeSegment segment(page_vaddr, mmu::PAGE_SIZE);
 
 	for (u32 idx = 0; idx < page.executed.size(); ++idx) {
 		if (!page.executed[idx]) {
@@ -54,21 +51,19 @@ static void DeclareKnownRegionEntries(llvm::Module *cmodule, objprof::PageData c
 		}
 		if (page.brind_target[idx] || page.segment_entry[idx]) {
 			u32 ip = page_vaddr + objprof::PageData::idx2po(idx);
-			llvm_gen.AddFunction(ip);
+			ctx->AddFunction(ip, segment);
 		}
 	}
 }
 
-static void LLVMAOTTranslatePage(std::vector<AOTSymbol> *aot_symbols, llvm::Module *cmodule,
+static void LLVMAOTTranslatePage(qir::LLVMGenCtx *ctx, std::vector<AOTSymbol> *aot_symbols,
 				 objprof::PageData const &page)
 {
 	auto mg = BuildModuleGraph(page);
 	auto regions = mg.ComputeRegions();
 
-	qir::LLVMGen llvm_gen(&cmodule->getContext(), cmodule, &mg.segment);
-
 	for (auto const &r : regions) {
-		llvm_gen.AddFunction(r[0]->ip);
+		ctx->AddFunction(r[0]->ip, mg.segment);
 	}
 
 	for (auto const &r : regions) {
@@ -86,30 +81,10 @@ static void LLVMAOTTranslatePage(std::vector<AOTSymbol> *aot_symbols, llvm::Modu
 		auto *region = qir::CompilerGenRegionIR(&arena, job);
 
 		auto entry_ip = r[0]->ip;
-		llvm_gen.Run(region, entry_ip);
+		qir::QIRToLLVM llvm_gen(*ctx, &mg.segment, region, entry_ip);
+		llvm_gen.Run();
 		aot_symbols->push_back({entry_ip, 0});
 	}
-}
-
-struct IntrinExpansionPass : public llvm::PassInfoMixin<IntrinExpansionPass> {
-
-	IntrinExpansionPass(bool is_final_) : is_final(is_final_) {}
-
-	llvm::PreservedAnalyses run(llvm::Function &fn, llvm::FunctionAnalysisManager &fam);
-
-private:
-	bool is_final{};
-};
-
-llvm::PreservedAnalyses IntrinExpansionPass::run(llvm::Function &fn, llvm::FunctionAnalysisManager &fam)
-{
-	auto segment = qir::CodeSegment{0, 0}; // TODO
-	qir::LLVMGen llvm_gen(&fn.getContext(), fn.getParent(), &segment);
-	llvm_gen.final_expand = is_final;
-
-	llvm_gen.ExpandIntr(&fn);
-
-	return llvm::PreservedAnalyses::none();
 }
 
 static void AddAOTTabSection(llvm::Module &cmodule, std::vector<AOTSymbol> &aot_symbols)
@@ -124,37 +99,44 @@ static void AddAOTTabSection(llvm::Module &cmodule, std::vector<AOTSymbol> &aot_
 	aottab->setSection(".aottab");
 }
 
-static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filename)
+static llvm::TargetMachine *GetAOTTargetMachine()
 {
-	auto ttriple = llvm::sys::getDefaultTargetTriple();
-	llvm::InitializeNativeTarget();
-	llvm::InitializeNativeTargetAsmPrinter();
-	llvm::InitializeNativeTargetAsmParser();
-	std::string error;
-	auto target = llvm::TargetRegistry::lookupTarget(ttriple, error);
-	if (!target) {
-		Panic(error);
-	}
+	static auto machine = ([]() {
+		auto ttriple = llvm::sys::getProcessTriple();
+		llvm::InitializeNativeTarget();
+		llvm::InitializeNativeTargetAsmPrinter();
+		llvm::InitializeNativeTargetAsmParser();
+		std::string error;
+		auto target = llvm::TargetRegistry::lookupTarget(ttriple, error);
+		if (!target) {
+			Panic(error);
+		}
 
-	auto host_cpu = llvm::sys::getHostCPUName();
-
-	llvm::SubtargetFeatures features;
-	{
-		llvm::StringMap<bool> features_map;
-		if (llvm::sys::getHostCPUFeatures(features_map)) {
-			for (const auto &f : features_map) {
-				features.AddFeature(f.first(), f.second);
+		llvm::SubtargetFeatures features;
+		{
+			llvm::StringMap<bool> features_map;
+			if (llvm::sys::getHostCPUFeatures(features_map)) {
+				for (const auto &f : features_map) {
+					features.AddFeature(f.first(), f.second);
+				}
 			}
 		}
-	}
 
-	llvm::TargetOptions opt;
-	auto RM = llvm::Reloc::Model(llvm::Reloc::PIC_);
-	auto tmachine = target->createTargetMachine(ttriple, host_cpu, features.getString(), opt, RM, {},
-						    llvm::CodeGenOpt::Aggressive);
+		llvm::TargetOptions opt;
+		auto RM = llvm::Reloc::Model(llvm::Reloc::PIC_);
+		auto host_cpu = llvm::sys::getHostCPUName();
+		return target->createTargetMachine(ttriple, host_cpu, features.getString(), opt, RM, {},
+						   llvm::CodeGenOpt::Aggressive);
+	})();
 
+	return machine;
+}
+
+static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filename)
+{
+	auto tmachine = GetAOTTargetMachine();
 	cmodule->setDataLayout(tmachine->createDataLayout());
-	cmodule->setTargetTriple(ttriple);
+	cmodule->setTargetTriple(tmachine->getTargetTriple().str());
 	cmodule->setPICLevel(llvm::PICLevel::SmallPIC);
 
 	std::error_code errc;
@@ -177,20 +159,19 @@ static void GenerateObjectFile(llvm::Module *cmodule, std::string const &filenam
 	dest.flush();
 }
 
-static thread_local llvm::LLVMContext g_llvm_ctx;
-
 void LLVMAOTCompileELF()
 {
-	auto cmodule = llvm::Module("test_module", g_llvm_ctx);
+	auto cmodule = llvm::Module("qcg_module", qir::g_llvm_ctx);
+	qir::LLVMGenCtx ctx(&cmodule);
 
 	std::vector<AOTSymbol> aot_symbols;
 	aot_symbols.reserve(64_KB);
 
 	for (auto const &page : objprof::GetProfile()) {
-		DeclareKnownRegionEntries(&cmodule, page);
+		DeclareKnownRegionEntries(&ctx, page);
 	}
 	for (auto const &page : objprof::GetProfile()) {
-		LLVMAOTTranslatePage(&aot_symbols, &cmodule, page);
+		LLVMAOTTranslatePage(&ctx, &aot_symbols, page);
 	}
 	assert(!verifyModule(cmodule, &llvm::errs()));
 
@@ -209,13 +190,14 @@ void LLVMAOTCompileELF()
 	auto optlevel = llvm::OptimizationLevel::O3;
 
 	llvm::ModulePassManager mpm_final_expand;
-	mpm_final_expand.addPass(llvm::createModuleToFunctionPassAdaptor(IntrinExpansionPass(true)));
+	mpm_final_expand.addPass(
+	    llvm::createModuleToFunctionPassAdaptor(qir::IntrinsicExpansionPass(ctx, true)));
 	if constexpr (config::debug) {
 		mpm_final_expand.addPass(llvm::VerifierPass());
 	}
 
-	pb.registerOptimizerEarlyEPCallback([](llvm::ModulePassManager &mpm, llvm::OptimizationLevel optl) {
-		mpm.addPass(llvm::createModuleToFunctionPassAdaptor(IntrinExpansionPass(false)));
+	pb.registerOptimizerEarlyEPCallback([&](llvm::ModulePassManager &mpm, llvm::OptimizationLevel optl) {
+		mpm.addPass(llvm::createModuleToFunctionPassAdaptor(qir::IntrinsicExpansionPass(ctx, false)));
 		if constexpr (config::debug) {
 			mpm.addPass(llvm::VerifierPass());
 		}

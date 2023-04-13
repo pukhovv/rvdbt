@@ -75,7 +75,7 @@ void AOTCompileELF()
 
 	elfio::section *aottab_sec = writer.sections.add(".aottab");
 	aottab_sec->set_type(elfio::SHT_PROGBITS);
-	aottab_sec->set_flags(elfio::SHF_ALLOC | elfio::SHF_WRITE); // TODO: read?
+	aottab_sec->set_flags(elfio::SHF_ALLOC);
 	aottab_sec->set_addr_align(0x1000);
 
 	elfio::section *str_sec = writer.sections.add(".strtab");
@@ -171,7 +171,7 @@ void LinkAOTObject(std::vector<AOTSymbol> &aot_symbols)
 #else
 	for (auto &sym : aot_symbols) {
 		auto gip = sym.gip;
-		log_aot("found aottab[%08x]", gip);
+		// log_aot("found aottab[%08x]", gip);
 		sym = {gip, resolve_sym(MakeAotSymbol(gip)).first};
 	}
 	AOTTabHeader aottab_header;
