@@ -55,7 +55,7 @@ private:
 };
 
 struct LLVMGen {
-	explicit LLVMGen(LLVMGenCtx &ctx_, llvm::Function *func_);
+	explicit LLVMGen(LLVMGenCtx &g_, llvm::Function *func_);
 
 	llvm::Instruction *AScopeState(llvm::Instruction *inst);
 	llvm::Instruction *AScopeVMem(llvm::Instruction *inst);
@@ -71,7 +71,7 @@ struct LLVMGen {
 	}
 
 	void CreateQCGFnCall(llvm::Value *fn);
-	void CreateQCGGbr(u32 gipv);
+	void CreateQCGGbr(u32 gipv, bool must_expand);
 
 	void ExpandIntrinsics(bool is_final);
 
@@ -88,7 +88,7 @@ struct LLVMGen {
 };
 
 struct QIRToLLVM : public LLVMGen {
-	explicit QIRToLLVM(LLVMGenCtx &ctx_, CodeSegment *segment_, qir::Region *region, u32 region_ip);
+	explicit QIRToLLVM(LLVMGenCtx &g_, CodeSegment *segment_, qir::Region *region, u32 region_ip);
 
 	llvm::Function *Run();
 

@@ -98,8 +98,7 @@ llvm::PreservedAnalyses IntrinsicExpansionPass::run(llvm::Function &fn, llvm::Fu
 	return llvm::PreservedAnalyses::none();
 }
 
-LLVMGen::LLVMGen(LLVMGenCtx &ctx_, llvm::Function *func_)
-    : g(ctx_), lctx(g.ctx), cmodule(g.cmodule), func(func_)
+LLVMGen::LLVMGen(LLVMGenCtx &g_, llvm::Function *func_) : g(g_), lctx(g.ctx), cmodule(g.cmodule), func(func_)
 {
 	assert(func);
 	segment = &g.fn2seg.find(std::string(func->getName()))->second;
@@ -168,7 +167,7 @@ llvm::Value *LLVMGen::MakeRStub(RuntimeStubId id, llvm::FunctionType *ftype)
 }
 
 #if 0
-// Experiments with llvm.patchpoint-like intrinsics as qcg gbrind patchpoint
+// Experiments with llvm.patchpoint-like intrinsics as qcg gbrind patchpoint:
 // llvm doesn't support tailcalls for experimental.patchpoint, actual call is not expanded until
 // MCInstLowering. The same applies to gc.statepoint
 //
@@ -247,13 +246,25 @@ static std::string MakeGbrAsmString(u32 gip, bool cross_segment)
 	return ".string \"" + MakeAsmString({(u8 *)&slot, sizeof(slot)}) + "\"";
 }
 
-void LLVMGen::CreateQCGGbr(u32 gip)
+static bool Expand_gbr(LLVMGen &gen, llvm::CallInst *call, bool must_expand)
+{
+	if (!must_expand) { // Allows callsites merging
+		return false;
+	}
+
+	auto *lb = gen.lb;
+	lb->GetInsertBlock()->getTerminator()->eraseFromParent();
+	gen.CreateQCGGbr(llvm::cast<llvm::ConstantInt>(call->getArgOperand(2))->getZExtValue(), true);
+	return true;
+}
+
+void LLVMGen::CreateQCGGbr(u32 gip, bool must_expand)
 {
 	if (auto tgtfn = cmodule.getFunction(MakeAotSymbol(gip)); tgtfn) {
 		// TODO: segment check?
 		// TODO(tuning): inlining heuristics
 		CreateQCGFnCall(tgtfn);
-	} else {
+	} else if (must_expand) {
 		// llvm.sponentry - crashes with my llvm build
 		// llvm.frameaddress - enforces frame creation in contradiction to ghccc
 		auto entrysp =
@@ -267,11 +278,31 @@ void LLVMGen::CreateQCGGbr(u32 gip)
 		call->setDoesNotReturn();
 		call->setDoesNotThrow();
 		lb->CreateRetVoid();
+	} else {
+		constexpr std::string_view intrin_name = "intr_gbr";
+
+		llvm::Function *intrin = cmodule.getFunction(intrin_name);
+		if (!intrin) {
+			auto ftype = llvm::FunctionType::get(
+			    lb->getVoidTy(), {lb->getPtrTy(), lb->getPtrTy(), lb->getInt32Ty()}, false);
+			intrin = llvm::Function::Create(ftype, llvm::Function::ExternalLinkage, intrin_name,
+							cmodule);
+			intrin->setCallingConv(llvm::CallingConv::GHC);
+			intrin->setDoesNotReturn();
+			// Merging allowed
+
+			g.intrin_fns.insert({intrin_name, Expand_gbr});
+		}
+
+		auto call = lb->CreateCall(intrin, {statev, membasev, constv<32>(gip)});
+		call->setCallingConv(llvm::CallingConv::GHC);
+		call->setTailCall();
+		lb->CreateUnreachable();
 	}
 }
 
-QIRToLLVM::QIRToLLVM(LLVMGenCtx &ctx_, CodeSegment *segment_, qir::Region *region_, u32 region_ip)
-    : LLVMGen(ctx_, ctx_.cmodule.getFunction(MakeAotSymbol(region_ip))), region(region_)
+QIRToLLVM::QIRToLLVM(LLVMGenCtx &g_, CodeSegment *segment_, qir::Region *region_, u32 region_ip)
+    : LLVMGen(g_, g_.cmodule.getFunction(MakeAotSymbol(region_ip))), region(region_)
 {
 }
 
@@ -477,7 +508,7 @@ void QIRToLLVM::Emit_brcc(qir::InstBrcc *ins)
 void QIRToLLVM::Emit_gbr(qir::InstGBr *ins)
 {
 	auto gip = ins->tpc.GetConst();
-	CreateQCGGbr(gip);
+	CreateQCGGbr(gip, false);
 }
 
 static bool Expand_gbrind(LLVMGen &gen, llvm::CallInst *call, bool must_expand)
@@ -486,8 +517,10 @@ static bool Expand_gbrind(LLVMGen &gen, llvm::CallInst *call, bool must_expand)
 	auto *lb = gen.lb;
 
 	if (auto const_gipv = llvm::dyn_cast<llvm::Constant>(gipv)) {
+		auto gip = llvm::cast<llvm::ConstantInt>(const_gipv)->getZExtValue();
+		log_qir("Optimized gbrind->gbr(%08x) in %s", gip, gen.func->getName());
 		lb->GetInsertBlock()->getTerminator()->eraseFromParent();
-		gen.CreateQCGGbr(llvm::cast<llvm::ConstantInt>(const_gipv)->getZExtValue());
+		gen.CreateQCGGbr(gip, must_expand);
 		return true;
 	}
 
@@ -547,20 +580,19 @@ void QIRToLLVM::Emit_gbrind(qir::InstGBrind *ins)
 
 	constexpr std::string_view intrin_name = "intr_gbrind";
 
-	llvm::Function *intr_gbrind = cmodule.getFunction(intrin_name);
-	if (!intr_gbrind) {
+	llvm::Function *intrin = cmodule.getFunction(intrin_name);
+	if (!intrin) {
 		auto ftype = llvm::FunctionType::get(
 		    lb->getVoidTy(), {lb->getPtrTy(), lb->getPtrTy(), lb->getInt32Ty()}, false);
-		intr_gbrind =
-		    llvm::Function::Create(ftype, llvm::Function::ExternalLinkage, intrin_name, cmodule);
-		intr_gbrind->setCallingConv(llvm::CallingConv::GHC);
-		intr_gbrind->setDoesNotReturn();
-		intr_gbrind->addFnAttr(llvm::Attribute::NoMerge);
+		intrin = llvm::Function::Create(ftype, llvm::Function::ExternalLinkage, intrin_name, cmodule);
+		intrin->setCallingConv(llvm::CallingConv::GHC);
+		intrin->setDoesNotReturn();
+		intrin->addFnAttr(llvm::Attribute::NoMerge);
 
 		g.intrin_fns.insert({intrin_name, Expand_gbrind});
 	}
 
-	auto call = lb->CreateCall(intr_gbrind, {statev, membasev, gipv});
+	auto call = lb->CreateCall(intrin, {statev, membasev, gipv});
 	call->setCallingConv(llvm::CallingConv::GHC);
 	call->setTailCall();
 	lb->CreateUnreachable();
