@@ -60,13 +60,13 @@ public:
 	void LinkLazyLLVMAOT(u16 stub_tab_offs);
 
 	// Calculate BranchSlot* from retaddr if call by ptr was used
-	static inline BranchSlot *FromCallPtrRetaddr(void *ra)
+	static BranchSlot *FromCallPtrRetaddr(void *ra)
 	{
 		return (BranchSlot *)((uptr)ra - sizeof(Call64Abs));
 	}
 
 	// Calculate BranchSlot* from retaddr if RuntimeStub call was used
-	static inline BranchSlot *FromCallRuntimeStubRetaddr(void *ra)
+	static BranchSlot *FromCallRuntimeStubRetaddr(void *ra)
 	{
 		return (BranchSlot *)((uptr)ra - sizeof(CallTab));
 	}

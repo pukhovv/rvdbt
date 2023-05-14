@@ -60,7 +60,7 @@ struct OpInfo {
 
 extern OpInfo op_info[to_underlying(qir::Op::Count)];
 
-ALWAYS_INLINE OpInfo const &GetOpInfo(qir::Op op)
+inline OpInfo const &GetOpInfo(qir::Op op)
 {
 	return op_info[to_underlying(op)];
 }
@@ -106,15 +106,15 @@ private:
 		Count,
 	};
 
-	inline VOperand(uptr value_) : value(value_) {}
+	VOperand(uptr value_) : value(value_) {}
 
 public:
-	explicit inline VOperand() : value(f_kind::encode(uptr(0), Kind::BAD)) {}
+	explicit VOperand() : value(f_kind::encode(uptr(0), Kind::BAD)) {}
 
 	DEFAULT_COPY(VOperand)
 	DEFAULT_MOVE(VOperand)
 
-	static inline VOperand MakeVGPR(VType type, RegN reg)
+	static VOperand MakeVGPR(VType type, RegN reg)
 	{
 		uptr value = 0;
 		value = f_kind::encode(value, Kind::GPR);
@@ -124,7 +124,7 @@ public:
 		return VOperand(value);
 	}
 
-	static inline VOperand MakePGPR(VType type, RegN reg)
+	static VOperand MakePGPR(VType type, RegN reg)
 	{
 		uptr value = 0;
 		value = f_kind::encode(value, Kind::GPR);
@@ -133,7 +133,7 @@ public:
 		return VOperand(value);
 	}
 
-	static inline VOperand MakeConst(VType type, u32 cval)
+	static VOperand MakeConst(VType type, u32 cval)
 	{
 		uptr value = 0;
 		value = f_kind::encode(value, Kind::CONST);
@@ -142,7 +142,7 @@ public:
 		return VOperand(value);
 	}
 
-	static inline VOperand MakeSlot(bool is_glob, VType type, u16 offs)
+	static VOperand MakeSlot(bool is_glob, VType type, u16 offs)
 	{
 		uptr value = 0;
 		value = f_kind::encode(value, Kind::SLOT);
@@ -152,84 +152,84 @@ public:
 		return VOperand(value);
 	}
 
-	inline VType GetType() const
+	VType GetType() const
 	{
 		return static_cast<VType>(f_type::decode(value));
 	}
 
-	inline bool IsConst() const
+	bool IsConst() const
 	{
 		return GetKind() == Kind::CONST;
 	}
 
 	// preg or vreg
-	inline bool IsGPR() const
+	bool IsGPR() const
 	{
 		return GetKind() == Kind::GPR;
 	}
 
-	inline bool IsSlot() const
+	bool IsSlot() const
 	{
 		return GetKind() == Kind::SLOT;
 	}
 
-	inline bool IsV() const
+	bool IsV() const
 	{
 		assert(IsGPR());
 		return FlagV();
 	}
 
-	inline bool IsPGPR() const
+	bool IsPGPR() const
 	{
 		return IsGPR() && !FlagV();
 	}
 
-	inline bool IsVGPR() const
+	bool IsVGPR() const
 	{
 		return IsGPR() && FlagV();
 	}
 
-	inline bool IsGSlot() const
+	bool IsGSlot() const
 	{
 		return IsSlot() && f_slot_is_global::decode(value);
 	}
 
-	inline bool IsLSlot() const
+	bool IsLSlot() const
 	{
 		return IsSlot() && !f_slot_is_global::decode(value);
 	}
 
-	inline u32 GetConst() const
+	u32 GetConst() const
 	{
 		assert(IsConst());
 		return f_const::decode(value);
 	}
 
-	inline RegN GetPGPR() const
+	RegN GetPGPR() const
 	{
 		assert(IsPGPR());
 		return f_reg::decode(value);
 	}
 
-	inline RegN GetVGPR() const
+	RegN GetVGPR() const
 	{
 		assert(IsVGPR());
 		return f_reg::decode(value);
 	}
 
-	inline u16 GetSlotOffs() const
+	u16 GetSlotOffs() const
 	{
 		assert(IsSlot());
 		return f_slot_offs::decode(value);
 	}
 
 private:
-	inline Kind GetKind() const
+	Kind GetKind() const
 	{
 		return static_cast<Kind>(f_kind::decode(value));
 	}
 
-	inline bool FlagV() const
+	bool FlagV() const
 	{
 		return f_is_virtual::decode(value);
 	}
@@ -251,13 +251,13 @@ private:
 struct VOperandSpan {
 	VOperandSpan(VOperand *head_, u8 size_) : head(head_), len(size_) {}
 
-	inline VOperand &operator[](u8 idx) const
+	VOperand &operator[](u8 idx) const
 	{
 		assert(idx < len);
 		return head[-idx];
 	}
 
-	inline u8 size() const
+	u8 size() const
 	{
 		return len;
 	}
@@ -269,30 +269,30 @@ private:
 
 template <typename Derived>
 struct InstOperandAccessMixin {
-	inline VOperand &o(u8 idx)
+	VOperand &o(u8 idx)
 	{
 		assert(idx < d()->OutputCount());
 		return d()->GetOperand(idx);
 	}
 
-	inline VOperand &i(u8 idx)
+	VOperand &i(u8 idx)
 	{
 		assert(idx < d()->InputCount());
 		return d()->GetOperand(idx + d()->OutputCount());
 	}
 
-	inline VOperandSpan outputs()
+	VOperandSpan outputs()
 	{
 		return VOperandSpan(&d()->GetOperand(0), d()->OutputCount());
 	}
 
-	inline VOperandSpan inputs()
+	VOperandSpan inputs()
 	{
 		return VOperandSpan(&d()->GetOperand(d()->OutputCount()), d()->InputCount());
 	}
 
 private:
-	inline Derived *d()
+	Derived *d()
 	{
 		return static_cast<Derived *>(this);
 	}
@@ -301,46 +301,46 @@ private:
 struct alignas(alignof(VOperand)) Inst : IListNode<Inst>, InstOperandAccessMixin<Inst>, InArena {
 	friend struct InstOperandAccessMixin<Inst>;
 
-	enum Flags { // TODO: enum class
+	enum Flags : u8 { // TODO: enum class
 		SIDEEFF = 1 << 0,
 		REXIT = 1 << 1,
 		HAS_CALLS = 1 << 2,
 	};
 
-	inline Op GetOpcode() const
+	Op GetOpcode() const
 	{
 		return opcode;
 	}
 
-	inline u32 GetId() const
+	u32 GetId() const
 	{
 		return id;
 	}
 
-	inline Flags GetFlags() const
+	Flags GetFlags() const
 	{
 		return flags;
 	}
 
-	inline void SetFlags(Flags flags_)
+	void SetFlags(Flags flags_)
 	{
 		flags = flags_;
 	}
 
-	inline auto OutputCount() const
+	auto OutputCount() const
 	{
 		return GetOpInfo(GetOpcode()).n_out;
 	}
 
-	inline auto InputCount() const
+	auto InputCount() const
 	{
 		return GetOpInfo(GetOpcode()).n_in;
 	}
 
 protected:
-	inline Inst(Op opcode_) : opcode(opcode_) {}
+	Inst(Op opcode_) : opcode(opcode_) {}
 
-	inline VOperand &GetOperand(u8 idx)
+	VOperand &GetOperand(u8 idx)
 	{
 		return reinterpret_cast<VOperand *>(this)[-1 - idx];
 	}
@@ -388,12 +388,12 @@ protected:
 	InstNoOperands(Op opcode_) : Inst(opcode_) {}
 
 public:
-	constexpr static inline auto OutputCount()
+	constexpr static auto OutputCount()
 	{
 		return 0;
 	}
 
-	constexpr static inline auto InputCount()
+	constexpr static auto InputCount()
 	{
 		return 0;
 	}
@@ -418,12 +418,12 @@ protected:
 	}
 
 public:
-	constexpr static inline auto OutputCount()
+	constexpr static auto OutputCount()
 	{
 		return N_OUT;
 	}
 
-	constexpr static inline auto InputCount()
+	constexpr static auto InputCount()
 	{
 		return N_IN;
 	}
@@ -620,12 +620,12 @@ struct Block : IListNode<Block>, InArena {
 
 	IList<Inst> ilist;
 
-	inline Region *GetRegion() const
+	Region *GetRegion() const
 	{
 		return rn;
 	}
 
-	inline u32 GetId() const
+	u32 GetId() const
 	{
 		return id;
 	}
@@ -673,44 +673,44 @@ struct StateInfo {
 struct VRegsInfo {
 	VRegsInfo(StateInfo const *glob_info_) : glob_info(glob_info_) {}
 
-	inline auto NumGlobals() const
+	auto NumGlobals() const
 	{
 		return glob_info->n_regs;
 	}
 
-	inline auto NumLocals() const
+	auto NumLocals() const
 	{
 		return loc_info.size();
 	}
 
-	inline auto NumAll() const
+	auto NumAll() const
 	{
 		return glob_info->n_regs + loc_info.size();
 	}
 
-	inline bool IsGlobal(RegN idx) const
+	bool IsGlobal(RegN idx) const
 	{
 		return idx < glob_info->n_regs;
 	}
 
-	inline bool IsLocal(RegN idx) const
+	bool IsLocal(RegN idx) const
 	{
 		return !IsGlobal(idx);
 	}
 
-	inline StateReg const *GetGlobalInfo(RegN idx) const
+	StateReg const *GetGlobalInfo(RegN idx) const
 	{
 		assert(IsGlobal(idx));
 		return &glob_info->regs[idx];
 	}
 
-	inline VType GetLocalType(RegN idx) const
+	VType GetLocalType(RegN idx) const
 	{
 		assert(IsLocal(idx));
 		return loc_info[idx - glob_info->n_regs];
 	}
 
-	inline RegN AddLocal(VType type)
+	RegN AddLocal(VType type)
 	{
 		auto idx = loc_info.size() + glob_info->n_regs;
 		loc_info.push_back(type);
@@ -771,7 +771,7 @@ private:
 	u32 bb_id_counter{0};
 };
 
-inline MemArena *ArenaOf(Region *rn)
+MemArena *ArenaOf(Region *rn)
 {
 	return rn->GetArena();
 }

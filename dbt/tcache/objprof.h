@@ -35,12 +35,12 @@ struct objprof {
 	struct PageData {
 		static constexpr uint idx_bits = 2; // insn size
 
-		inline static constexpr u32 po2idx(u32 ip)
+		static constexpr u32 po2idx(u32 ip)
 		{
 			return ip >> idx_bits;
 		}
 
-		inline static constexpr u32 idx2po(u32 idx)
+		static constexpr u32 idx2po(u32 idx)
 		{
 			return idx << idx_bits;
 		}

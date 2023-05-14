@@ -21,41 +21,43 @@ char const *GRPToName(u8 r)
 	return gpr_names[r];
 }
 
+static constexpr auto DUMP_DELIM = std::string_view(", ");
+
 std::ostream &operator<<(std::ostream &o, Base i)
 {
 	return o;
 }
 std::ostream &operator<<(std::ostream &o, R i)
 {
-	return o << gpr_names[i.rd()] << " \t" << gpr_names[i.rs1()] << " \t" << gpr_names[i.rs2()];
+	return o << gpr_names[i.rd()] << DUMP_DELIM << gpr_names[i.rs1()] << DUMP_DELIM << gpr_names[i.rs2()];
 }
 std::ostream &operator<<(std::ostream &o, I i)
 {
-	return o << gpr_names[i.rd()] << " \t" << gpr_names[i.rs1()] << " \t" << i.imm();
+	return o << gpr_names[i.rd()] << DUMP_DELIM << gpr_names[i.rs1()] << DUMP_DELIM << i.imm();
 }
 std::ostream &operator<<(std::ostream &o, IS i)
 {
-	return o << gpr_names[i.rd()] << " \t" << gpr_names[i.rs1()] << " \t" << (u16)i.imm();
+	return o << gpr_names[i.rd()] << DUMP_DELIM << gpr_names[i.rs1()] << DUMP_DELIM << (u16)i.imm();
 }
 std::ostream &operator<<(std::ostream &o, S i)
 {
-	return o << gpr_names[i.rs2()] << " \t" << gpr_names[i.rs1()] << " \t" << i.imm();
+	return o << gpr_names[i.rs2()] << DUMP_DELIM << gpr_names[i.rs1()] << DUMP_DELIM << i.imm();
 }
 std::ostream &operator<<(std::ostream &o, B i)
 {
-	return o << gpr_names[i.rs1()] << " \t" << gpr_names[i.rs2()] << " \t" << i.imm();
+	return o << gpr_names[i.rs1()] << DUMP_DELIM << gpr_names[i.rs2()] << DUMP_DELIM << i.imm();
 }
 std::ostream &operator<<(std::ostream &o, U i)
 {
-	return o << gpr_names[i.rd()] << " \t" << i.imm();
+	return o << gpr_names[i.rd()] << DUMP_DELIM << i.imm();
 }
 std::ostream &operator<<(std::ostream &o, J i)
 {
-	return o << gpr_names[i.rd()] << " \t" << i.imm();
+	return o << gpr_names[i.rd()] << DUMP_DELIM << i.imm();
 }
 std::ostream &operator<<(std::ostream &o, A i)
 {
-	return o << gpr_names[i.rd()] << " \t" << gpr_names[i.rs1()] << " \t" << gpr_names[i.rs2()]
+	return o << gpr_names[i.rd()] << DUMP_DELIM << gpr_names[i.rs1()] << DUMP_DELIM << gpr_names[i.rs2()]
 		 << " \tra=" << int(i.rl()) << int(i.aq());
 }
 

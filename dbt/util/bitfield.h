@@ -13,27 +13,27 @@ struct bf_range {
 
 	template <typename C>
 	requires std::is_unsigned_v<T>
-	static inline constexpr T decode(C c)
+	static constexpr T decode(C c)
 	{
 		return decode_bits(static_cast<std::make_unsigned_t<C>>(c));
 	}
 
 	template <typename C>
 	requires std::is_signed_v<T>
-	static inline constexpr T decode(C c)
+	static constexpr T decode(C c)
 	{
 		return decode_bits(static_cast<std::make_signed_t<C>>(c));
 	}
 
 	template <typename C>
-	static inline constexpr C encode(C c, T t)
+	static constexpr C encode(C c, T t)
 	{
 		return encode_bits(c, t);
 	}
 
 	template <typename C, typename E_>
 	requires std::is_enum_v<E_> && std::is_same_v<T, std::underlying_type_t<E_>>
-	static inline constexpr C encode(C c, E_ e)
+	static constexpr C encode(C c, E_ e)
 	{
 		return encode_bits(c, to_underlying(e));
 	}
@@ -45,7 +45,7 @@ private:
 	static constexpr size_t mask = ((1ull << size) - 1) << l;
 
 	template <typename C>
-	static inline constexpr T decode_bits(C c)
+	static constexpr T decode_bits(C c)
 	{
 		constexpr size_t u_msb = sizeof(C) * CHAR_BIT - 1;
 		static_assert(u_msb >= h);
@@ -53,7 +53,7 @@ private:
 	}
 
 	template <typename C>
-	static inline constexpr C encode_bits(C c, T t)
+	static constexpr C encode_bits(C c, T t)
 	{
 		constexpr size_t u_msb = sizeof(C) * CHAR_BIT - 1;
 		static_assert(u_msb >= h);
@@ -76,7 +76,7 @@ struct bf_pt {
 template <typename T, typename P, typename... Args>
 struct bf_seq {
 	template <typename C>
-	static inline constexpr T decode(C c)
+	static constexpr T decode(C c)
 	{
 		return B::decode(c) | (bf_seq<T, Args...>::decode(c) << B::size);
 	}
@@ -88,7 +88,7 @@ private:
 template <typename T, typename P>
 struct bf_seq<T, P> {
 	template <typename C>
-	static inline constexpr T decode(C c)
+	static constexpr T decode(C c)
 	{
 		return bf_range<T, P::l, P::h>::decode(c);
 	}

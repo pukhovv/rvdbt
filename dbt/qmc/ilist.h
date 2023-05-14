@@ -7,19 +7,19 @@ namespace dbt
 {
 
 struct IListNodeBase {
-	inline IListNodeBase *getPrev() const
+	IListNodeBase *getPrev() const
 	{
 		return nprev;
 	}
-	inline IListNodeBase *getNext() const
+	IListNodeBase *getNext() const
 	{
 		return nnext;
 	}
-	inline void setPrev(IListNodeBase *n)
+	void setPrev(IListNodeBase *n)
 	{
 		nprev = n;
 	}
-	inline void setNext(IListNodeBase *n)
+	void setNext(IListNodeBase *n)
 	{
 		nnext = n;
 	}
@@ -29,7 +29,7 @@ private:
 };
 
 struct IListBase {
-	static inline void insertBefore(IListNodeBase *next, IListNodeBase *node)
+	static void insertBefore(IListNodeBase *next, IListNodeBase *node)
 	{
 		auto prev = next->getPrev();
 		node->setNext(next);
@@ -38,7 +38,7 @@ struct IListBase {
 		next->setPrev(node);
 	}
 
-	static inline void remove(IListNodeBase *node)
+	static void remove(IListNodeBase *node)
 	{
 		auto prev = node->getPrev();
 		auto next = node->getNext();

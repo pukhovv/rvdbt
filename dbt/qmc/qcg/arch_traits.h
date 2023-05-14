@@ -9,37 +9,37 @@ namespace dbt::qcg
 struct RegMask {
 	constexpr RegMask(u32 data_) : data(data_) {}
 
-	constexpr inline bool Test(qir::RegN r) const
+	constexpr bool Test(qir::RegN r) const
 	{
 		return data & (1u << r);
 	}
-	constexpr inline RegMask &Set(qir::RegN r)
+	constexpr RegMask &Set(qir::RegN r)
 	{
 		data |= (1u << r);
 		return *this;
 	}
-	constexpr inline RegMask &Clear(qir::RegN r)
+	constexpr RegMask &Clear(qir::RegN r)
 	{
 		data &= ~(1u << r);
 		return *this;
 	}
-	constexpr inline u8 count() const
+	constexpr u8 count() const
 	{
 		return std::popcount(data);
 	}
-	constexpr inline RegMask operator&(RegMask rh) const
+	constexpr RegMask operator&(RegMask rh) const
 	{
 		return RegMask{data & rh.data};
 	}
-	constexpr inline RegMask operator|(RegMask rh) const
+	constexpr RegMask operator|(RegMask rh) const
 	{
 		return RegMask{data | rh.data};
 	}
-	constexpr inline RegMask operator~() const
+	constexpr RegMask operator~() const
 	{
 		return RegMask{~data};
 	}
-	constexpr inline auto GetData() const
+	constexpr auto GetData() const
 	{
 		return data;
 	}
@@ -58,7 +58,7 @@ enum class RACtImm : u8 {
 DEFINE_ENUM_CLASS_FLAGOPS(RACtImm)
 
 struct RAOpCt {
-	constexpr inline void SetAlias(u8 alias_)
+	constexpr void SetAlias(u8 alias_)
 	{
 		has_alias = true;
 		alias = alias_;

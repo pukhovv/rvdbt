@@ -201,12 +201,12 @@ struct TraceRing {
 		u32 gip;
 	};
 
-	inline void push(Record const &rec)
+	void push(Record const &rec)
 	{
 		arr[head++ % size] = rec;
 	}
 
-	inline auto &at_idx(u32 i)
+	auto &at_idx(u32 i)
 	{
 		return arr[(head - 1 - i) % size];
 	}

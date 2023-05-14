@@ -8,7 +8,7 @@ namespace dbt::qir
 struct PrinterPass {
 	static std::string run(Region *r);
 
-	static inline void run(LogStream &stream, std::string const &header, Region *r)
+	static void run(LogStream &stream, std::string const &header, Region *r)
 	{
 		if (!stream.enabled()) {
 			return;

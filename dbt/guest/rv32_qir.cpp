@@ -219,7 +219,7 @@ static ALWAYS_INLINE void LogInsn(IType i, u32 ip)
 	std::stringstream ss;
 	ss << i;
 	const auto &res = ss.str();
-	log_qir("\t %08x: %-8s   %s", ip, IType::opcode_str, res.c_str());
+	log_qir("  %08x:  %-6s %s", ip, IType::opcode_str, res.c_str());
 }
 
 #define TRANSLATOR(name)                                                                                     \

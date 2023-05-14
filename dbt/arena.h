@@ -48,7 +48,7 @@ struct MemArena {
 	}
 
 	template <typename T>
-	inline T *Allocate(size_t num = 1)
+	T *Allocate(size_t num = 1)
 	{
 		return (T *)Allocate(sizeof(T) * num, alignof(T));
 	}
@@ -66,7 +66,7 @@ struct MemArena {
 		return used;
 	}
 
-	inline void *BaseAddr() const
+	void *BaseAddr() const
 	{
 		return pool;
 	}

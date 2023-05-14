@@ -99,7 +99,7 @@ private:
 	}
 
 	template <typename T>
-	inline void printOperands(T *ins)
+	void printOperands(T *ins)
 	{
 		// TODO: iterators
 		auto out = ins->outputs();

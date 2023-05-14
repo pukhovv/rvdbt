@@ -10,9 +10,9 @@ struct MarkerKeeper;
 
 template <typename N, typename S>
 struct Marker {
-	inline Marker(MarkerKeeper *mkeeper, u8 states);
+	Marker(MarkerKeeper *mkeeper, u8 states);
 
-	inline S Get(N *n)
+	S Get(N *n)
 	{
 		Mark m = n->GetMark();
 		assert(m < mmax);
@@ -22,7 +22,7 @@ struct Marker {
 		return static_cast<S>(m - mmin);
 	}
 
-	inline void Set(N *n, S s)
+	void Set(N *n, S s)
 	{
 		auto m = static_cast<Mark>(s);
 		assert(n->GetMark() < mmax);

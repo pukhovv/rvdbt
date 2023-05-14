@@ -59,12 +59,12 @@ struct ModuleGraph {
 	{
 	}
 
-	inline bool InModule(u32 ip)
+	bool InModule(u32 ip)
 	{
 		return segment.InSegment(ip);
 	}
 
-	inline ModuleGraphNode *GetNode(u32 ip)
+	ModuleGraphNode *GetNode(u32 ip)
 	{
 		if (!InModule(ip)) {
 			return nullptr;
@@ -76,33 +76,33 @@ struct ModuleGraph {
 		return nullptr;
 	}
 
-	inline ModuleGraphNode *AddNode(u32 ip)
+	ModuleGraphNode *AddNode(u32 ip)
 	{
 		auto res = ip_map.insert({ip, std::make_unique<ModuleGraphNode>(ip)});
 		assert(res.second);
 		return res.first->second.get();
 	}
 
-	inline void RecordEntry(u32 ip)
+	void RecordEntry(u32 ip)
 	{
 		AddNode(ip);
 	}
 
-	inline void RecordBrindTarget(u32 ip)
+	void RecordBrindTarget(u32 ip)
 	{
 		auto *node = GetNode(ip);
 		node->flags.is_brind_target = true;
 		root->AddSucc(node);
 	}
 
-	inline void RecordSegmentEntry(u32 ip)
+	void RecordSegmentEntry(u32 ip)
 	{
 		auto *node = GetNode(ip);
 		node->flags.is_segment_entry = true;
 		root->AddSucc(node);
 	}
 
-	inline void RecordGBr(u32 ip, u32 tgtip)
+	void RecordGBr(u32 ip, u32 tgtip)
 	{
 		if (auto tgt = GetNode(tgtip); tgt) {
 			GetNode(ip)->AddSucc(tgt);
@@ -111,7 +111,7 @@ struct ModuleGraph {
 		}
 	}
 
-	inline void RecordGBrLink(u32 ip, u32 tgtip, u32 ip_link)
+	void RecordGBrLink(u32 ip, u32 tgtip, u32 ip_link)
 	{
 		if (auto tgt = GetNode(tgtip); tgt) {
 			GetNode(ip)->AddSucc(tgt);
@@ -120,7 +120,7 @@ struct ModuleGraph {
 		}
 	}
 
-	inline void RecordGBrind(u32 ip, u32 ip_link = 0)
+	void RecordGBrind(u32 ip, u32 ip_link = 0)
 	{
 		// sidecall
 	}

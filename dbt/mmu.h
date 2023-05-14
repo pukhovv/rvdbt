@@ -23,17 +23,17 @@ struct mmu {
 	static void *mmap(u32 vaddr, u32 len, int prot, int flag = MAP_ANON | MAP_PRIVATE | MAP_FIXED,
 			  int fd = -1, size_t offs = 0);
 
-	static inline bool check_h2g(void *hptr)
+	static ALWAYS_INLINE bool check_h2g(void *hptr)
 	{
 		return ((uptr)hptr - (uptr)base) < ASPACE_SIZE;
 	}
 
-	static inline u32 h2g(void *hptr)
+	static ALWAYS_INLINE u32 h2g(void *hptr)
 	{
 		return (uptr)hptr - (uptr)base;
 	}
 
-	static inline void *g2h(u32 gptr)
+	static ALWAYS_INLINE void *g2h(u32 gptr)
 	{
 		return base + gptr;
 	}

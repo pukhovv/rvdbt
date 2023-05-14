@@ -49,12 +49,12 @@ static constexpr u16 TB_MAX_INSNS = 64;
 namespace dbt
 {
 struct CPUState : rv32::CPUStateImpl {
-	static inline void SetCurrent(CPUState *s)
+	static void SetCurrent(CPUState *s)
 	{
 		tls_current = s;
 	}
 
-	static inline CPUState *Current()
+	static CPUState *Current()
 	{
 		return tls_current;
 	}

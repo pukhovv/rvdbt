@@ -44,7 +44,7 @@ struct tcache {
 		return (tb->ip == ip) ? tb : nullptr;
 	}
 
-	static inline TBlock *Lookup(u32 ip)
+	static TBlock *Lookup(u32 ip)
 	{
 		auto hash = l1hash(ip);
 		auto *tb = l1_cache[hash];
@@ -58,7 +58,7 @@ struct tcache {
 
 	static TBlock *LookupUpperBound(u32 gip);
 
-	static inline void CacheBrind(TBlock *tb)
+	static void CacheBrind(TBlock *tb)
 	{
 		l1_brind_cache[l1hash(tb->ip)] = {tb->ip, tb->tcode.ptr};
 		if (unlikely(!tb->flags.is_brind_target)) {
@@ -67,7 +67,7 @@ struct tcache {
 		tb->flags.is_brind_target = true;
 	}
 
-	static inline void RecordLink(jitabi::ppoint::BranchSlot *slot, TBlock *tgt, bool cross_segment)
+	static void RecordLink(jitabi::ppoint::BranchSlot *slot, TBlock *tgt, bool cross_segment)
 	{
 		// TODO: record {tgt:slot} for unlinking
 		tgt->flags.is_segment_entry |= cross_segment;

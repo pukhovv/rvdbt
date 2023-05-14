@@ -13,7 +13,7 @@ struct FolderVisitor : qir::InstVisitor<FolderVisitor, bool> {
 
 	FolderVisitor(Block *bb_, Inst *ins_) : qb(bb_, ins_->getIter()) {}
 
-	inline Inst *Apply()
+	Inst *Apply()
 	{
 		auto ins = &*qb.GetIterator();
 		if (likely(!visit(ins))) {
@@ -24,7 +24,7 @@ struct FolderVisitor : qir::InstVisitor<FolderVisitor, bool> {
 		return &*last_ins;
 	}
 
-	inline bool visitInst(Inst *ins)
+	bool visitInst(Inst *ins)
 	{
 		return false;
 	}

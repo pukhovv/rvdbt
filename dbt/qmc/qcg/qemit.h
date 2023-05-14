@@ -11,7 +11,7 @@ namespace dbt::qcg
 struct QEmit {
 	QEmit(qir::Region *region, CompilerRuntime *cruntime_, qir::CodeSegment *segment_, bool is_leaf_);
 
-	inline void SetBlock(qir::Block *bb_)
+	void SetBlock(qir::Block *bb_)
 	{
 		bb = bb_;
 		j.bind(labels[bb->GetId()]);

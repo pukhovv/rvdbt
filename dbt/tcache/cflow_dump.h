@@ -8,17 +8,17 @@ namespace dbt
 LOG_STREAM(cflow);
 
 struct cflow_dump {
-	static inline void RecordEntry(u32 ip)
+	static void RecordEntry(u32 ip)
 	{
 		log_cflow("B%08x[fillcolor=cyan]", ip);
 	}
 
-	static inline void RecordBrindEntry(u32 ip)
+	static void RecordBrindEntry(u32 ip)
 	{
 		log_cflow("B%08x[fillcolor=orange]", ip);
 	}
 
-	static inline void RecordGBr(u32 ip, u32 tgtip)
+	static void RecordGBr(u32 ip, u32 tgtip)
 	{
 		if (rounddown(ip, mmu::PAGE_SIZE) != rounddown(tgtip, mmu::PAGE_SIZE)) {
 			log_cflow("B%08x->B%08x[color=seagreen,penwidth=2]", ip, tgtip);
@@ -29,14 +29,14 @@ struct cflow_dump {
 		}
 	}
 
-	static inline void RecordGBrLink(u32 ip, u32 tgtip, u32 ip_link)
+	static void RecordGBrLink(u32 ip, u32 tgtip, u32 ip_link)
 	{
 		log_cflow("B%08x->B%08x[color=blue,penwidth=2]"
 			  "B%08x->B%08x[color=gray,penwidth=2,style=dashed]",
 			  ip, tgtip, ip, ip_link);
 	}
 
-	static inline void RecordGBrind(u32 ip, u32 ip_link = 0)
+	static void RecordGBrind(u32 ip, u32 ip_link = 0)
 	{
 		log_cflow("B%08x_brind[fillcolor=purple,style=invis];"
 			  "B%08x->B%08x_brind[color=purple,penwidth=3,arrowhead=dot]",
