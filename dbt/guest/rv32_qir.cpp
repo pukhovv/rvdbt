@@ -188,21 +188,30 @@ inline void RV32Translator::TranslateSetcc(rv32::insn::I i, CondCode cc)
 
 void RV32Translator::TranslateLoad(insn::I i, VType type, VSign sgn)
 {
-	auto tmp = vtemp(qb);
+	VOperand addr = gprop(i.rs1());
 
-	qb.Create_add(tmp, gprop(i.rs1()), vconst(i.imm())); // constfold
+	if (i.imm()) {
+		auto tmp = vtemp(qb);
+		qb.Create_add(tmp, addr, vconst(i.imm())); // constfold
+		addr = tmp;
+	}
 	if (i.rd()) {
-		qb.Create_vmload(type, sgn, vgpr(i.rd()), tmp);
+		qb.Create_vmload(type, sgn, vgpr(i.rd()), addr);
 	} else {
-		qb.Create_vmload(type, sgn, tmp, tmp);
+		qb.Create_vmload(type, sgn, addr, addr);
 	}
 }
 
 void RV32Translator::TranslateStore(insn::S i, VType type, VSign sgn)
 {
-	auto tmp = vtemp(qb);
-	qb.Create_add(tmp, gprop(i.rs1()), vconst(i.imm()));
-	qb.Create_vmstore(type, sgn, tmp, gprop(i.rs2(), type));
+	VOperand addr = gprop(i.rs1());
+
+	if (i.imm()) {
+		auto tmp = vtemp(qb);
+		qb.Create_add(tmp, addr, vconst(i.imm()));
+		addr = tmp;
+	}
+	qb.Create_vmstore(type, sgn, addr, gprop(i.rs2(), type));
 }
 
 inline void RV32Translator::TranslateHelper(insn::Base i, RuntimeStubId stub)

@@ -88,18 +88,16 @@ Analyser(auipc) {}
 Analyser(jal)
 {
 	// TODO: check alignment
+	mg->RecordGBr(bb_ip, insn_ip + i.imm());
 	if (i.rd()) {
-		mg->RecordGBrLink(bb_ip, insn_ip + i.imm(), insn_ip + 4);
-	} else {
-		mg->RecordGBr(bb_ip, insn_ip + i.imm());
+		mg->RecordLink(bb_ip, insn_ip + 4);
 	}
 }
 Analyser(jalr)
 {
+	mg->RecordGBrind(bb_ip);
 	if (i.rd()) {
-		mg->RecordGBrind(bb_ip, insn_ip + 4);
-	} else {
-		mg->RecordGBrind(bb_ip);
+		mg->RecordLink(bb_ip, insn_ip + 4);
 	}
 }
 Analyser(beq)

@@ -12,6 +12,7 @@ namespace dbt
 {
 LOG_STREAM(modulegraph)
 
+// TODO: optimize layout and use Arena containers
 struct ModuleGraphNode {
 	explicit ModuleGraphNode(u32 ip_) : ip(ip_) {}
 
@@ -34,7 +35,11 @@ struct ModuleGraphNode {
 		bool is_brind_target : 1 {false};
 		bool is_segment_entry : 1 {false};
 		bool region_entry : 1 {false};
+		bool is_brind_source : 1 {false};
+		bool is_crosssegment_br : 1 {false};
 	} flags;
+
+	ModuleGraphNode *link{};
 
 	std::vector<ModuleGraphNode *> succs;
 	std::vector<ModuleGraphNode *> preds;
@@ -104,25 +109,22 @@ struct ModuleGraph {
 
 	void RecordGBr(u32 ip, u32 tgtip)
 	{
+		auto src = GetNode(ip);
 		if (auto tgt = GetNode(tgtip); tgt) {
-			GetNode(ip)->AddSucc(tgt);
+			src->AddSucc(tgt);
 		} else {
-			// sidecall
+			src->flags.is_crosssegment_br = true;
 		}
 	}
 
-	void RecordGBrLink(u32 ip, u32 tgtip, u32 ip_link)
+	void RecordGBrind(u32 ip)
 	{
-		if (auto tgt = GetNode(tgtip); tgt) {
-			GetNode(ip)->AddSucc(tgt);
-		} else {
-			// sidecall
-		}
+		GetNode(ip)->flags.is_brind_source = true;
 	}
 
-	void RecordGBrind(u32 ip, u32 ip_link = 0)
+	void RecordLink(u32 ip, u32 linkip)
 	{
-		// sidecall
+		GetNode(ip)->link = GetNode(linkip);
 	}
 
 	void ComputeDomTree();

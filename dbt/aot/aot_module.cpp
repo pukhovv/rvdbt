@@ -21,6 +21,18 @@ void ModuleGraph::Dump(std::vector<std::vector<ModuleGraphNode *>> const *region
 		} else {
 			log_modulegraph("B%08x[fillcolor=cyan]", n.ip);
 		}
+#if 0 /* Include only compiled blocks */
+		if (n.flags.is_brind_source) {
+			log_modulegraph("B%08x_brind[];"
+					"B%08x->B%08x_brind[color=darkgreen]",
+					n.ip, n.ip, n.ip);
+		}
+		if (n.flags.is_crosssegment_br) {
+			log_modulegraph("B%08x_br[];"
+					"B%08x->B%08x_brind[color=black]",
+					n.ip, n.ip, n.ip);
+		}
+#endif
 	};
 
 	auto dump_edge = [](ModuleGraphNode const &n, ModuleGraphNode const &t) {
@@ -31,11 +43,18 @@ void ModuleGraph::Dump(std::vector<std::vector<ModuleGraphNode *>> const *region
 		}
 	};
 
+	auto dump_link = [](ModuleGraphNode const &n, ModuleGraphNode const &t) {
+		log_modulegraph("B%08x->B%08x[color=darkgreen,style=dashed]", n.ip, t.ip);
+	};
+
 	for (auto const &it : ip_map) {
 		auto const &n = *it.second;
 		dump_node(n);
 		for (auto const &s : n.succs) {
 			dump_edge(n, *s);
+		}
+		if (n.link) {
+			dump_link(n, *n.link);
 		}
 		// if (n.dominator && n.dominator != root.get()) {
 		// 	log_modulegraph("B%08x->B%08x[color=grey]", n.dominator->ip, n.ip);
@@ -44,16 +63,20 @@ void ModuleGraph::Dump(std::vector<std::vector<ModuleGraphNode *>> const *region
 
 	if (regions) {
 		for (auto const &r : *regions) {
-			std::stringstream ss;
-			ss << std::hex;
-			ss << "subgraph cluster_R" << std::setfill('0') << std::setw(8) << r[0]->ip
-			   << "{style=filled;color=lightgrey;";
+			// std::stringstream ss;
+			// ss << std::hex;
+			// ss << "subgraph cluster_R" << std::setfill('0') << std::setw(8) << r[0]->ip
+			//    << "{style=filled;color=lightgrey;";
+			// for (size_t i = 0; i < r.size(); ++i) {
+			// 	ss << " B" << std::setfill('0') << std::setw(8) << r[i]->ip;
+			// }
+			// ss << "}";
+			// auto str = ss.str();
+			log_modulegraph("subgraph cluster_R%08x{style=filled;color=lightgrey;", r[0]->ip);
 			for (size_t i = 0; i < r.size(); ++i) {
-				ss << " B" << std::setfill('0') << std::setw(8) << r[i]->ip;
+				log_modulegraph(" B%08x", r[i]->ip);
 			}
-			ss << "}";
-			auto str = ss.str();
-			log_modulegraph(str.c_str());
+			log_modulegraph("}");
 		}
 	}
 }
