@@ -37,6 +37,7 @@ struct tcache {
 	static void Destroy();
 	static void Invalidate();
 	static void Insert(TBlock *tb);
+	static void InvalidatePage(u32 pvaddr);
 
 	static ALWAYS_INLINE TBlock *LookupFast(u32 ip)
 	{
@@ -69,8 +70,8 @@ struct tcache {
 
 	static void RecordLink(jitabi::ppoint::BranchSlot *slot, TBlock *tgt, bool cross_segment)
 	{
-		// TODO: record {tgt:slot} for unlinking
 		tgt->flags.is_segment_entry |= cross_segment;
+		link_map.insert({tgt->ip, slot});
 	}
 
 	static void *AllocateCode(size_t sz, u16 align);
@@ -106,6 +107,8 @@ private:
 
 	static constexpr size_t CODE_POOL_SIZE = 128 * 1024 * 1024;
 	static MemArena code_pool;
+
+	static std::multimap<u32, jitabi::ppoint::BranchSlot *> link_map;
 };
 
 } // namespace dbt
