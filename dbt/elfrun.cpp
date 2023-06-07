@@ -70,6 +70,7 @@ int main(int argc, char **argv)
 
 	dbt::CPUState state{};
 	dbt::ukernel::InitThread(&state, elf);
+	dbt::ukernel::InitSignals(&state);
 	int guest_rc = uk.Execute(&state);
 
 	dbt::objprof::UpdateProfile();

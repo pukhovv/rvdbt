@@ -4,6 +4,8 @@
 #include "dbt/mmu.h"
 #include <atomic>
 
+#include <immintrin.h>
+
 namespace dbt
 {
 thread_local CPUState *CPUState::tls_current{};
@@ -205,12 +207,21 @@ static ALWAYS_INLINE void ApplyInsnA(CPUState *s, u8 *vmem, insn::A i)
 
 HANDLER(lrw)
 {
-	s->gpr[i.rd()] = *(u32 *)(vmem + s->gpr[i.rs1()]);
+	// TODO: start transaction
+	auto h = []<std::memory_order MO>(CPUState *s, u8 *vmem, insn::A i) {
+		auto a = std::atomic_ref(*(u32 *)(vmem + s->gpr[i.rs1()]));
+		s->gpr[i.rd()] = a.load(MO);
+	};
+	ApplyInsnA<decltype(h)>(s, vmem, i);
 }
 HANDLER(scw)
 {
-	*(u32 *)(vmem + s->gpr[i.rs1()]) = s->gpr[i.rs2()];
-	s->gpr[i.rd()] = 0;
+	auto h = []<std::memory_order MO>(CPUState *s, u8 *vmem, insn::A i) {
+		auto a = std::atomic_ref(*(u32 *)(vmem + s->gpr[i.rs1()]));
+		a.store(s->gpr[i.rs2()], MO);
+		s->gpr[i.rd()] = 0;
+	};
+	ApplyInsnA<decltype(h)>(s, vmem, i);
 }
 HANDLER(amoswapw)
 {

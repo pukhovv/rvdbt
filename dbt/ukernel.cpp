@@ -10,6 +10,7 @@ extern "C" {
 #include <fcntl.h>
 #include <libgen.h>
 #include <linux/limits.h>
+#include <signal.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
@@ -68,6 +69,38 @@ void ukernel::InitThread(CPUState *state, ElfImage *elf)
 	state->ip = elf->entry;
 }
 
+static void dbt_sigaction_memory(int signo, siginfo_t *sinfo, void *uctx_raw)
+{
+	auto uc = static_cast<ucontext_t *>(uctx_raw);
+
+	auto hpc = uc->uc_mcontext.gregs[REG_RIP];
+
+	log_ukernel("dbt_sigaction_memory:host: signal=%d, pc=%p, si_addr=%p", signo, hpc, sinfo->si_addr);
+	if (!mmu::check_h2g(sinfo->si_addr)) {
+		Panic("Memory fault in host address space!!!");
+	}
+	auto g_faddr = mmu::h2g(sinfo->si_addr);
+
+	auto state = CPUState::Current();
+	state->DumpTrace("signal");
+	log_ukernel("\tfault:guest: pc=%08x, si_addr=%08x", state->ip, g_faddr);
+	Panic("Memory fault in guest address space. See logs for more details");
+}
+
+// TODO: emulate signals
+void ukernel::InitSignals(CPUState *state)
+{
+	struct sigaction sa;
+	sigset_t sset;
+
+	sigfillset(&sset);
+	sa.sa_flags = SA_SIGINFO;
+	sa.sa_sigaction = dbt_sigaction_memory;
+
+	sigaction(SIGSEGV, &sa, nullptr);
+	sigaction(SIGBUS, &sa, nullptr);
+}
+
 void ukernel::SyscallDemo(CPUState *state)
 {
 	state->trapno = rv32::TrapCode::NONE;
@@ -117,6 +150,10 @@ void ukernel::SyscallLinux(CPUState *state)
 		}
 		DEF_SYSCALL(57, close)
 		{
+			if (args[0] < 3) { // TODO: split file descriptors
+				rc = 0;
+				break;
+			}
 			rc = close(args[0]);
 			RCERRNO(rc);
 		}
@@ -157,6 +194,16 @@ void ukernel::SyscallLinux(CPUState *state)
 			}
 			rc = readlinkat((i32)args[0], pathbuf, (char *)mmu::g2h(args[2]), args[3]);
 			RCERRNO(rc);
+		}
+		DEF_SYSCALL(80, newfstat)
+		{
+			rc = fstatat((i32)args[0], "", (struct stat *)mmu::g2h(args[1]), 0);
+			RCERRNO(rc);
+		}
+		DEF_SYSCALL(93, exit)
+		{
+			rc = args[0];
+			state->trapno = rv32::TrapCode::TERMINATED;
 		}
 		DEF_SYSCALL(94, exit_group)
 		{

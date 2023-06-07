@@ -78,8 +78,7 @@ static ALWAYS_INLINE void LogInsn(IType i, u32 ip)
 #define Analyser_Unimpl(name)                                                                                \
 	Analyser(name)                                                                                       \
 	{                                                                                                    \
-		log_analyse("unimplemented insn " #name);                                                    \
-		dbt::Panic();                                                                                \
+		dbt::Panic("unimplemented insn " #name);                                                     \
 	}
 
 Analyser_Unimpl(ill);

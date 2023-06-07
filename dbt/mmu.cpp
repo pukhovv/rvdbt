@@ -88,7 +88,7 @@ void *mmu::mmap(u32 vaddr, u32 len, int prot, int flags, int fd, size_t offs)
 			log_mmu("mmu::mmap fixed failed");
 			return MAP_FAILED;
 		}
-		log_mmu("mmu::mmap allocated at %p", hptr);
+		log_mmu("mmu::mmap allocated at %p sz=0x%08x", hptr, len);
 		MarkUsedPages(vaddr >> PAGE_BITS, plen);
 		return hptr;
 	}
@@ -132,7 +132,7 @@ void *mmu::mmap(u32 vaddr, u32 len, int prot, int flags, int fd, size_t offs)
 	if (res == MAP_FAILED || res != hptr) {
 		Panic();
 	}
-	log_mmu("mmu::mmap allocated at %p", hptr);
+	log_mmu("mmu::mmap allocated at %p sz=0x%08x", hptr, len);
 	paddr = h2g(hptr) >> PAGE_BITS;
 	MarkUsedPages(paddr, plen);
 	mmap_hint_page = paddr + plen;

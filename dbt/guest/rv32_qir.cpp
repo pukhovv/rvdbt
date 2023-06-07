@@ -251,8 +251,7 @@ static ALWAYS_INLINE void LogInsn(IType i, u32 ip)
 #define TRANSLATOR_Unimpl(name)                                                                              \
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
-		log_qir("unimplemented insn " #name);                                                        \
-		dbt::Panic();                                                                                \
+		dbt::Panic("unimplemented insn " #name);                                                     \
 	}
 
 #define TRANSLATOR_ArithmRI(name, op)                                                                        \
