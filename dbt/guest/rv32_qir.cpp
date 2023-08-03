@@ -86,6 +86,11 @@ void RV32Translator::TranslateIPRange(u32 ip, u32 boundary_ip)
 
 	qb = qir::Builder(ip2bb.find(ip)->second);
 
+	if constexpr (config::dump_trace) {
+		PreSideeff();
+		qb.Create_hcall(RuntimeStubId::id_trace, vconst(0));
+	}
+
 	u32 num_insns = 0;
 	control = Control::NEXT;
 	while (true) {

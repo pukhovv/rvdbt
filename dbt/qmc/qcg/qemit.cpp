@@ -152,11 +152,6 @@ void QEmit::Prologue(u32 ip)
 {
 	// j.int3();
 	FrameSetup();
-#ifdef CONFIG_DUMP_TRACE
-	// j.mov(ctx->vreg_ip->GetSpill(), ctx->tb->ip);
-	j.mov(asmjit::x86::Mem(R_STATE, offsetof(CPUState, ip), 4), ip);
-	j.call(jitabi::stub_trace);
-#endif
 }
 
 void QEmit::StateFill(qir::RegN p, qir::VType type, u16 offs)

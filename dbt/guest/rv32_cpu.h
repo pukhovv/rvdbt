@@ -31,9 +31,9 @@ struct CPUStateImpl {
 	using gpr_t = u32;
 	static constexpr u8 gpr_num = 32;
 
-	std::array<gpr_t, gpr_num> gpr;
-	gpr_t ip;
-	TrapCode trapno;
+	std::array<gpr_t, gpr_num> gpr{};
+	gpr_t ip{};
+	TrapCode trapno{};
 
 	tcache::L1BrindCache *l1_brind_cache{&tcache::l1_brind_cache};
 	RuntimeStubTab stub_tab{};

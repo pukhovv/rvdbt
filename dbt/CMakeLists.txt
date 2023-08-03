@@ -47,7 +47,7 @@ target_include_directories(dbtstatic PUBLIC "${PROJECT_SOURCE_DIR}")
 target_include_directories(dbtstatic SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/third_party/asmjit/src")
 target_include_directories(dbtstatic SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/dbt/third_party/elfio")
 
-target_link_libraries(dbtstatic PUBLIC dbtjitshared asmjit::asmjit ${Boost_LIBRARIES} m md)
+target_link_libraries(dbtstatic PUBLIC dbtjitshared asmjit::asmjit ${Boost_LIBRARIES} m md ssl crypto)
 
 find_package(LLVM 15 REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")

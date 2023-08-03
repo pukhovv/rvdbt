@@ -20,11 +20,19 @@ FileChecksum FileChecksum::FromFile(int fd)
 		Panic();
 	}
 
-	MD5_CTX ctx;
-	MD5Init(&ctx);
-	MD5Update(&ctx, (uint8_t const *)fmap, st.st_size);
 	FileChecksum sum;
-	MD5Final(sum.data, &ctx);
+
+	EVP_MD_CTX *mdctx;
+	mdctx = EVP_MD_CTX_new();
+	if (!EVP_DigestInit_ex(mdctx, EVP_md5(), NULL)) {
+		Panic();
+	}
+	if (!EVP_DigestUpdate(mdctx, (uint8_t const *)fmap, st.st_size)) {
+		Panic();
+	}
+	if (!EVP_DigestFinal_ex(mdctx, sum.data, NULL)) {
+		Panic();
+	}
 	return sum;
 }
 

@@ -10,6 +10,30 @@
 #include "llvm/IR/Verifier.h"
 #include <llvm-15/llvm/IR/IntrinsicInst.h>
 
+namespace std
+{
+template <class Dest, class Source>
+#if __has_builtin(__builtin_bit_cast)
+constexpr
+#else
+inline
+#endif
+    Dest
+    bit_cast(const Source &source)
+{
+#if __has_builtin(__builtin_bit_cast)
+	return __builtin_bit_cast(Dest, source);
+#else
+	static_assert(sizeof(Dest) == sizeof(Source));
+	static_assert(std::is_trivially_copyable_v<Dest>);
+	static_assert(std::is_trivially_copyable_v<Source>);
+	Dest dest;
+	memcpy(&dest, &source, sizeof(dest));
+	return dest;
+#endif
+}
+} // namespace std
+
 namespace dbt::qir
 {
 

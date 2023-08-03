@@ -10,7 +10,8 @@
 #include <map>
 #include <span>
 
-#include "md5.h"
+#include <openssl/evp.h>
+
 #include "sys/stat.h"
 #include "sys/types.h"
 #include "unistd.h"

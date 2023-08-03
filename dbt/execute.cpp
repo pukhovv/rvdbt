@@ -42,6 +42,9 @@ struct JITCompilerRuntime final : CompilerRuntime {
 static inline IpRange GetCompilationIPRange(u32 ip)
 {
 	u32 upper = roundup(ip, mmu::PAGE_SIZE);
+	if (config::dump_trace) {
+		return {ip, upper};
+	}
 	if (auto *tb_upper = tcache::LookupUpperBound(ip)) {
 		upper = std::min(upper, tb_upper->ip);
 	}
