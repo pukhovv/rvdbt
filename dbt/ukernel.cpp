@@ -5,6 +5,8 @@
 #include <alloca.h>
 #include <cstring>
 
+#include "dbt/ukernel_syscalls.h"
+
 extern "C" {
 #include <elf.h>
 #include <fcntl.h>
@@ -25,12 +27,19 @@ LOG_STREAM(ukernel);
 
 struct ukernel::ElfImage {
 	Elf32_Ehdr ehdr;
-	u32 load_addr;
-	u32 stack_start;
-	u32 entry;
-	u32 brk;
+	uabi_ulong load_addr;
+	uabi_ulong stack_start;
+	uabi_ulong entry;
+	uabi_ulong brk;
 };
 ukernel::ElfImage ukernel::exe_elf_image{};
+
+struct ukernel::Process {
+	std::string fsroot;
+	int exe_fd{-1};
+	uabi_ulong brk{};
+};
+ukernel::Process ukernel::process{};
 
 int ukernel::Execute(CPUState *state)
 {
@@ -102,14 +111,15 @@ void ukernel::InitSignals(CPUState *state)
 	sigaction(SIGBUS, &sa, nullptr);
 }
 
+// demo-kernel
 void ukernel::SyscallDemo(CPUState *state)
 {
 	state->trapno = rv32::TrapCode::NONE;
-	u32 id = state->gpr[10];
+	uabi_ulong id = state->gpr[10];
 	switch (id) {
 	case 1: {
 		log_ukernel("syscall readnum");
-		u32 res;
+		uabi_ulong res;
 		fscanf(stdin, "%d", &res);
 		state->gpr[10] = res;
 		return;
@@ -124,224 +134,10 @@ void ukernel::SyscallDemo(CPUState *state)
 	}
 }
 
-void ukernel::SyscallLinux(CPUState *state)
-{
-	state->trapno = rv32::TrapCode::NONE;
-	u32 args[7] = {state->gpr[10], state->gpr[11], state->gpr[12], state->gpr[13],
-		       state->gpr[14], state->gpr[15], state->gpr[16]};
-	u32 syscallno = state->gpr[17];
-	i32 rc;
-
-#define RCERRNO(rc)                                                                                          \
-	do {                                                                                                 \
-		if ((rc) < 0)                                                                                \
-			(rc) = -errno;                                                                       \
-	} while (0)
-
-#define DEF_SYSCALL(no, name)                                                                                \
-	break;                                                                                               \
-	case no:                                                                                             \
-		log_ukernel("sys_%s (no=%d)\t ip=%08x", #name, syscallno, state->ip);
-
-	switch (syscallno) {
-		DEF_SYSCALL(56, openat)
-		{
-			rc = openat(args[0], (char const *)mmu::g2h(args[1]), args[2], args[3]);
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(57, close)
-		{
-			if (args[0] < 3) { // TODO: split file descriptors
-				rc = 0;
-				break;
-			}
-			rc = close(args[0]);
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(62, lseek)
-		{
-			// asmlinkage long sys_llseek(unsigned int fd, unsigned long offset_high, unsigned
-			// long offset_low, loff_t __user *result, unsigned int whence);
-			off_t off = ((u64)args[1] << 32) | args[2];
-			rc = lseek(args[0], off, args[4]);
-			if (rc < 0) {
-				(rc) = -errno;
-			} else {
-				*(u64 *)mmu::g2h(args[3]) = rc;
-			}
-		}
-		DEF_SYSCALL(63, read)
-		{
-			rc = read(args[0], mmu::g2h(args[1]), args[2]);
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(64, write)
-		{
-			rc = write((i32)args[0], mmu::g2h(args[1]), args[2]);
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(78, readlinkat)
-		{
-			char pathbuf[PATH_MAX];
-			char const *path = (char *)mmu::g2h(args[1]);
-			if (*path) {
-				rc = PathResolution((i32)args[0], path, pathbuf);
-				if (rc < 0) {
-					rc = -errno;
-					break;
-				}
-			} else {
-				pathbuf[0] = 0;
-			}
-			rc = readlinkat((i32)args[0], pathbuf, (char *)mmu::g2h(args[2]), args[3]);
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(80, newfstat)
-		{
-			rc = fstatat((i32)args[0], "", (struct stat *)mmu::g2h(args[1]), 0);
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(93, exit)
-		{
-			rc = args[0];
-			state->trapno = rv32::TrapCode::TERMINATED;
-		}
-		DEF_SYSCALL(94, exit_group)
-		{
-			rc = args[0];
-			state->trapno = rv32::TrapCode::TERMINATED;
-		}
-		DEF_SYSCALL(134, rt_sigaction)
-		{
-			rc = 0;
-			log_ukernel("TODO: support signals!");
-		}
-		DEF_SYSCALL(160, uname)
-		{
-			auto *un = (struct utsname *)mmu::g2h(args[0]);
-			rc = uname(un);
-			strcpy(un->machine, "riscv32");
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(174, getuid)
-		{
-			rc = getuid();
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(175, geteuid)
-		{
-			rc = geteuid();
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(176, getgid)
-		{
-			rc = getgid();
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(177, getegid)
-		{
-			rc = getegid();
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(179, sysinfo)
-		{
-			struct rv32abi_sysinfo {
-				u32 uptime;
-				u32 loads[3];
-				u32 totalram;
-				u32 freeram;
-				u32 sharedram;
-				u32 bufferram;
-				u32 totalswap;
-				u32 freeswap;
-				u16 procs;
-				u16 pad;
-				u32 totalhigh;
-				u32 freehigh;
-				u32 mem_unit;
-				char _f[20 - 2 * sizeof(u32) - sizeof(u32)];
-			};
-			struct sysinfo hs;
-			rc = sysinfo(&hs);
-
-			if (rc > 0) {
-				auto *gs = (struct rv32abi_sysinfo *)mmu::g2h(args[0]);
-				gs->uptime = hs.uptime;
-				for (int i = 0; i < 3; ++i) {
-					gs->loads[i] = hs.loads[i];
-				}
-				gs->totalram = 1_GB;
-				gs->freeram = 500_MB;
-				gs->sharedram = gs->bufferram = gs->totalswap = gs->freeswap = 1_MB;
-				gs->procs = hs.procs;
-				gs->totalhigh = gs->freehigh = 1_MB;
-				gs->mem_unit = 1;
-			}
-
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(214, brk)
-		{
-			rc = do_sys_brk(args[0]);
-		}
-		DEF_SYSCALL(215, munmap)
-		{
-			// TODO: implement in mmu
-			log_ukernel("munmap addr: %x", mmu::g2h(args[0]));
-			rc = munmap(mmu::g2h(args[0]), args[1]);
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(222, mmap)
-		{
-			// TODO: file maps in mmu
-			void *ret = mmu::mmap(args[0], args[1], args[2], args[3], args[4], args[5]);
-			if (ret == MAP_FAILED) {
-				rc = -errno;
-				break;
-			}
-			rc = mmu::h2g(ret);
-			log_ukernel("mmap addr: %x", rc);
-		}
-		DEF_SYSCALL(226, mprotect)
-		{
-			// TODO: implement in mmu
-			rc = mprotect(mmu::g2h(args[0]), args[1], args[2]);
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(291, statx)
-		{
-			char pathbuf[PATH_MAX];
-			char const *path = (char *)mmu::g2h(args[1]);
-			if (*path) {
-				rc = PathResolution((i32)args[0], path, pathbuf);
-				if (rc < 0) {
-					rc = -errno;
-				}
-			} else {
-				pathbuf[0] = 0;
-			}
-			rc =
-			    statx((i32)args[0], pathbuf, args[2], args[3], (struct statx *)mmu::g2h(args[4]));
-			RCERRNO(rc);
-		}
-		DEF_SYSCALL(403, clock_gettime)
-		{
-			rc = clock_gettime(args[0], (timespec *)mmu::g2h(args[1]));
-			RCERRNO(rc);
-		}
-		break;
-	default:
-		log_ukernel("sys_ (no=%4d) is unknown", syscallno);
-		Panic("unknown syscall");
-	}
-	log_ukernel("    ret: %d", rc);
-	state->gpr[10] = rc;
-}
-
-int ukernel::HandleSpecialPath(char const *path, char *resolved)
+static int HandleSpecialPath(char const *path, char *resolved)
 {
 	if (!strcmp(path, "/proc/self/exe")) {
-		sprintf(resolved, "/proc/self/fd/%d", exe_fd);
+		sprintf(resolved, "/proc/self/fd/%d", ukernel::process.exe_fd);
 		log_ukernel("exe_fd: %s", resolved);
 		return 1;
 	}
@@ -354,14 +150,15 @@ void ukernel::SetFSRoot(const char *fsroot_)
 	if (!realpath(fsroot_, buf)) {
 		Panic("failed to resolve fsroot");
 	}
-	fsroot = std::string(buf) + "/";
+	process.fsroot = std::string(buf) + "/";
 }
 
-int ukernel::PathResolution(int dirfd, char const *path, char *resolved)
+static int PathResolution(int dirfd, char const *path, char *resolved)
 {
 	char rp_buf[PATH_MAX];
 
 	log_ukernel("start path resolution: %s", path);
+	auto const &fsroot = ukernel::process.fsroot;
 
 	if (path[0] == '/') {
 		snprintf(rp_buf, sizeof(rp_buf), "%s/%s", fsroot.c_str(), path);
@@ -403,13 +200,190 @@ int ukernel::PathResolution(int dirfd, char const *path, char *resolved)
 	return 0;
 }
 
-u32 ukernel::do_sys_brk(u32 newbrk)
+enum class SyscallID : u32 {
+#define SC(name, no) linux_##name = no,
+	RV32_LINUX_SYSCALL_NO(SC, SC)
+#undef SC
+	    End = RV32_LINUX_SYSCALL_NO_END,
+};
+
+[[noreturn]] static uabi_long SyscallUnhandled(uabi_long no)
 {
+	static char const *const names[to_underlying(SyscallID::End)] = {
+#define SC(name, no) [to_underlying(SyscallID::linux_##name)] = #name,
+	    RV32_LINUX_SYSCALL_NO(SC, SC)
+#undef SC
+	};
+	char const *name = (no > 0 && no < to_underlying(SyscallID::End)) ? names[no] : "UNKNOWN";
+
+	log_ukernel("syscall %s (no=%4d) is unhandled", name, no);
+	Panic(std::string("unhandled linux syscall: ") + name);
+}
+
+namespace ukernel_syscall
+{
+
+static inline uabi_long rcerrno(uabi_long rc)
+{
+	if (unlikely(rc < 0)) {
+		return -errno;
+	}
+	return rc;
+}
+
+static uabi_long linux_openat(uabi_int dfd, const char __user *filename, uabi_int flags, mode_t mode)
+{
+	return rcerrno(openat(dfd, filename, flags, mode));
+}
+
+static uabi_long linux_close(uabi_uint fd)
+{
+	if (fd < 3) { // TODO: split file descriptors
+		return 0;
+	}
+	return rcerrno(close(fd));
+}
+
+static uabi_long uerrno(int e)
+{
+	return e;
+}
+
+static uabi_long linux_llseek(uabi_uint fd, uabi_ulong offset_high, uabi_ulong offset_low,
+			      loff_t __user *result, uabi_uint whence)
+{
+	off_t off = ((u64)offset_high << 32) | offset_low;
+	int rc = lseek(fd, off, whence);
+	if (rc >= 0) {
+		*result = rc;
+	}
+	return 0;
+}
+
+static uabi_long linux_read(uabi_uint fd, char __user *buf, uabi_size_t count)
+{
+	return rcerrno(read(fd, buf, count));
+}
+
+static uabi_long linux_write(uabi_uint fd, const char __user *buf, uabi_size_t count)
+{
+	return rcerrno(write(fd, buf, count));
+}
+
+static uabi_long linux_readlinkat(uabi_int dfd, const char __user *path, char __user *buf, uabi_int bufsiz)
+{
+	char pathbuf[PATH_MAX];
+	if (*path) {
+		if (PathResolution(dfd, path, pathbuf) < 0) {
+			return uerrno(-errno);
+		}
+	} else {
+		pathbuf[0] = 0;
+	}
+	return rcerrno(readlinkat(dfd, pathbuf, buf, bufsiz));
+}
+
+using uabi_stat64 = struct stat;
+
+static uabi_long linux_fstat64(uabi_uint fd, uabi_stat64 __user *statbuf)
+{
+	// TODO: verify!!!
+	return rcerrno(fstatat(fd, "", statbuf, 0));
+}
+
+static uabi_long linux_exit(uabi_int error_code)
+{
+	CPUState::Current()->trapno = rv32::TrapCode::TERMINATED;
+	return error_code;
+}
+
+static uabi_long linux_exit_group(uabi_int error_code)
+{
+	return linux_exit(error_code);
+}
+
+static uabi_long linux_rt_sigaction(int, const struct uabi_sigaction __user *, struct sigaction __user *,
+				    uabi_size_t)
+{
+	log_ukernel("TODO: support signals");
+	return 0;
+}
+
+using uabi_new_utsname = struct utsname;
+
+static uabi_long linux_uname(uabi_new_utsname __user *name)
+{
+	uabi_long rc = uname(name);
+	strcpy(name->machine, "riscv32");
+	return rcerrno(rc);
+}
+
+static uabi_long linux_getuid()
+{
+	return getuid();
+}
+
+static uabi_long linux_geteuid()
+{
+	return geteuid();
+}
+
+static uabi_long linux_getgid()
+{
+	return getgid();
+}
+
+static uabi_long linux_getegid()
+{
+	return getegid();
+}
+
+struct uabi_sysinfo {
+	u32 uptime;
+	u32 loads[3];
+	u32 totalram;
+	u32 freeram;
+	u32 sharedram;
+	u32 bufferram;
+	u32 totalswap;
+	u32 freeswap;
+	u16 procs;
+	u16 pad;
+	u32 totalhigh;
+	u32 freehigh;
+	u32 mem_unit;
+	char _f[20 - 2 * sizeof(u32) - sizeof(u32)];
+};
+
+static uabi_long linux_sysinfo(struct uabi_sysinfo __user *info)
+{
+	struct sysinfo host_info;
+	uabi_long rc = sysinfo(&host_info);
+
+	if (rc > 0) {
+		info->uptime = host_info.uptime;
+		for (int i = 0; i < 3; ++i) {
+			info->loads[i] = host_info.loads[i];
+		}
+		info->totalram = 1_GB;
+		info->freeram = 500_MB;
+		info->sharedram = info->bufferram = info->totalswap = info->freeswap = 1_MB;
+		info->procs = host_info.procs;
+		info->totalhigh = info->freehigh = 1_MB;
+		info->mem_unit = 1;
+	}
+	return rcerrno(rc);
+}
+
+static uabi_long linux_brk(uabi_ulong newbrk)
+{
+	auto &brk = ukernel::process.brk;
+
 	if (newbrk <= brk) {
 		log_ukernel("do_sys_brk: newbrk is too small: %08x %08x", newbrk, brk);
 		return brk;
 	}
-	u32 brk_p = roundup(brk, mmu::PAGE_SIZE);
+	uabi_ulong brk_p = roundup(brk, mmu::PAGE_SIZE);
 	if (newbrk <= brk_p) {
 		if (newbrk != brk_p) {
 			memset(mmu::g2h(brk), 0, newbrk - brk);
@@ -427,6 +401,120 @@ u32 ukernel::do_sys_brk(u32 newbrk)
 	return brk = newbrk;
 }
 
+static uabi_long linux_munmap(uabi_ulong gaddr, uabi_size_t len)
+{
+	// TODO: implement in mmu
+	log_ukernel("munmap addr: %x", mmu::g2h(gaddr));
+	return rcerrno(munmap(mmu::g2h(gaddr), len));
+}
+
+static uabi_long linux_mmap2(uabi_ulong gaddr, uabi_size_t len, uabi_ulong prot, uabi_ulong flags,
+			     uabi_uint fd, uabi_ulong off)
+{
+	// TODO: file maps in mmu
+	void *ret = mmu::mmap(gaddr, len, prot, flags, fd, off);
+	if (ret == MAP_FAILED) {
+		return uerrno(-errno);
+	}
+	uabi_long rc = mmu::h2g(ret);
+	log_ukernel("mmap addr: %x", rc);
+	return rc;
+}
+
+static uabi_long linux_mprotect(uabi_ulong start, uabi_size_t len, uabi_ulong prot)
+{
+	// TODO: implement in mmu
+	return rcerrno(mprotect(mmu::g2h(start), len, prot));
+}
+
+using uabi_statx = struct statx;
+
+static uabi_long linux_statx(uabi_int dfd, const char __user *path, unsigned flags, unsigned mask,
+			     uabi_statx __user *buffer)
+{
+	char pathbuf[PATH_MAX];
+	if (*path) {
+		if (PathResolution(dfd, path, pathbuf) < 0) {
+			return uerrno(-errno);
+		}
+	} else {
+		pathbuf[0] = 0;
+	}
+	return rcerrno(statx(dfd, pathbuf, flags, mask, buffer));
+}
+
+using uabi_timespec = struct timespec;
+
+static uabi_long linux_clock_gettime64(clockid_t which_clock, uabi_timespec __user *tp)
+{
+	return rcerrno(clock_gettime(which_clock, tp));
+}
+
+} // namespace ukernel_syscall
+
+void ukernel::SyscallLinux(CPUState *state)
+{
+	state->trapno = rv32::TrapCode::NONE;
+	std::array<uabi_long, 7> args = {(uabi_long)state->gpr[10], (uabi_long)state->gpr[11],
+					 (uabi_long)state->gpr[12], (uabi_long)state->gpr[13],
+					 (uabi_long)state->gpr[14], (uabi_long)state->gpr[15],
+					 (uabi_long)state->gpr[16]};
+	uabi_long syscallno = state->gpr[17];
+
+	auto do_syscall = [&args]<typename RV, typename... Args>(RV (*h)(Args...)) {
+		static_assert(sizeof...(Args) <= args.size());
+		auto conv = []<typename A>(uabi_ulong in) -> A {
+			if constexpr (std::is_pointer_v<A>) {
+				return (A)mmu::g2h(in);
+			} else {
+				return static_cast<A>(in);
+			}
+		};
+		return ([&]<size_t... Idx>(std::index_sequence<Idx...>) {
+			return h(decltype(conv)().template operator()<Args>(args[Idx])...);
+		})(std::make_index_sequence<sizeof...(Args)>{});
+	};
+
+	auto dispatch = [&]() -> uabi_long {
+		switch (SyscallID(syscallno)) {
+#define HANDLE(name)                                                                                         \
+	case SyscallID::name:                                                                                \
+		log_ukernel("%s (no=%d)\t ip=%08x", #name, syscallno, state->ip);                            \
+		return do_syscall(ukernel_syscall::name);
+
+			HANDLE(linux_openat)
+			HANDLE(linux_close)
+			HANDLE(linux_llseek)
+			HANDLE(linux_read)
+			HANDLE(linux_write)
+			HANDLE(linux_readlinkat)
+			HANDLE(linux_fstat64)
+			HANDLE(linux_exit)
+			HANDLE(linux_exit_group)
+			HANDLE(linux_rt_sigaction)
+			HANDLE(linux_uname)
+			HANDLE(linux_getuid)
+			HANDLE(linux_geteuid)
+			HANDLE(linux_getgid)
+			HANDLE(linux_getegid)
+			HANDLE(linux_sysinfo)
+			HANDLE(linux_brk)
+			HANDLE(linux_munmap)
+			HANDLE(linux_mmap2)
+			HANDLE(linux_mprotect)
+			HANDLE(linux_statx)
+			HANDLE(linux_clock_gettime64)
+#undef HANDLE
+		default:
+			SyscallUnhandled(syscallno);
+		}
+	};
+
+	uabi_long rc = dispatch();
+	state->gpr[10] = rc;
+	log_ukernel("    ret: %4d", rc);
+}
+
 void ukernel::BootElf(const char *path, ElfImage *elf)
 {
 	int fd = open(path, O_RDONLY);
@@ -442,8 +530,8 @@ void ukernel::BootElf(const char *path, ElfImage *elf)
 
 	LoadElf(fd, elf);
 	objprof::Open(fd, true);
-	exe_fd = fd;
-	brk = elf->brk; // TODO: move it out
+	process.exe_fd = fd;
+	process.brk = elf->brk; // TODO: move it out
 
 	static constexpr u32 stk_size = 8_MB; // switch to 32 * mmu::PAGE_SIZE if debugging
 #if 0
@@ -546,14 +634,14 @@ void ukernel::LoadElf(int fd, ElfImage *elf)
 	}
 }
 
-static u32 AllocAVectorStr(u32 stk, void const *str, u16 sz)
+static uabi_ulong AllocAVectorStr(uabi_ulong stk, void const *str, u16 sz)
 {
 	stk -= sz;
 	memcpy(mmu::g2h(stk), str, sz);
 	return stk;
 }
 
-static inline u32 AllocAVectorStr(u32 stk, char const *str)
+static inline uabi_ulong AllocAVectorStr(uabi_ulong stk, char const *str)
 {
 	return AllocAVectorStr(stk, str, strlen(str) + 1);
 }
@@ -561,12 +649,12 @@ static inline u32 AllocAVectorStr(u32 stk, char const *str)
 // TODO: refactor
 void ukernel::InitAVectors(ElfImage *elf, int argv_n, char **argv)
 {
-	u32 stk = elf->stack_start;
+	uabi_ulong stk = elf->stack_start;
 
-	u32 foo_str_g = stk = AllocAVectorStr(stk, "__foo_str__");
-	u32 lc_all_str_g = stk = AllocAVectorStr(stk, "LC_ALL=C");
+	uabi_ulong foo_str_g = stk = AllocAVectorStr(stk, "__foo_str__");
+	uabi_ulong lc_all_str_g = stk = AllocAVectorStr(stk, "LC_ALL=C");
 	char auxv_salt[16] = {0, 1, 2, 3, 4, 5, 6};
-	u32 auxv_salt_g = stk = AllocAVectorStr(stk, auxv_salt, sizeof(auxv_salt));
+	uabi_ulong auxv_salt_g = stk = AllocAVectorStr(stk, auxv_salt, sizeof(auxv_salt));
 
 	u32 *argv_strings_g = (u32 *)alloca(sizeof(char *) * argv_n);
 	for (int i = 0; i < argv_n; ++i) {
@@ -579,16 +667,16 @@ void ukernel::InitAVectors(ElfImage *elf, int argv_n, char **argv)
 	int auxv_n = 64;
 
 	int stk_vsz = argv_n + envp_n + auxv_n + 3;
-	stk -= stk_vsz * sizeof(u32);
+	stk -= stk_vsz * sizeof(uabi_ulong);
 	stk &= -16;
-	u32 argc_p = stk;
-	u32 argv_p = argc_p + sizeof(u32);
-	u32 envp_p = argv_p + sizeof(u32) * (argv_n + 1);
-	u32 auxv_p = envp_p + sizeof(u32) * (envp_n + 1);
+	uabi_ulong argc_p = stk;
+	uabi_ulong argv_p = argc_p + sizeof(uabi_ulong);
+	uabi_ulong envp_p = argv_p + sizeof(uabi_ulong) * (argv_n + 1);
+	uabi_ulong auxv_p = envp_p + sizeof(uabi_ulong) * (envp_n + 1);
 
 	auto push_avval = [](uint32_t &vec, uint32_t val) {
-		*(u32 *)mmu::g2h(vec) = (val);
-		vec += sizeof(u32);
+		*(uabi_ulong *)mmu::g2h(vec) = (val);
+		vec += sizeof(uabi_ulong);
 	};
 	auto push_auxv = [&](uint16_t idx, uint32_t val) {
 		push_avval(auxv_p, idx);

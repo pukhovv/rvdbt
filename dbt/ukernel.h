@@ -5,8 +5,20 @@
 namespace dbt
 {
 
+// TODO: add guardians for g2h
+#define __user
+
+using uabi_short = i32;
+using uabi_ushort = u32;
+using uabi_int = i32;
+using uabi_uint = u32;
+using uabi_long = i32;
+using uabi_ulong = u32;
+using uabi_size_t = u32;
+
 struct ukernel {
 	struct ElfImage;
+	struct Process;
 
 	void SetFSRoot(char const *fsroot_);
 
@@ -21,19 +33,12 @@ struct ukernel {
 
 	static void SyscallDemo(CPUState *state);
 	void SyscallLinux(CPUState *state);
-	int PathResolution(int dirfd, char const *path, char *resolved);
-	int HandleSpecialPath(char const *path, char *resolved);
-
-	u32 do_sys_brk(u32 newbrk);
 
 	static ElfImage exe_elf_image;
+	static Process process;
 
 private:
 	static void LoadElf(int elf_fd, ElfImage *elf);
-
-	std::string fsroot;
-	int exe_fd{-1};
-	u32 brk{};
 };
 
 } // namespace dbt
