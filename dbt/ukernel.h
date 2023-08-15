@@ -14,6 +14,8 @@ using uabi_int = i32;
 using uabi_uint = u32;
 using uabi_long = i32;
 using uabi_ulong = u32;
+using uabi_llong = i64;
+using uabi_ullong = u64;
 using uabi_size_t = u32;
 
 struct ukernel {

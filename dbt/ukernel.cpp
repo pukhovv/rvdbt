@@ -443,11 +443,18 @@ static uabi_long linux_statx(uabi_int dfd, const char __user *path, unsigned fla
 	return rcerrno(statx(dfd, pathbuf, flags, mask, buffer));
 }
 
-using uabi_timespec = struct timespec;
+struct uabi__kernel_timespec {
+	uabi_llong tv_sec;
+	uabi_llong tv_nsec;
+};
 
-static uabi_long linux_clock_gettime64(clockid_t which_clock, uabi_timespec __user *tp)
+static uabi_long linux_clock_gettime64(clockid_t which_clock, uabi__kernel_timespec __user *ktp)
 {
-	return rcerrno(clock_gettime(which_clock, tp));
+	timespec tp;
+	auto rc = clock_gettime(which_clock, &tp);
+	ktp->tv_sec = tp.tv_sec;
+	ktp->tv_nsec = tp.tv_nsec;
+	return rcerrno(rc);
 }
 
 } // namespace ukernel_syscall
