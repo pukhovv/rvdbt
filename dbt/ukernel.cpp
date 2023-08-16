@@ -12,10 +12,15 @@ extern "C" {
 #include <fcntl.h>
 #include <libgen.h>
 #include <linux/limits.h>
+#include <linux/unistd.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <sys/random.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/sysinfo.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <unistd.h>
@@ -291,6 +296,17 @@ static uabi_long linux_fstat64(uabi_uint fd, uabi_stat64 __user *statbuf)
 	return rcerrno(fstatat(fd, "", statbuf, 0));
 }
 
+static uabi_long linux_set_tid_address(uabi_int __user *tidptr)
+{
+	int h_tidptr;
+	long rc = syscall(SYS_set_tid_address, &h_tidptr);
+	if (rc < 0) {
+		return -errno;
+	}
+	*tidptr = h_tidptr;
+	return rc;
+}
+
 static uabi_long linux_exit(uabi_int error_code)
 {
 	CPUState::Current()->trapno = rv32::TrapCode::TERMINATED;
@@ -427,6 +443,42 @@ static uabi_long linux_mprotect(uabi_ulong start, uabi_size_t len, uabi_ulong pr
 	return rcerrno(mprotect(mmu::g2h(start), len, prot));
 }
 
+using uabi_pid_t = uabi_int;
+
+struct uabi_rlimit64 {
+	uint64_t rlim_cur;
+	uint64_t rlim_max;
+};
+
+static uabi_long linux_prlimit64(uabi_pid_t pid, uabi_uint resource,
+				 const struct uabi_rlimit64 __user *new_rlim,
+				 struct uabi_rlimit64 __user *old_rlim)
+{
+	rlimit64 h_new_rlim, h_old_rlim, *h_new_rlim_p;
+
+	if (new_rlim && !(resource == RLIMIT_AS || resource == RLIMIT_STACK || resource == RLIMIT_DATA)) {
+		h_new_rlim.rlim_cur = new_rlim->rlim_cur;
+		h_new_rlim.rlim_max = new_rlim->rlim_max;
+		h_new_rlim_p = &h_new_rlim;
+	} else {
+		// just ignore
+		h_new_rlim_p = nullptr;
+	}
+
+	long rc = syscall(SYS_prlimit64, (pid_t)pid, (uint)resource, h_new_rlim_p, &h_old_rlim);
+	if (rc < 0) {
+		return -errno;
+	}
+	old_rlim->rlim_cur = h_old_rlim.rlim_cur;
+	old_rlim->rlim_max = h_old_rlim.rlim_max;
+	return rc;
+}
+
+static uabi_long linux_getrandom(char __user *buf, uabi_size_t count, uabi_uint flags)
+{
+	return rcerrno(getrandom(buf, count, flags));
+}
+
 using uabi_statx = struct statx;
 
 static uabi_long linux_statx(uabi_int dfd, const char __user *path, unsigned flags, unsigned mask,
@@ -489,6 +541,11 @@ void ukernel::SyscallLinux(CPUState *state)
 		log_ukernel("%s (no=%d)\t ip=%08x", #name, syscallno, state->ip);                            \
 		return do_syscall(ukernel_syscall::name);
 
+#define HANDLE_SKIP(name)                                                                                    \
+	case SyscallID::name:                                                                                \
+		log_ukernel("%s (no=%d)\t ip=%08x", #name, syscallno, state->ip);                            \
+		return -ENOSYS;
+
 			HANDLE(linux_openat)
 			HANDLE(linux_close)
 			HANDLE(linux_llseek)
@@ -496,6 +553,8 @@ void ukernel::SyscallLinux(CPUState *state)
 			HANDLE(linux_write)
 			HANDLE(linux_readlinkat)
 			HANDLE(linux_fstat64)
+			HANDLE(linux_set_tid_address)
+			HANDLE_SKIP(linux_set_robust_list)
 			HANDLE(linux_exit)
 			HANDLE(linux_exit_group)
 			HANDLE(linux_rt_sigaction)
@@ -509,6 +568,8 @@ void ukernel::SyscallLinux(CPUState *state)
 			HANDLE(linux_munmap)
 			HANDLE(linux_mmap2)
 			HANDLE(linux_mprotect)
+			HANDLE(linux_prlimit64)
+			HANDLE(linux_getrandom)
 			HANDLE(linux_statx)
 			HANDLE(linux_clock_gettime64)
 #undef HANDLE
