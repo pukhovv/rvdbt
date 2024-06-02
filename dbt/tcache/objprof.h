@@ -57,8 +57,7 @@ struct objprof {
 	// Set it before ukernel chroots
 	static void Init(char const *cache_path, bool use_aot_);
 
-	// Open elf profile
-	static void Open(int elf_fd, bool jit_mode);
+	static void Announce(int elf_fd, bool jit_mode);
 	static void Destroy();
 
 	// Access profile data

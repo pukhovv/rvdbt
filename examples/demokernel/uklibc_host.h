@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <cstdlib>
 
 int getnum()
 {
@@ -12,4 +13,9 @@ int getnum()
 void putnum(int x)
 {
 	printf("%d\n", x);
+}
+
+void doexit(int x)
+{
+	exit(x);
 }

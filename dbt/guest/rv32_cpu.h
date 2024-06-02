@@ -16,7 +16,6 @@ enum class TrapCode : u32 {
 	ILLEGAL_INSN,
 	EBREAK,
 	ECALL,
-	TERMINATED,
 };
 
 // TODO: separate guest part
@@ -48,7 +47,11 @@ static constexpr u16 TB_MAX_INSNS = 64;
 
 namespace dbt
 {
+struct uthread;
 struct CPUState : rv32::CPUStateImpl {
+	CPUState() = delete;
+	CPUState(uthread *ut_) : ut(ut_) {}
+
 	static void SetCurrent(CPUState *s)
 	{
 		tls_current = s;
@@ -59,9 +62,15 @@ struct CPUState : rv32::CPUStateImpl {
 		return tls_current;
 	}
 
+	uthread *GetUThread() const
+	{
+		return ut;
+	}
+
 private:
 	static thread_local CPUState *tls_current;
+
+	uthread *ut{};
 };
-static_assert(std::is_standard_layout_v<CPUState>);
 
 } // namespace dbt

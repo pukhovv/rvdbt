@@ -4,6 +4,7 @@
 #include "dbt/tcache/objprof.h"
 #include <alloca.h>
 #include <cstring>
+#include <memory>
 
 #include "dbt/ukernel_syscalls.h"
 
@@ -31,53 +32,83 @@ namespace dbt
 LOG_STREAM(ukernel);
 
 struct ukernel::ElfImage {
-	Elf32_Ehdr ehdr;
-	uabi_ulong load_addr;
-	uabi_ulong stack_start;
-	uabi_ulong entry;
-	uabi_ulong brk;
+	Elf32_Ehdr ehdr{};
+	uabi_ulong load_addr{};
+	uabi_ulong stack_start{};
+	uabi_ulong entry{};
+	uabi_ulong brk{};
 };
-ukernel::ElfImage ukernel::exe_elf_image{};
 
 struct ukernel::Process {
+	ElfImage elf_image{}; // boot, not related to ld
+
+	std::unique_ptr<uthread> main_thread{};
+
 	std::string fsroot;
 	int exe_fd{-1};
 	uabi_ulong brk{};
 };
+
+struct uthread {
+	uthread() : state(this)
+	{
+		if (CPUState::Current() != nullptr) {
+			Panic("uthread is already active in this host thread");
+		}
+		CPUState::SetCurrent(&state);
+		ukernel::InitSignals(&state);
+	}
+
+	~uthread()
+	{
+		if (CPUState::Current() != &state) {
+			Panic("uthread dies within a different host thread");
+		}
+		CPUState::SetCurrent(nullptr);
+	}
+
+	CPUState state;
+	// per-thread/task OS data
+	bool terminating{};
+	int termination_code{};
+};
+
 ukernel::Process ukernel::process{};
 
-int ukernel::Execute(CPUState *state)
+static void DebugTrap(CPUState *state)
 {
-	CPUState::SetCurrent(state);
-	while (true) {
+	state->DumpTrace("ebreak");
+}
+
+void ukernel::Execute()
+{
+	auto *state = CPUState::Current();
+	auto *ut = state->GetUThread();
+
+	while (!ut->terminating) {
 		dbt::Execute(state);
+		assert(!ut->terminating);
 		switch (state->trapno) {
 		case rv32::TrapCode::EBREAK:
-			log_ukernel("ebreak termiante");
-			return 1;
+			log_ukernel("ebreak");
+			DebugTrap(state);
+			state->ip += 4; // TODO:
+			break;
 		case rv32::TrapCode::ECALL:
-			state->ip += 4;
-#ifdef CONFIG_LINUX_GUEST
-			ukernel::SyscallLinux(state);
-#else
-			ukernel::SyscallDemo(state);
-#endif
-			if (state->trapno == rv32::TrapCode::TERMINATED) {
-				log_ukernel("exiting...");
-				return state->gpr[10]; // TODO: forward sys_exit* arg
-			}
+			state->ip += 4; // TODO:
+			ukernel::Syscall(state);
 			break;
 		case rv32::TrapCode::ILLEGAL_INSN:
 			log_ukernel("illegal instruction at %08x", state->ip);
-			return 1;
+			EnqueueTermination(1);
+			break;
 		default:
 			unreachable("no handle for trap");
 		}
 	}
-	CPUState::SetCurrent(nullptr);
 }
 
-void ukernel::InitThread(CPUState *state, ElfImage *elf)
+void ukernel::InitMainThread(CPUState *state, ElfImage *elf)
 {
 	assert(!(elf->stack_start & 15));
 	state->gpr[2] = elf->stack_start;
@@ -91,12 +122,15 @@ static void dbt_sigaction_memory(int signo, siginfo_t *sinfo, void *uctx_raw)
 	auto hpc = uc->uc_mcontext.gregs[REG_RIP];
 
 	log_ukernel("dbt_sigaction_memory:host: signal=%d, pc=%p, si_addr=%p", signo, hpc, sinfo->si_addr);
+	auto state = CPUState::Current();
+	if (state == nullptr) {
+		Panic("Memory fault while dbt cpu is inactive");
+	}
 	if (!mmu::check_h2g(sinfo->si_addr)) {
-		Panic("Memory fault in host address space!!!");
+		Panic("Memory fault in host address space");
 	}
 	auto g_faddr = mmu::h2g(sinfo->si_addr);
 
-	auto state = CPUState::Current();
 	state->DumpTrace("signal");
 	log_ukernel("\tfault:guest: pc=%08x, si_addr=%08x", state->ip, g_faddr);
 	Panic("Memory fault in guest address space. See logs for more details");
@@ -116,7 +150,7 @@ void ukernel::InitSignals(CPUState *state)
 	sigaction(SIGBUS, &sa, nullptr);
 }
 
-// demo-kernel
+// demo-kernel for debugging
 void ukernel::SyscallDemo(CPUState *state)
 {
 	state->trapno = rv32::TrapCode::NONE;
@@ -132,6 +166,11 @@ void ukernel::SyscallDemo(CPUState *state)
 	case 2: {
 		log_ukernel("syscall writenum");
 		fprintf(stdout, "%d\n", state->gpr[11]);
+		return;
+	}
+	case 3: {
+		log_ukernel("syscall exit");
+		EnqueueTermination(state->gpr[11]);
 		return;
 	}
 	default:
@@ -309,8 +348,8 @@ static uabi_long linux_set_tid_address(uabi_int __user *tidptr)
 
 static uabi_long linux_exit(uabi_int error_code)
 {
-	CPUState::Current()->trapno = rv32::TrapCode::TERMINATED;
-	return error_code;
+	ukernel::EnqueueTermination(error_code);
+	return 0;
 }
 
 static uabi_long linux_exit_group(uabi_int error_code)
@@ -511,6 +550,44 @@ static uabi_long linux_clock_gettime64(clockid_t which_clock, uabi__kernel_times
 
 } // namespace ukernel_syscall
 
+void ukernel::Syscall(CPUState *state)
+{
+#ifdef DBT_LINUX_GUEST
+	ukernel::SyscallLinux(state);
+#else
+	ukernel::SyscallDemo(state);
+#endif
+}
+
+#define IMPLEMENTED_SYSCALLS(X) /* */                                                                        \
+	X(linux_openat)                                                                                      \
+	X(linux_close)                                                                                       \
+	X(linux_llseek)                                                                                      \
+	X(linux_read)                                                                                        \
+	X(linux_write)                                                                                       \
+	X(linux_readlinkat)                                                                                  \
+	X(linux_fstat64)                                                                                     \
+	X(linux_set_tid_address)                                                                             \
+	X(linux_exit)                                                                                        \
+	X(linux_exit_group)                                                                                  \
+	X(linux_rt_sigaction)                                                                                \
+	X(linux_uname)                                                                                       \
+	X(linux_getuid)                                                                                      \
+	X(linux_geteuid)                                                                                     \
+	X(linux_getgid)                                                                                      \
+	X(linux_getegid)                                                                                     \
+	X(linux_sysinfo)                                                                                     \
+	X(linux_brk)                                                                                         \
+	X(linux_munmap)                                                                                      \
+	X(linux_mmap2)                                                                                       \
+	X(linux_mprotect)                                                                                    \
+	X(linux_prlimit64)                                                                                   \
+	X(linux_getrandom)                                                                                   \
+	X(linux_statx)                                                                                       \
+	X(linux_clock_gettime64)
+
+#define SKIPPED_SYSCALLS(X) X(linux_set_robust_list)
+
 void ukernel::SyscallLinux(CPUState *state)
 {
 	state->trapno = rv32::TrapCode::NONE;
@@ -519,6 +596,10 @@ void ukernel::SyscallLinux(CPUState *state)
 					 (uabi_long)state->gpr[14], (uabi_long)state->gpr[15],
 					 (uabi_long)state->gpr[16]};
 	uabi_long syscallno = state->gpr[17];
+
+	auto dump_syscall = [state, syscallno](char const *name) {
+		log_ukernel("%s (no=%d)\t ip=%08x", name, syscallno, state->ip);
+	};
 
 	auto do_syscall = [&args]<typename RV, typename... Args>(RV (*h)(Args...)) {
 		static_assert(sizeof...(Args) <= args.size());
@@ -538,41 +619,18 @@ void ukernel::SyscallLinux(CPUState *state)
 		switch (SyscallID(syscallno)) {
 #define HANDLE(name)                                                                                         \
 	case SyscallID::name:                                                                                \
-		log_ukernel("%s (no=%d)\t ip=%08x", #name, syscallno, state->ip);                            \
+		dump_syscall(#name);                                                                         \
 		return do_syscall(ukernel_syscall::name);
-
-#define HANDLE_SKIP(name)                                                                                    \
-	case SyscallID::name:                                                                                \
-		log_ukernel("%s (no=%d)\t ip=%08x", #name, syscallno, state->ip);                            \
-		return -ENOSYS;
-
-			HANDLE(linux_openat)
-			HANDLE(linux_close)
-			HANDLE(linux_llseek)
-			HANDLE(linux_read)
-			HANDLE(linux_write)
-			HANDLE(linux_readlinkat)
-			HANDLE(linux_fstat64)
-			HANDLE(linux_set_tid_address)
-			HANDLE_SKIP(linux_set_robust_list)
-			HANDLE(linux_exit)
-			HANDLE(linux_exit_group)
-			HANDLE(linux_rt_sigaction)
-			HANDLE(linux_uname)
-			HANDLE(linux_getuid)
-			HANDLE(linux_geteuid)
-			HANDLE(linux_getgid)
-			HANDLE(linux_getegid)
-			HANDLE(linux_sysinfo)
-			HANDLE(linux_brk)
-			HANDLE(linux_munmap)
-			HANDLE(linux_mmap2)
-			HANDLE(linux_mprotect)
-			HANDLE(linux_prlimit64)
-			HANDLE(linux_getrandom)
-			HANDLE(linux_statx)
-			HANDLE(linux_clock_gettime64)
+			IMPLEMENTED_SYSCALLS(HANDLE)
 #undef HANDLE
+
+#define SKIP(name)                                                                                           \
+	case SyscallID::name:                                                                                \
+		dump_syscall("skip " #name);                                                                 \
+		return -ENOSYS;
+			SKIPPED_SYSCALLS(SKIP)
+#undef SKIP
+
 		default:
 			SyscallUnhandled(syscallno);
 		}
@@ -583,7 +641,7 @@ void ukernel::SyscallLinux(CPUState *state)
 	log_ukernel("    ret: %4d", rc);
 }
 
-void ukernel::BootElf(const char *path, ElfImage *elf)
+void ukernel::InitElfMappings(const char *path, ElfImage *elf)
 {
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
@@ -597,9 +655,9 @@ void ukernel::BootElf(const char *path, ElfImage *elf)
 	}
 
 	LoadElf(fd, elf);
-	objprof::Open(fd, true);
+	objprof::Announce(fd, true);
 	process.exe_fd = fd;
-	process.brk = elf->brk; // TODO: move it out
+	process.brk = elf->brk;
 
 	static constexpr u32 stk_size = 8_MB; // switch to 32 * mmu::PAGE_SIZE if debugging
 #if 0
@@ -614,19 +672,58 @@ void ukernel::BootElf(const char *path, ElfImage *elf)
 	elf->stack_start = mmu::h2g(stk_ptr) + stk_size;
 }
 
-void ukernel::ReproduceElf(const char *path, ElfImage *elf)
+void ukernel::MainThreadBoot(int argv_n, char **argv)
 {
+	process.main_thread = std::make_unique<uthread>();
+	auto state = CPUState::Current();
+
+	auto *elf = &process.elf_image;
+
+	assert(argv_n > 0);
+	std::string elf_path = process.fsroot + '/' + argv[0];
+	InitElfMappings(elf_path.c_str(), elf);
+
+#ifdef DBT_LINUX_GUEST
+	InitAVectors(elf, argv_n, argv);
+#endif
+	InitMainThread(state, elf);
+}
+
+int ukernel::MainThreadExecute()
+{
+	auto state = CPUState::Current();
+	auto ut = state->GetUThread();
+	assert(ut == process.main_thread.get());
+	Execute();
+	assert(ut->terminating);
+	// TODO(threading): make it a single exit point
+	int rc = ut->termination_code;
+	(void)process.main_thread.release();
+	return rc;
+}
+
+void ukernel::EnqueueTermination(int code)
+{
+	auto ut = CPUState::Current()->GetUThread();
+	ut->terminating = true;
+	ut->termination_code = code;
+	log_ukernel("thread issued termination with code=%d", code);
+	// TODO(threading): issue a signal
+	assert(ut == process.main_thread.get());
+}
+
+void ukernel::ReproduceElfMappings(const char *path)
+{
+	ElfImage elf;
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
 		Panic("no such elf file");
 	}
-	LoadElf(fd, elf);
-	objprof::Open(fd, false);
+	LoadElf(fd, &elf);
+	objprof::Announce(fd, false);
 	close(fd);
 }
 
-// -march=rv32i -O2 -fpic -fpie -static
-// -march=rv32i -O2 -fpic -fpie -static -ffreestanding -nostartfiles -nolibc
 void ukernel::LoadElf(int fd, ElfImage *elf)
 {
 	auto &ehdr = elf->ehdr;

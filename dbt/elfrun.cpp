@@ -9,76 +9,111 @@
 
 namespace bpo = boost::program_options;
 
-int main(int argc, char **argv)
+struct ElfRunOptions {
+	std::span<char *> guest_args{};
+
+	std::string fsroot{};
+	std::string cache{};
+	bool use_aot{};
+	std::string logs{};
+};
+
+static std::pair<std::span<char *>, std::span<char *>> SplitArgs(unsigned argc, char **argv)
 {
-	int dbt_argc = -1;
+	std::span<char *> args{argv, argc};
+
+	std::optional<unsigned> split_pos;
 	for (int i = 1; i < argc; ++i) {
 		if (!strcmp(argv[i], "--")) {
-			dbt_argc = i;
+			split_pos = i;
 			break;
 		}
 	}
-	if (dbt_argc == -1) {
-		std::cout << "args must contain \"--\"\n";
-		return 1;
+	if (!split_pos.has_value()) {
+		return {args, {}};
 	}
-	int guest_argc = argc - (dbt_argc + 1);
-	char **guest_argv = argv + (dbt_argc + 1);
-	if (guest_argc < 1) {
-		std::cout << "empty guest args\n";
-		return 1;
-	}
+
+	auto dbt_args = args.subspan(0, split_pos.value());
+	auto guest_args = args.subspan(dbt_args.size() + 1);
+	return {dbt_args, guest_args};
+}
+
+static void PrintHelp(bpo::options_description &adesc)
+{
+	std::cout << "usage: [options] -- [guest argv]\n";
+	std::cout << adesc << "\n";
+}
+
+static bool ParseOptions(ElfRunOptions &o, int argc, char **argv)
+{
+	assert(argc > 0);
+	auto [dbt_args, guest_args] = SplitArgs(static_cast<unsigned>(argc), argv);
+	o.guest_args = guest_args;
 
 	bpo::options_description adesc("options");
-	adesc.add_options()("help", "help")("logs", bpo::value<std::string>())(
-	    "fsroot", bpo::value<std::string>()->required(), "isolated path for emulated process")(
-	    "cache", bpo::value<std::string>()->required(), "directory for dbt cache files")(
-	    "aot", bpo::value<bool>()->default_value(false), "boot aot file if available");
-	bpo::variables_map adesc_vm;
-	bpo::store(bpo::parse_command_line(dbt_argc, argv, adesc), adesc_vm);
-	bpo::notify(adesc_vm);
-	if (adesc_vm.count("help")) {
-		std::cout << adesc << "\n";
-		return 0;
-	}
-	if (adesc_vm.count("logs")) {
-		auto const *logs = boost::unsafe_any_cast<std::string>(&adesc_vm["logs"].value());
-		boost::char_separator sep(":");
-		boost::tokenizer tok(*logs, sep);
-		for (auto const &e : tok) {
-			dbt::Logger::enable(e.c_str());
+	// clang-format off
+	adesc.add_options()
+	    ("help",   "help")
+	    ("logs",   bpo::value(&o.logs)->default_value(""), "enabled log streams separated by :")
+	    ("fsroot", bpo::value(&o.fsroot)->required(), "isolated path for emulated process")
+	    ("cache",  bpo::value(&o.cache)->required(), "dbt cache path")
+	    ("aot",    bpo::value(&o.use_aot)->default_value(false), "boot aot file if available");
+	// clang-format on
+
+	try {
+		bpo::variables_map vmap;
+		bpo::store(bpo::parse_command_line(dbt_args.size(), dbt_args.data(), adesc), vmap);
+		if (vmap.count("help")) {
+			PrintHelp(adesc);
+			return false;
 		}
+		if (guest_args.empty()) {
+			std::cout << "Invalid arguments\n";
+			PrintHelp(adesc);
+			return false;
+		}
+		bpo::notify(vmap);
+	} catch (std::exception &e) {
+		std::cerr << "Bad options: " << e.what() << "\n";
+		PrintHelp(adesc);
+		return false;
 	}
-	auto fsroot = *boost::unsafe_any_cast<std::string>(&adesc_vm["fsroot"].value());
-	auto cachedir = *boost::unsafe_any_cast<std::string>(&adesc_vm["cache"].value());
-	auto use_aot = *boost::unsafe_any_cast<bool>(&adesc_vm["aot"].value());
+	return true;
+}
 
-	dbt::objprof::Init(cachedir.c_str(), use_aot);
+static void SetupLogger(std::string const &logopt)
+{
+	boost::char_separator sep(":");
+	boost::tokenizer tok(logopt, sep);
+	for (auto const &e : tok) {
+		dbt::Logger::enable(e.c_str());
+	}
+}
 
+int main(int argc, char **argv)
+{
+	ElfRunOptions opts;
+	if (!ParseOptions(opts, argc, argv)) {
+		return 1;
+	}
+	auto gargs = opts.guest_args;
+
+	SetupLogger(opts.logs);
+
+	dbt::objprof::Init(opts.cache.c_str(), opts.use_aot);
 	dbt::mmu::Init();
 	dbt::tcache::Init();
-	dbt::ukernel uk{};
-	uk.SetFSRoot(fsroot.c_str());
-	auto elf = &dbt::ukernel::exe_elf_image;
-	{
-		std::string elf_path = fsroot + '/' + guest_argv[0];
-		uk.BootElf(elf_path.c_str(), elf);
-	}
-#ifdef CONFIG_LINUX_GUEST
-	uk.InitAVectors(elf, guest_argc, guest_argv);
-#endif
 
-	dbt::CPUState state{};
-	dbt::ukernel::InitThread(&state, elf);
-	dbt::ukernel::InitSignals(&state);
-	int guest_rc = uk.Execute(&state);
+	dbt::ukernel::SetFSRoot(opts.fsroot.c_str());
+	dbt::ukernel::MainThreadBoot(static_cast<int>(gargs.size()), gargs.data());
+	int guest_rc = dbt::ukernel::MainThreadExecute();
 
 	dbt::objprof::UpdateProfile();
 
-#ifndef NDEBUG
-	dbt::objprof::Destroy();
-	dbt::tcache::Destroy();
-	dbt::mmu::Destroy();
-#endif
+	if constexpr (dbt::config::debug) {
+		dbt::objprof::Destroy();
+		dbt::tcache::Destroy();
+		dbt::mmu::Destroy();
+	}
 	return guest_rc;
 }

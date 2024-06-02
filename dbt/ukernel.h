@@ -18,29 +18,38 @@ using uabi_llong = i64;
 using uabi_ullong = u64;
 using uabi_size_t = u32;
 
+struct uthread;
+
 struct ukernel {
+	ukernel() = delete;
+
 	struct ElfImage;
 	struct Process;
 
-	void SetFSRoot(char const *fsroot_);
+	static void SetFSRoot(char const *fsroot_);
 
-	void BootElf(char const *path, ElfImage *elf);
-	static void ReproduceElf(char const *path, ElfImage *elf);
+	static void MainThreadBoot(int argv_n, char **argv);
+	static int MainThreadExecute();
 
-	void InitAVectors(ElfImage *elf, int argv_n, char **argv);
-	static void InitThread(CPUState *state, ElfImage *elf);
-	static void InitSignals(CPUState *state);
+	static void ReproduceElfMappings(char const *path);
 
-	int Execute(CPUState *state);
+	static void Execute();
+	static void EnqueueTermination(int code);
 
-	static void SyscallDemo(CPUState *state);
-	void SyscallLinux(CPUState *state);
-
-	static ElfImage exe_elf_image;
 	static Process process;
 
 private:
+	static void InitElfMappings(char const *path, ElfImage *elf);
+	static void InitAVectors(ElfImage *elf, int argv_n, char **argv);
 	static void LoadElf(int elf_fd, ElfImage *elf);
+
+	static void InitMainThread(CPUState *state, ElfImage *elf);
+	static void InitSignals(CPUState *state);
+	static void Syscall(CPUState *state);
+	static void SyscallDemo(CPUState *state);
+	static void SyscallLinux(CPUState *state);
+
+	friend struct uthread;
 };
 
 } // namespace dbt

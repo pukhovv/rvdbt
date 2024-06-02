@@ -10,47 +10,79 @@
 
 namespace bpo = boost::program_options;
 
-int main(int argc, char **argv)
+struct ElfAotOptions {
+	std::string elf{};
+	std::string cache{};
+	bool use_llvm{};
+	std::string logs{};
+};
+
+static void PrintHelp(bpo::options_description &adesc)
+{
+	std::cout << "usage: [options]\n";
+	std::cout << adesc << "\n";
+}
+
+static bool ParseOptions(ElfAotOptions &o, int argc, char **argv)
 {
 	bpo::options_description adesc("options");
-	adesc.add_options()("help", "help")("logs", bpo::value<std::string>())(
-	    "cache", bpo::value<std::string>()->required(),
-	    "directory for dbt cache files")("elf", bpo::value<std::string>()->required(), "elf aot target")(
-	    "llvm", bpo::value<bool>()->default_value(false), "use llvm backend");
-	bpo::variables_map adesc_vm;
-	bpo::store(bpo::parse_command_line(argc, argv, adesc), adesc_vm);
-	bpo::notify(adesc_vm);
-	if (adesc_vm.count("help")) {
-		std::cout << adesc << "\n";
-		return 0;
-	}
-	if (adesc_vm.count("logs")) {
-		auto const *logs = boost::unsafe_any_cast<std::string>(&adesc_vm["logs"].value());
-		boost::char_separator sep(":");
-		boost::tokenizer tok(*logs, sep);
-		for (auto const &e : tok) {
-			dbt::Logger::enable(e.c_str());
-		}
-	}
-	std::string cachedir = *boost::unsafe_any_cast<std::string>(&adesc_vm["cache"].value());
-	std::string elfpath = *boost::unsafe_any_cast<std::string>(&adesc_vm["elf"].value());
-	auto use_llvm = *boost::unsafe_any_cast<bool>(&adesc_vm["llvm"].value());
+	// clang-format off
+	adesc.add_options()
+	    ("help",   "help")
+	    ("logs",   bpo::value(&o.logs)->default_value(""), "enabled log streams separated by :")
+	    ("elf", bpo::value(&o.elf)->required(), "elf file to translate")
+	    ("cache",  bpo::value(&o.cache)->required(), "dbt cache path")
+	    ("llvm",    bpo::value(&o.use_llvm)->default_value(true), "use llvm backend");
+	// clang-format on
 
-	dbt::objprof::Init(cachedir.c_str(), false);
+	try {
+		bpo::variables_map vmap;
+		bpo::store(bpo::parse_command_line(argc, argv, adesc), vmap);
+		if (vmap.count("help")) {
+			PrintHelp(adesc);
+			return false;
+		}
+		bpo::notify(vmap);
+	} catch (std::exception &e) {
+		std::cerr << "Bad options: " << e.what() << "\n";
+		PrintHelp(adesc);
+		return false;
+	}
+	return true;
+}
+
+static void SetupLogger(std::string const &logopt)
+{
+	boost::char_separator sep(":");
+	boost::tokenizer tok(logopt, sep);
+	for (auto const &e : tok) {
+		dbt::Logger::enable(e.c_str());
+	}
+}
+
+int main(int argc, char **argv)
+{
+	ElfAotOptions opts;
+	if (!ParseOptions(opts, argc, argv)) {
+		return 1;
+	}
+
+	SetupLogger(opts.logs);
+
+	dbt::objprof::Init(opts.cache.c_str(), false);
 	dbt::mmu::Init();
 
-	auto elf = &dbt::ukernel::exe_elf_image;
-	dbt::ukernel::ReproduceElf(elfpath.c_str(), elf);
+	dbt::ukernel::ReproduceElfMappings(opts.elf.c_str());
 
-	if (use_llvm) {
+	if (opts.use_llvm) {
 		dbt::LLVMAOTCompileELF();
 	} else {
 		dbt::AOTCompileELF();
 	}
 
-#ifndef NDEBUG
-	dbt::objprof::Destroy();
-	dbt::mmu::Destroy();
-#endif
+	if constexpr (dbt::config::debug) {
+		dbt::objprof::Destroy();
+		dbt::mmu::Destroy();
+	}
 	return 0;
 }

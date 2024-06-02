@@ -60,7 +60,7 @@ std::string objprof::GetCachePath(char const *extension)
 objprof::ElfProfile objprof::elf_prof{};
 bool objprof::use_aot = false;
 
-void objprof::Open(int elf_fd, bool jit_mode)
+void objprof::Announce(int elf_fd, bool jit_mode)
 {
 	auto csum = FileChecksum::FromFile(elf_fd);
 	auto path = MakeCachePath(csum, ".prof");

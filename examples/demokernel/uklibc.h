@@ -5,13 +5,6 @@
 // Compile with:
 // -ffreestanding -march=rv32i -fpic -fpie -nostartfiles -nolibc -static
 
-void __attribute__((naked)) _start()
-{
-	__asm__("la gp, __global_pointer$\n\t"
-		"jal ra, main\n\t"
-		"ebreak\n\t");
-}
-
 int do_syscall1(int no, int arg1)
 {
 	register int a0 __asm("a0") = no;
@@ -28,6 +21,18 @@ int getnum()
 void putnum(int x)
 {
 	do_syscall1(2, x);
+}
+
+void doexit(int x)
+{
+	do_syscall1(3, x);
+}
+
+void __attribute__((naked)) _start()
+{
+	__asm__("la gp, __global_pointer$\n\t"
+		"jal ra, main\n\t");
+	doexit(0);
 }
 
 #else

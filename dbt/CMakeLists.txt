@@ -1,5 +1,16 @@
 add_subdirectory(third_party)
 
+function(add_dbt_option option_name descr default)
+    option(${option_name} "${descr}" ${default})
+    if(${option_name})
+        add_compile_definition(${option_name})
+    endif()
+endfunction()
+
+add_dbt_option(DBT_USE_INTERP "use interpreter for debugging" OFF)
+add_dbt_option(DBT_DUMP_TRACE "" OFF)
+add_dbt_option(DBT_DUMP_TRACE_VERBOSE "" OFF)
+
 add_library(dbtstatic STATIC
 	util/common.cpp
 	util/logger.cpp
