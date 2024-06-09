@@ -9,42 +9,57 @@ namespace dbt
 {
 LOG_STREAM(aot)
 
-void ModuleGraph::Dump(std::vector<std::vector<ModuleGraphNode *>> const *regions)
+static FILE *g_modulegraph_dump = nullptr;
+
+void InitModuleGraphDump(char const *dir)
 {
-	auto dump_node = [](ModuleGraphNode const &n) {
-		if (n.flags.is_segment_entry) {
-			log_modulegraph("B%08x[fillcolor=green]", n.ip);
-		} else if (n.flags.is_brind_target) {
-			log_modulegraph("B%08x[fillcolor=orange]", n.ip);
-		} else if (n.flags.region_entry) {
-			log_modulegraph("B%08x[fillcolor=purple]", n.ip);
-		} else {
-			log_modulegraph("B%08x[fillcolor=cyan]", n.ip);
-		}
-#if 0 /* Include only compiled blocks */
-		if (n.flags.is_brind_source) {
-			log_modulegraph("B%08x_brind[];"
-					"B%08x->B%08x_brind[color=darkgreen]",
-					n.ip, n.ip, n.ip);
-		}
-		if (n.flags.is_crosssegment_br) {
-			log_modulegraph("B%08x_br[];"
-					"B%08x->B%08x_brind[color=black]",
-					n.ip, n.ip, n.ip);
-		}
-#endif
+	auto fpath = std::string(dir) + "/modulegraph.gv";
+	FILE *f = fopen(fpath.c_str(), "w");
+	if (f == nullptr) {
+		Panic();
+	}
+	g_modulegraph_dump = f;
+	fprintf(f, "digraph rvdbt_modulegraph{\nnode[style=\"rounded,filled\",shape=rect]\n");
+	atexit([]() {
+		fprintf(g_modulegraph_dump, "}\n");
+		fclose(g_modulegraph_dump);
+	});
+}
+
+static void DumpModuleGraph(ModuleGraph *mg, std::vector<std::vector<ModuleGraphNode *>> const *regions)
+{
+	mg->Dump(g_modulegraph_dump, regions);
+}
+
+void ModuleGraph::Dump(FILE *f, std::vector<std::vector<ModuleGraphNode *>> const *regions)
+{
+	auto const add_node = [f](u32 ip, char const *color) {
+		fprintf(f, "B%08x[fillcolor=%s]\n", ip, color);
 	};
 
-	auto dump_edge = [](ModuleGraphNode const &n, ModuleGraphNode const &t) {
+	auto const add_edge = [f](u32 src, u32 tgt, char const *opts) {
+		fprintf(f, "B%08x->B%08x[%s]\n", src, tgt, opts);
+	};
+
+	auto dump_node = [&](ModuleGraphNode const &n) {
+		auto flags = n.flags;
+
+		add_node(n.ip, flags.is_segment_entry  ? "green"
+			       : flags.is_brind_target ? "orange"
+			       : flags.region_entry    ? "purple"
+						       : "cyan");
+	};
+
+	auto dump_edge = [&](ModuleGraphNode const &n, ModuleGraphNode const &t) {
 		if (n.ip >= t.ip) {
-			log_modulegraph("B%08x->B%08x[color=red,penwidth=2,dir=back]", t.ip, n.ip);
+			add_edge(t.ip, n.ip, "color=red,penwidth=2,dir=back");
 		} else {
-			log_modulegraph("B%08x->B%08x", n.ip, t.ip);
+			add_edge(n.ip, t.ip, "");
 		}
 	};
 
-	auto dump_link = [](ModuleGraphNode const &n, ModuleGraphNode const &t) {
-		log_modulegraph("B%08x->B%08x[color=darkgreen,style=dashed]", n.ip, t.ip);
+	auto dump_link = [&](ModuleGraphNode const &n, ModuleGraphNode const &t) {
+		add_edge(n.ip, t.ip, "color=darkgreen,style=dashed");
 	};
 
 	for (auto const &it : ip_map) {
@@ -56,27 +71,15 @@ void ModuleGraph::Dump(std::vector<std::vector<ModuleGraphNode *>> const *region
 		if (n.link) {
 			dump_link(n, *n.link);
 		}
-		// if (n.dominator && n.dominator != root.get()) {
-		// 	log_modulegraph("B%08x->B%08x[color=grey]", n.dominator->ip, n.ip);
-		// }
 	}
 
 	if (regions) {
 		for (auto const &r : *regions) {
-			// std::stringstream ss;
-			// ss << std::hex;
-			// ss << "subgraph cluster_R" << std::setfill('0') << std::setw(8) << r[0]->ip
-			//    << "{style=filled;color=lightgrey;";
-			// for (size_t i = 0; i < r.size(); ++i) {
-			// 	ss << " B" << std::setfill('0') << std::setw(8) << r[i]->ip;
-			// }
-			// ss << "}";
-			// auto str = ss.str();
-			log_modulegraph("subgraph cluster_R%08x{style=filled;color=lightgrey;", r[0]->ip);
-			for (size_t i = 0; i < r.size(); ++i) {
-				log_modulegraph(" B%08x", r[i]->ip);
+			fprintf(f, "subgraph cluster_R%08x{style=filled;color=lightgrey;\n", r[0]->ip);
+			for (auto const &n : r) {
+				fprintf(f, " B%08x", n->ip);
 			}
-			log_modulegraph("}");
+			fprintf(f, "}\n");
 		}
 	}
 }
@@ -291,8 +294,9 @@ std::vector<std::vector<ModuleGraphNode *>> ModuleGraph::ComputeRegions()
 	ComputeRegionIDF();
 	auto regions = ComputeRegionDomSets();
 
-	Dump(&regions);
-
+	if (g_modulegraph_dump) {
+		DumpModuleGraph(this, &regions);
+	}
 	return regions;
 }
 

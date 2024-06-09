@@ -1,6 +1,7 @@
 #pragma once
 
 #define GUEST_RUNTIME_STUBS(X)                                                                               \
+	X(rv32_ill)                                                                                          \
 	X(rv32_fence)                                                                                        \
 	X(rv32_fencei)                                                                                       \
 	X(rv32_ecall)                                                                                        \

@@ -14,6 +14,11 @@ thread_local CPUState *CPUState::tls_current{};
 namespace dbt::rv32
 {
 
+static void InsnNotImplemented(insn::Base insn, char const *name)
+{
+	log_dbt("ILLEGAL OPCODE: %s raw=%08x op=%03x", name, insn.raw, insn.opcode());
+}
+
 #define GET_GIP() (gip)
 #define SET_GIP(gip_) (gip = gip_)
 #define RAISE_TRAP(trapno_)                                                                                  \
@@ -86,12 +91,13 @@ namespace dbt::rv32
 #define HANDLER_Unimpl(name)                                                                                 \
 	HANDLER(name)                                                                                        \
 	{                                                                                                    \
-		log_dbt("unimplemented insn " #name);                                                        \
+		InsnNotImplemented(i, "uniplemented(" #name ")");                                            \
 		RAISE_TRAP(TrapCode::ILLEGAL_INSN);                                                          \
 	}
 
 HANDLER(ill)
 {
+	InsnNotImplemented(i, "unknown");
 	RAISE_TRAP(TrapCode::ILLEGAL_INSN);
 }
 HANDLER(lui)

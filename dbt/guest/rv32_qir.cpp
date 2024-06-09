@@ -253,12 +253,6 @@ static ALWAYS_INLINE void LogInsn(IType i, u32 ip)
 	}                                                                                                    \
 	ALWAYS_INLINE void RV32Translator::V_##name(insn::Insn_##name i)
 
-#define TRANSLATOR_Unimpl(name)                                                                              \
-	TRANSLATOR(name)                                                                                     \
-	{                                                                                                    \
-		dbt::Panic("unimplemented insn " #name);                                                     \
-	}
-
 #define TRANSLATOR_ArithmRI(name, op)                                                                        \
 	TRANSLATOR(name)                                                                                     \
 	{                                                                                                    \
@@ -305,7 +299,6 @@ static ALWAYS_INLINE void LogInsn(IType i, u32 ip)
 		TranslateHelper(i, RuntimeStubId::id_rv32_##name);                                           \
 	}
 
-TRANSLATOR_Unimpl(ill);
 TRANSLATOR(lui)
 {
 	if (i.rd()) {
@@ -386,6 +379,7 @@ TRANSLATOR_Helper(fencei);
 TRANSLATOR_Helper(ecall);
 TRANSLATOR_Helper(ebreak);
 
+TRANSLATOR_Helper(ill);
 TRANSLATOR_Helper(lrw);
 TRANSLATOR_Helper(scw);
 TRANSLATOR_Helper(amoswapw);

@@ -10,7 +10,6 @@
 
 namespace dbt
 {
-LOG_STREAM(modulegraph)
 
 // TODO: optimize layout and use Arena containers
 struct ModuleGraphNode {
@@ -133,7 +132,7 @@ struct ModuleGraph {
 	std::vector<std::vector<ModuleGraphNode *>> ComputeRegionDomSets();
 
 	std::vector<std::vector<ModuleGraphNode *>> ComputeRegions();
-	void Dump(std::vector<std::vector<ModuleGraphNode *>> const *regions = nullptr);
+	void Dump(FILE *f, std::vector<std::vector<ModuleGraphNode *>> const *regions = nullptr);
 
 	qir::CodeSegment segment;
 
@@ -144,5 +143,7 @@ struct ModuleGraph {
 
 	qir::MarkerKeeper markers;
 };
+
+void InitModuleGraphDump(char const *dir);
 
 } // namespace dbt

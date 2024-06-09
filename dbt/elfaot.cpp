@@ -16,6 +16,7 @@ struct ElfAotOptions {
 	std::string cache{};
 	bool use_llvm{};
 	std::string logs{};
+	std::string mgdump{};
 };
 
 static void PrintHelp(bpo::options_description &adesc)
@@ -33,7 +34,8 @@ static bool ParseOptions(ElfAotOptions &o, int argc, char **argv)
 	    ("logs",   bpo::value(&o.logs)->default_value(""), "enabled log streams separated by :")
 	    ("elf", bpo::value(&o.elf)->required(), "elf file to translate")
 	    ("cache",  bpo::value(&o.cache)->required(), "dbt cache path")
-	    ("llvm",    bpo::value(&o.use_llvm)->default_value(true), "use llvm backend");
+	    ("llvm",    bpo::value(&o.use_llvm)->default_value(true), "use llvm backend")
+	    ("mgdump", bpo::value(&o.mgdump)->default_value(""), "module graphs dump dir, specify to enable");
 	// clang-format on
 
 	try {
@@ -69,6 +71,9 @@ int main(int argc, char **argv)
 	}
 
 	SetupLogger(opts.logs);
+	if (!opts.mgdump.empty()) {
+		dbt::InitModuleGraphDump(opts.mgdump.c_str());
+	}
 
 	dbt::fsmanager::Init(opts.cache.c_str());
 	dbt::objprof::Init(opts.cache.c_str(), false);
