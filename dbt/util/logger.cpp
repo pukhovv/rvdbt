@@ -1,4 +1,5 @@
 #include "dbt/util/logger.h"
+#include "dbt/util/allocator.h"
 #include <array>
 #include <cstdarg>
 #include <cstdio>
@@ -73,15 +74,32 @@ Logger *Logger::get()
 void Logger::setup(LogStreamI &s)
 {
 	auto self = get();
+	if (s.initialized.load()) {
+		return;
+	}
+
+	std::lock_guard lk(self->mtx);
+	if (s.initialized.load()) {
+		return;
+	}
 	self->streams.emplace(s.name, &s);
+	s.initialized.store(true);
 }
 
-void Logger::enable(char const *name)
+void Logger::enable(char const *name, char const *path)
 {
 	auto self = get();
+	std::lock_guard lk(self->mtx);
+
 	auto s = self->streams.find(name);
-	if (s != self->streams.end()) {
-		s->second->level = true;
+	if (s == self->streams.end()) {
+		fprintf(stderr, "nonexisting log stream: %s\n", name);
+		return;
+	}
+
+	s->second->level = true;
+	if (path != nullptr) {
+		unreachable(""); // TODO: redirect
 	}
 }
 

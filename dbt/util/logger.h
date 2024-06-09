@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dbt/util/common.h"
+#include <atomic>
 #include <map>
 #include <mutex>
 
@@ -45,6 +46,8 @@ private:
 	void commit_write(char const *str) const;
 	void commit_printf(char const *fmt, ...) const;
 
+	std::atomic<bool> initialized{};
+
 	char const *name{};
 	char const *prefix{};
 	bool level{};
@@ -67,7 +70,7 @@ struct LogStreamNull {
 };
 
 struct Logger {
-	static void enable(char const *name);
+	static void enable(char const *name, char const *path = nullptr);
 
 private:
 	friend struct LogStreamI::Setup;
@@ -77,6 +80,7 @@ private:
 
 	static void setup(LogStreamI &s);
 
+	std::mutex mtx{};
 	std::map<std::string, LogStreamI *> streams{};
 };
 

@@ -98,7 +98,7 @@ private:
 	// Current implementation requires only one ElfProfile
 	static ElfProfile elf_prof;
 
-	static bool use_aot;
+	static bool use_aot_files;
 };
 
 } // namespace dbt

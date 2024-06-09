@@ -3,6 +3,7 @@
 #include "dbt/tcache/objprof.h"
 #include "dbt/tcache/tcache.h"
 #include "dbt/ukernel.h"
+#include "dbt/util/fsmanager.h"
 #include <boost/any.hpp>
 #include <boost/program_options.hpp>
 #include <boost/tokenizer.hpp>
@@ -69,6 +70,7 @@ int main(int argc, char **argv)
 
 	SetupLogger(opts.logs);
 
+	dbt::fsmanager::Init(opts.cache.c_str());
 	dbt::objprof::Init(opts.cache.c_str(), false);
 	dbt::mmu::Init();
 
@@ -80,6 +82,7 @@ int main(int argc, char **argv)
 		dbt::AOTCompileELF();
 	}
 
+	dbt::fsmanager::Destroy();
 	if constexpr (dbt::config::debug) {
 		dbt::objprof::Destroy();
 		dbt::mmu::Destroy();

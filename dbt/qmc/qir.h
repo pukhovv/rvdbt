@@ -671,7 +671,7 @@ struct StateInfo {
 };
 
 struct VRegsInfo {
-	VRegsInfo(StateInfo const *glob_info_) : glob_info(glob_info_) {}
+	VRegsInfo(MemArena *arena_, StateInfo const *glob_info_) : glob_info(glob_info_), loc_info(arena_) {}
 
 	auto NumGlobals() const
 	{
@@ -718,13 +718,13 @@ struct VRegsInfo {
 	}
 
 private:
-	StateInfo const *glob_info{};
-	std::vector<VType> loc_info{};
+	StateInfo const *glob_info;
+	ArenaVector<VType> loc_info;
 };
 
 struct Region : InArena {
 	explicit Region(MemArena *arena_, StateInfo const *state_info_)
-	    : arena(arena_), vregs_info(state_info_)
+	    : arena(arena_), vregs_info(arena, state_info_)
 	{
 	}
 

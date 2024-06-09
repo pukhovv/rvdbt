@@ -1,5 +1,6 @@
 #include "dbt/tcache/objprof.h"
 #include "dbt/aot/aot.h"
+#include "dbt/util/fsmanager.h"
 #include <fcntl.h>
 
 namespace dbt
@@ -33,6 +34,7 @@ FileChecksum FileChecksum::FromFile(int fd)
 	if (!EVP_DigestFinal_ex(mdctx, sum.data, NULL)) {
 		Panic();
 	}
+	EVP_MD_CTX_free(mdctx);
 	return sum;
 }
 
@@ -43,7 +45,7 @@ void objprof::Init(char const *path, bool use_aot_)
 		Panic(std::string("failed to resolve ") + path);
 	}
 	g_dbt_cache_dir = std::string(buf) + "/";
-	use_aot = use_aot_;
+	use_aot_files = use_aot_;
 }
 
 static std::string MakeCachePath(FileChecksum const &csum, char const *extension)
@@ -58,7 +60,7 @@ std::string objprof::GetCachePath(char const *extension)
 }
 
 objprof::ElfProfile objprof::elf_prof{};
-bool objprof::use_aot = false;
+bool objprof::use_aot_files = false;
 
 void objprof::Announce(int elf_fd, bool jit_mode)
 {
@@ -66,38 +68,19 @@ void objprof::Announce(int elf_fd, bool jit_mode)
 	auto path = MakeCachePath(csum, ".prof");
 
 	auto &pfile = elf_prof;
-	int rc, fd;
-	bool new_file = false;
-
-	log_prof("OpenProfile at %s", path.c_str());
-	if (fd = open(path.c_str(), O_RDWR, 0666); fd < 0) {
-		if (errno != ENOENT) {
-			Panic("failed to open " + path);
-		}
-		if (!jit_mode) {
-			return;
-		}
-		new_file = true;
-	}
 	pfile.fsize = 64_MB;
 
-	if (new_file) {
-		if (fd = open(path.c_str(), O_RDWR | O_CREAT, 0666); fd < 0) {
-			Panic("failed to creat " + path);
-		}
-		if (rc = ftruncate(fd, pfile.fsize); rc != 0) {
-			Panic();
-		}
+	log_prof("Lookup profile at %s", path.c_str());
+	auto [fmap, file_state] = dbt::fsmanager::OpenCacheFile(path.c_str(), pfile.fsize, jit_mode);
+
+	if (file_state == fsmanager::CacheState::NO_FILE) {
+		log_prof("No profile available at %s", path.c_str());
+		return;
 	}
 
-	void *fmap = host_mmap(NULL, pfile.fsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	if (fmap == MAP_FAILED) {
-		Panic();
-	}
-	close(fd);
 	pfile.fmap = (FileHeader *)fmap;
 
-	if (new_file) {
+	if (file_state == fsmanager::CacheState::RDWR_NEW) {
 		pfile.fmap->csum = csum;
 		pfile.fmap->n_pages = 0;
 	} else {
@@ -109,7 +92,7 @@ void objprof::Announce(int elf_fd, bool jit_mode)
 			log_prof("Found PageData for pageno=%u", pageno);
 			pfile.page2idx.insert({pageno, idx});
 		}
-		if (use_aot) {
+		if (use_aot_files) {
 			BootAOTFile();
 		}
 	}

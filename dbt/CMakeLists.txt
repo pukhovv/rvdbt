@@ -13,6 +13,7 @@ add_dbt_option(DBT_DUMP_TRACE_VERBOSE "" OFF)
 
 add_library(dbtstatic STATIC
 	util/common.cpp
+	util/fsmanager.cpp
 	util/logger.cpp
 
 	aot/aot.cpp

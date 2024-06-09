@@ -1,6 +1,7 @@
 #include "dbt/aot/aot.h"
 #include "dbt/qmc/compile.h"
 #include "dbt/tcache/objprof.h"
+#include "dbt/util/fsmanager.h"
 
 #include <sstream>
 
@@ -19,23 +20,20 @@ LOG_STREAM(aot)
 
 void BootAOTFile()
 {
-	auto aot_path = objprof::GetCachePath(AOT_SO_EXTENSION);
+	void *so_handle;
+	link_map *lmap;
 	{
-		struct stat statbuf;
-		if (stat(aot_path.c_str(), &statbuf) < 0) {
-			log_aot("failed to open %s, skip aot boot", aot_path.c_str());
-			return;
+		DBT_FS_LOCK();
+		auto aot_path = objprof::GetCachePath(AOT_SO_EXTENSION);
+
+		if (so_handle = dlopen(aot_path.c_str(), RTLD_NOW); !so_handle) {
+			log_aot("failed to open %s: %s, skip aot boot", aot_path.c_str(), dlerror());
+		}
+		if (dlinfo(so_handle, RTLD_DI_LINKMAP, (void *)&lmap) < 0) {
+			Panic();
 		}
 	}
 
-	void *so_handle = dlopen(aot_path.c_str(), RTLD_NOW);
-	if (!so_handle) {
-		Panic(dlerror());
-	}
-	link_map *lmap;
-	if (dlinfo(so_handle, RTLD_DI_LINKMAP, (void *)&lmap) < 0) {
-		Panic();
-	}
 	auto l_addr = (u8 *)lmap->l_addr;
 
 	auto aottab = (AOTTabHeader const *)dlsym(so_handle, AOT_SYM_AOTTAB);

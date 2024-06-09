@@ -2,6 +2,7 @@
 #include "dbt/execute.h"
 #include "dbt/mmu.h"
 #include "dbt/tcache/objprof.h"
+#include "dbt/util/fsmanager.h"
 #include <alloca.h>
 #include <cstring>
 #include <memory>
@@ -277,11 +278,13 @@ static inline uabi_long rcerrno(uabi_long rc)
 
 static uabi_long linux_openat(uabi_int dfd, const char __user *filename, uabi_int flags, mode_t mode)
 {
+	DBT_FS_LOCK();
 	return rcerrno(openat(dfd, filename, flags, mode));
 }
 
 static uabi_long linux_close(uabi_uint fd)
 {
+	DBT_FS_LOCK();
 	if (fd < 3) { // TODO: split file descriptors
 		return 0;
 	}
@@ -643,6 +646,7 @@ void ukernel::SyscallLinux(CPUState *state)
 
 void ukernel::InitElfMappings(const char *path, ElfImage *elf)
 {
+	DBT_FS_LOCK();
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
 		Panic("no such elf file");
